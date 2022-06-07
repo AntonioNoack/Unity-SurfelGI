@@ -20,6 +20,7 @@ public class CameraController : MonoBehaviour {
         if(Input.GetKey("d")) acceleration.x++;
         if(Input.GetKey("q") || Input.GetKey("left shift")) acceleration.y--;
         if(Input.GetKey("e") || Input.GetKey("space")) acceleration.y++;
+        moveSpeed *= Mathf.Pow(1.05f, Input.mouseScrollDelta.y);
         acceleration *= moveSpeed;
         // mouse movement
         if(Input.GetMouseButton(RIGHT_MOUSE_BUTTON)){
