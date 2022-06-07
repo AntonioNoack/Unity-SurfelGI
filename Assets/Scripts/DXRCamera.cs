@@ -2,15 +2,16 @@
 using UnityEngine.Experimental.Rendering;
 
 public class DXRCamera : MonoBehaviour {
+    
     public Color SkyColor = Color.blue;
     public Color GroundColor = Color.gray;
 
     private Camera _camera;
     // target texture for raytracing
-    private RenderTexture dxrTarget;
+    private RenderTexture giTarget, colorTarget, normalTarget;
     // textures for accumulation
-    private RenderTexture accumulationTarget1;
-    private RenderTexture accumulationTarget2;
+    private RenderTexture accu1;
+    private RenderTexture accu2;
 
     // scene structure for raytracing
     private RayTracingAccelerationStructure rtas;
@@ -18,7 +19,7 @@ public class DXRCamera : MonoBehaviour {
     // raytracing shader
     public RayTracingShader rayTracingShader;
     // helper material to accumulate raytracing results
-    private Material accumulationMaterial;
+    private Material accuMaterial, displayMaterial;
 
     private Matrix4x4 cameraWorldMatrix;
 
@@ -38,28 +39,28 @@ public class DXRCamera : MonoBehaviour {
         // update raytracing parameters
         UpdateParameters();
 
-        accumulationMaterial = new Material(Shader.Find("Hidden/Accumulation"));
+        accuMaterial = new Material(Shader.Find("Hidden/Accumulation"));
+        displayMaterial = new Material(Shader.Find("Hidden/Display"));
     }
 
 	private void LoadShader() {
-
-		// rayTracingShader = Resources.Load<RayTracingShader>("RayTracingShader");
-
         rayTracingShader.SetAccelerationStructure("_RaytracingAccelerationStructure", rtas);
-        rayTracingShader.SetTexture("_DxrTarget", dxrTarget);
-        // set shader pass name that will be used during raytracing
-        rayTracingShader.SetShaderPass("DxrPass");
-
 	}
 
 	private void CreateTargets() {
 
-		dxrTarget = new RenderTexture(_camera.pixelWidth, _camera.pixelHeight, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
-        dxrTarget.enableRandomWrite = true;
-        dxrTarget.Create();
+		giTarget = new RenderTexture(_camera.pixelWidth, _camera.pixelHeight, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
+        giTarget.enableRandomWrite = true;
+        giTarget.Create();
 
-        accumulationTarget1 = new RenderTexture(dxrTarget);
-        accumulationTarget2 = new RenderTexture(dxrTarget);
+        colorTarget = new RenderTexture(giTarget);
+        colorTarget.Create();
+
+        normalTarget = new RenderTexture(giTarget);
+        normalTarget.Create();
+
+        accu1 = new RenderTexture(giTarget);
+        accu2 = new RenderTexture(giTarget);
 
 	}
 
@@ -124,25 +125,43 @@ public class DXRCamera : MonoBehaviour {
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
+        
         // update frame index and start path tracer
         rayTracingShader.SetInt("_FrameIndex", frameIndex);
         // start one thread for each pixel on screen
-        rayTracingShader.Dispatch("MyRaygenShader", dxrTarget.width, dxrTarget.height, 1, _camera);
+        rayTracingShader.SetTexture("_DxrTarget", giTarget);
+        rayTracingShader.SetShaderPass("DxrPass");
+        rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
 
+        if(frameIndex == 0){
+            rayTracingShader.SetTexture("_DxrTarget", colorTarget);
+            rayTracingShader.SetShaderPass("ColorPass");
+            rayTracingShader.Dispatch("ColorShader", colorTarget.width, colorTarget.height, 1, _camera);
+
+             rayTracingShader.SetTexture("_DxrTarget", normalTarget);
+            rayTracingShader.SetShaderPass("NormalPass");
+            rayTracingShader.Dispatch("ColorShader", colorTarget.width, colorTarget.height, 1, _camera);
+        }
+        
         // update accumulation material
-        accumulationMaterial.SetTexture("_CurrentFrame", dxrTarget);
-        accumulationMaterial.SetTexture("_Accumulation", accumulationTarget1);
-        accumulationMaterial.SetInt("_FrameIndex", frameIndex++);
+        accuMaterial.SetTexture("_CurrentFrame", giTarget);
+        accuMaterial.SetTexture("_Accumulation", accu1);
+        accuMaterial.SetInt("_FrameIndex", frameIndex++);
 
         // accumulate current raytracing result
-        Graphics.Blit(dxrTarget, accumulationTarget2, accumulationMaterial);
+        Graphics.Blit(giTarget, accu2, accuMaterial);
+
         // display result on screen
-        Graphics.Blit(accumulationTarget2, destination);
+        displayMaterial.SetTexture("_CurrentColor", colorTarget);
+        displayMaterial.SetTexture("_CurrentNormal", normalTarget);
+        displayMaterial.SetTexture("_Accumulation", accu2);
+        Graphics.Blit(accu2, destination, displayMaterial);
 
         // switch accumulate textures
-        var temp = accumulationTarget1;
-        accumulationTarget1 = accumulationTarget2;
-        accumulationTarget2 = temp;
+        var temp = accu1;
+        accu1 = accu2;
+        accu2 = temp;
+
     }
 
     private void OnGUI() {
@@ -151,10 +170,10 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void OnDestroy() {
-        // cleanup
         rtas.Release();
-        dxrTarget.Release();
-        accumulationTarget1.Release();
-        accumulationTarget2.Release();
+        giTarget.Release();
+        colorTarget.Release();
+        accu1.Release();
+        accu2.Release();
     }
 }

@@ -32,6 +32,58 @@
 			ENDCG
 		}
 
+		// color pass
+		Pass {
+			Name "ColorPass"
+			Tags { "LightMode" = "ColorPass" }
+
+			HLSLPROGRAM
+
+			#pragma raytracing test
+					   
+			#include "Common.cginc"
+
+			float4 _Color;
+
+			[shader("closesthit")]
+			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				
+				// compute vertex data on ray/triangle intersection
+				IntersectionVertex currentvertex;
+				GetCurrentIntersectionVertex(attributeData, currentvertex);
+
+				// transform normal to world space
+				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
+				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
+				float3 _Color = worldNormal * 0.5 + 0.5;
+				rayPayload.color = _Color;
+
+			}
+			ENDHLSL
+		}
+
+		// normal pass
+		Pass {
+			Name "NormalPass"
+			Tags { "LightMode" = "NormalPass" }
+
+			HLSLPROGRAM
+
+			#pragma raytracing test
+					   
+			#include "Common.cginc"
+
+			[shader("closesthit")]
+			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				IntersectionVertex currentvertex;
+				GetCurrentIntersectionVertex(attributeData, currentvertex);
+				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
+				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
+				rayPayload.color = worldNormal * 0.5 + 0.5;
+			}
+			ENDHLSL
+		}
+
 		// ray tracing pass
 		Pass {
 			Name "DxrPass"

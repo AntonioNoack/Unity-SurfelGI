@@ -22,7 +22,6 @@ uint initRand(uint seed) {
 	seed = seed ^ (seed >> 4);
 	seed *= 0x27d4eb2d;
 	seed = seed ^ (seed >> 15);
-
 	return seed;
 }
 
@@ -32,8 +31,7 @@ uint initRand(uint seed1, uint seed2) {
 	uint seed = 0;
 
 	[unroll]
-	for(uint i = 0; i < 16; i++)
-	{
+	for(uint i = 0; i < 16; i++) {
 		seed += 0x9e3779b9;
 		seed1 += ((seed2 << 4) + 0xa341316c) ^ (seed2 + seed) ^ ((seed2 >> 5) + 0xc8013ea4);
 		seed2 += ((seed1 << 4) + 0xad90777d) ^ (seed1 + seed) ^ ((seed1 >> 5) + 0x7e95761e);
@@ -80,8 +78,7 @@ struct AttributeData {
 #define INTERPOLATE_RAYTRACING_ATTRIBUTE(A0, A1, A2, BARYCENTRIC_COORDINATES) (A0 * BARYCENTRIC_COORDINATES.x + A1 * BARYCENTRIC_COORDINATES.y + A2 * BARYCENTRIC_COORDINATES.z)
 
 // Structure to fill for intersections
-struct IntersectionVertex
-{
+struct IntersectionVertex {
 	// Object space position of the vertex
 	float3 positionOS;
 	// Object space normal of the vertex
@@ -104,8 +101,7 @@ struct IntersectionVertex
 };
 
 // Fetch the intersetion vertex data for the target vertex
-void FetchIntersectionVertex(uint vertexIndex, out IntersectionVertex outVertex)
-{
+void FetchIntersectionVertex(uint vertexIndex, out IntersectionVertex outVertex) {
 	outVertex.positionOS = UnityRayTracingFetchVertexAttribute3(vertexIndex, kVertexAttributePosition);
 	outVertex.normalOS   = UnityRayTracingFetchVertexAttribute3(vertexIndex, kVertexAttributeNormal);
 	outVertex.tangentOS  = UnityRayTracingFetchVertexAttribute3(vertexIndex, kVertexAttributeTangent);
@@ -116,8 +112,7 @@ void FetchIntersectionVertex(uint vertexIndex, out IntersectionVertex outVertex)
 	outVertex.color      = UnityRayTracingFetchVertexAttribute4(vertexIndex, kVertexAttributeColor);
 }
 
-void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionVertex outVertex)
-{
+void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionVertex outVertex) {
 	// Fetch the indices of the currentr triangle
 	uint3 triangleIndices = UnityRayTracingFetchTriangleIndices(PrimitiveIndex());
 
