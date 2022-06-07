@@ -6,56 +6,24 @@
 		Tags { "RenderType"="Opaque" }
 		LOD 100
 
-		// basic rasterization pass that will allow us to see the material in SceneView
-		Pass {
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-			#include "SimpleLit.cginc"
-			ENDCG
+		// basic pass for GBuffer
+		CGPROGRAM
+		#pragma surface surf Standard fullforwardshadows
+
+		UNITY_INSTANCING_BUFFER_START(Props)
+        UNITY_INSTANCING_BUFFER_END(Props)
+
+		struct Input {
+			float2 uv_MainTex;
+		};
+        
+		void surf(Input IN, inout SurfaceOutputStandard o) {
+			o.Albedo = float3(1.0,1.0,1.0);
+			o.Metallic = 0.0;
+			o.Smoothness = 0.0;
+			o.Alpha = 1.0;
 		}
-
-		// color pass
-		Pass {
-			Name "ColorPass"
-			Tags { "LightMode" = "ColorPass" }
-
-			HLSLPROGRAM
-
-			#pragma raytracing test
-					   
-			#include "Common.cginc"
-
-			float4 _Color;
-
-			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				rayPayload.color = _Color.xyz;
-			}
-			ENDHLSL
-		}
-
-		// normal pass
-		Pass {
-			Name "NormalPass"
-			Tags { "LightMode" = "NormalPass" }
-
-			HLSLPROGRAM
-
-			#pragma raytracing test
-					   
-			#include "Common.cginc"
-
-			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex currentvertex;
-				GetCurrentIntersectionVertex(attributeData, currentvertex);
-				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
-				rayPayload.color = worldNormal * 0.5 + 0.5;
-			}
-			ENDHLSL
-		}
+		ENDCG
 
 		// ray tracing pass
 		Pass {

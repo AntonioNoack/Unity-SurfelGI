@@ -1,7 +1,13 @@
-﻿Shader "RayTracing/DxrDiffuseNormal" {
-	Properties { }
+﻿Shader "RayTracing/DxrDiffuse" {
+	Properties {
+		_Color ("Color", Color) = (1, 1, 1, 1)
+		_MainTex ("Albedo", 2D) = "white" { }
+	}
 	SubShader {
-		Tags { "RenderType" = "Opaque" }
+		// if the material is fully opaque, you can set it to Opaque, otherwise use Transparent.
+		// using opaque will ignore the anyhit shader
+		Tags { "RenderType" = "Transparent" }
+		// Tags { "RenderType" = "Opaque" }
 		LOD 100
 
 		// basic pass for GBuffer
@@ -13,16 +19,18 @@
 
 		struct Input {
 			float2 uv_MainTex;
-			float3 worldNormal;
 		};
         	
+		float4 _Color;
 		sampler2D _MainTex;
 
-		void surf(Input input, inout SurfaceOutputStandard o) {
-			o.Albedo = input.worldNormal * 0.5 + 0.5;
+		void surf(Input IN, inout SurfaceOutputStandard o) {
+			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
+			if(c.a < 0.95) discard;
+			o.Albedo = c.rgb;
 			o.Metallic = 0.0;
 			o.Smoothness = 0.0;
-			o.Alpha = 1.0;
+			o.Alpha = c.a;
 		}
 		ENDCG
 
@@ -37,6 +45,10 @@
 					   
 			#include "Common.cginc"
 
+			float4 _Color;
+			Texture2D _MainTex;
+			SamplerState sampler_MainTex;
+
 			int _StartDepth;
 
 			[shader("closesthit")]
@@ -47,12 +59,12 @@
 				}
 
 				// compute vertex data on ray/triangle intersection
-				IntersectionVertex currentvertex;
-				GetCurrentIntersectionVertex(attributeData, currentvertex);
+				IntersectionVertex vertex;
+				GetCurrentIntersectionVertex(attributeData, vertex);
 
 				// transform normal to world space
 				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
+				float3 worldNormal = normalize(mul(objectToWorld, vertex.normalOS));
 								
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
@@ -67,7 +79,6 @@
 
 				// get random scattered ray dir along surface normal				
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
-				float3 _Color = worldNormal * 0.5 + 0.5;
 
 				RayDesc rayDesc;
 				rayDesc.Origin = worldPos;
@@ -84,10 +95,26 @@
 				// shoot scattered ray
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 				
+				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0);
+				float3 color = color0.rgb * _Color.rgb;
 				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :
-					_Color * scatterRayPayload.color;
-			}			
+					color * scatterRayPayload.color;
+			}
+
+			[shader("anyhit")]
+			void AnyHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				IntersectionVertex vertex;
+				GetCurrentIntersectionVertex(attributeData, vertex);
+				float alpha = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).a * _Color.a;
+				if(alpha < 0.95){// todo stochastic
+					IgnoreHit();
+				}
+				
+				// another possibility:
+				// AcceptHitAndEndSearch();
+				
+			}
 
 			ENDHLSL
 		}

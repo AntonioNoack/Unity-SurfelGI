@@ -2,102 +2,34 @@
 	Properties {
 		_Color ("Color", Color) = (1, 1, 1, 1)
 		_MainTex ("Albedo", 2D) = "white" { }
-		_StartDepth("Start Depth", Int) = 0
 	}
 	SubShader {
-		// if the material is fully opaque, you can set it to Opaque, otherwise use Transparent.
-		// using opaque will ignore the anyhit shader
-		Tags { "RenderType" = "Transparent" }
+		
+		Tags { "RenderType" = "Opaque" }
 		LOD 100
 
-		// basic rasterization pass that will allow us to see the material in SceneView
-		Pass {
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-			#include "SimpleLit.cginc"
-			ENDCG
+		// basic pass for GBuffer
+		CGPROGRAM
+		#pragma surface surf Standard fullforwardshadows
+
+		UNITY_INSTANCING_BUFFER_START(Props)
+        UNITY_INSTANCING_BUFFER_END(Props)
+
+		struct Input {
+			float2 uv_MainTex;
+		};
+        	
+		float4 _Color;
+		sampler2D _MainTex;
+
+		void surf(Input IN, inout SurfaceOutputStandard o) {
+			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
+			o.Albedo = c.rgb;
+			o.Metallic = 0.0;
+			o.Smoothness = 0.0;
+			o.Alpha = 1.0;
 		}
-
-		// color pass
-		Pass {
-			Name "ColorPass"
-			Tags { "LightMode" = "ColorPass" }
-
-			HLSLPROGRAM
-
-			#pragma raytracing test
-					   
-			#include "Common.cginc"
-
-			float4 _Color;
-			Texture2D _MainTex;
-			SamplerState sampler_MainTex;
-
-			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex vertex;
-				GetCurrentIntersectionVertex(attributeData, vertex);
-				rayPayload.color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).rgb * _Color;
-			}
-
-			[shader("anyhit")]
-			void AnyHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex vertex;
-				GetCurrentIntersectionVertex(attributeData, vertex);
-				float alpha = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).a * _Color.a;
-				if(alpha < 0.5){// stochastic?
-					IgnoreHit();
-				}
-
-				// another possibility:
-				// AcceptHitAndEndSearch();
-				
-			}
-
-			ENDHLSL
-		}
-
-		// normal pass
-		Pass {
-			Name "NormalPass"
-			Tags { "LightMode" = "NormalPass" }
-
-			HLSLPROGRAM
-
-			#pragma raytracing test
-					   
-			#include "Common.cginc"
-			
-			float4 _Color;
-			Texture2D _MainTex;
-			SamplerState sampler_MainTex;
-
-			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex vertex;
-				GetCurrentIntersectionVertex(attributeData, vertex);
-				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-				float3 worldNormal = normalize(mul(objectToWorld, vertex.normalOS));
-				rayPayload.color = worldNormal * 0.5 + 0.5;
-			}
-
-			[shader("anyhit")]
-			void AnyHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex vertex;
-				GetCurrentIntersectionVertex(attributeData, vertex);
-				float alpha = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).a * _Color.a;
-				if(alpha < 0.5){// stochastic?
-					IgnoreHit();
-				}
-
-				// another possibility:
-				// AcceptHitAndEndSearch();
-				
-			}
-
-			ENDHLSL
-		}
+		ENDCG
 
 		// ray tracing pass
 		Pass {
@@ -160,24 +92,11 @@
 				// shoot scattered ray
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 				
-				float3 color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).rgb * _Color.rgb;
-				rayPayload.color = rayPayload.depth < _StartDepth ? 
+				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0);
+				float3 color = color0.rgb * _Color.rgb;
+				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :
 					color * scatterRayPayload.color;
-			}
-
-			[shader("anyhit")]
-			void AnyHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				IntersectionVertex vertex;
-				GetCurrentIntersectionVertex(attributeData, vertex);
-				float alpha = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).a * _Color.a;
-				if(alpha < 0.5){// todo stochastic
-					IgnoreHit();
-				}
-				
-				// another possibility:
-				// AcceptHitAndEndSearch();
-				
 			}
 
 			ENDHLSL

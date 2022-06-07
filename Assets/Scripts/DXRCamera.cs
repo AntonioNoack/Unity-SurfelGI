@@ -6,9 +6,11 @@ public class DXRCamera : MonoBehaviour {
     public Color SkyColor = Color.blue;
     public Color GroundColor = Color.gray;
 
+    public float Exposure = 1f;
+
     private Camera _camera;
     // target texture for raytracing
-    private RenderTexture giTarget, colorTarget, normalTarget;
+    private RenderTexture giTarget;
     // textures for accumulation
     private RenderTexture accu1;
     private RenderTexture accu2;
@@ -53,18 +55,23 @@ public class DXRCamera : MonoBehaviour {
         giTarget.enableRandomWrite = true;
         giTarget.Create();
 
-        colorTarget = new RenderTexture(giTarget);
-        colorTarget.Create();
-
-        normalTarget = new RenderTexture(giTarget);
-        normalTarget.Create();
-
         accu1 = new RenderTexture(giTarget);
         accu2 = new RenderTexture(giTarget);
 
 	}
 
+    private void DestroyTargets(){
+        giTarget.Release();
+        accu1.Release();
+        accu2.Release();
+    }
+
     private void Update() {
+        if(_camera.pixelWidth != giTarget.width || _camera.pixelHeight != giTarget.height){
+            DestroyTargets();
+            CreateTargets();
+            frameIndex = 0;
+        }
         // update parameters if camera moved
         if (cameraWorldMatrix != _camera.transform.localToWorldMatrix || Input.GetKeyDown(KeyCode.Space)) {
             UpdateParameters();
@@ -80,22 +87,15 @@ public class DXRCamera : MonoBehaviour {
         // update raytracing scene, in case something moved
         rtas.Build();
 
-        // frustum corners for current camera transform
-        Vector3 bottomLeft = _camera.ViewportToWorldPoint(new Vector3(0, 0, _camera.farClipPlane)).normalized;
-        Vector3 topLeft = _camera.ViewportToWorldPoint(new Vector3(0, 1, _camera.farClipPlane)).normalized;
-        Vector3 bottomRight = _camera.ViewportToWorldPoint(new Vector3(1, 0, _camera.farClipPlane)).normalized;
-        Vector3 topRight = _camera.ViewportToWorldPoint(new Vector3(1, 1, _camera.farClipPlane)).normalized;
-
         // update camera, environment parameters
         rayTracingShader.SetVector("_SkyColor", SkyColor.gamma);
         rayTracingShader.SetVector("_GroundColor", GroundColor.gamma);
 
-        rayTracingShader.SetVector("_TopLeftFrustumDir", topLeft);
-        rayTracingShader.SetVector("_TopRightFrustumDir", topRight);
-        rayTracingShader.SetVector("_BottomLeftFrustumDir", bottomLeft);
-        rayTracingShader.SetVector("_BottomRightFrustumDir", bottomRight);
-
-        rayTracingShader.SetVector("_CameraPos", _camera.transform.position);
+        rayTracingShader.SetVector("_CameraPosition", _camera.transform.position);
+        var rotation = _camera.transform.rotation;
+        rayTracingShader.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+        float zFactor = giTarget.height / (2.0f * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad));
+        rayTracingShader.SetVector("_CameraOffset", new Vector3(giTarget.width * 0.5f, giTarget.height * 0.5f, zFactor));
 
         cameraWorldMatrix = _camera.transform.localToWorldMatrix;
 
@@ -132,16 +132,6 @@ public class DXRCamera : MonoBehaviour {
         rayTracingShader.SetTexture("_DxrTarget", giTarget);
         rayTracingShader.SetShaderPass("DxrPass");
         rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
-
-        if(frameIndex == 0){
-            rayTracingShader.SetTexture("_DxrTarget", colorTarget);
-            rayTracingShader.SetShaderPass("ColorPass");
-            rayTracingShader.Dispatch("ColorShader", colorTarget.width, colorTarget.height, 1, _camera);
-
-             rayTracingShader.SetTexture("_DxrTarget", normalTarget);
-            rayTracingShader.SetShaderPass("NormalPass");
-            rayTracingShader.Dispatch("ColorShader", colorTarget.width, colorTarget.height, 1, _camera);
-        }
         
         // update accumulation material
         accuMaterial.SetTexture("_CurrentFrame", giTarget);
@@ -152,8 +142,7 @@ public class DXRCamera : MonoBehaviour {
         Graphics.Blit(giTarget, accu2, accuMaterial);
 
         // display result on screen
-        displayMaterial.SetTexture("_CurrentColor", colorTarget);
-        displayMaterial.SetTexture("_CurrentNormal", normalTarget);
+        displayMaterial.SetFloat("_Exposure", Exposure);
         displayMaterial.SetTexture("_Accumulation", accu2);
         Graphics.Blit(accu2, destination, displayMaterial);
 
@@ -171,9 +160,6 @@ public class DXRCamera : MonoBehaviour {
 
     private void OnDestroy() {
         rtas.Release();
-        giTarget.Release();
-        colorTarget.Release();
-        accu1.Release();
-        accu2.Release();
+        DestroyTargets();
     }
 }
