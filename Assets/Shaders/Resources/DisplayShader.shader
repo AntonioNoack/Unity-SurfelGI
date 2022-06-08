@@ -1,6 +1,8 @@
-﻿Shader "Hidden/Display" {
+﻿Shader "RayTracing/Display" {
 	Properties {
 		_Exposure("Exposure", Range(0.0, 1000.0)) = 1.0
+		_SplitX("SplitX", Range(0,1)) = 0.75
+		_SplitY("SplitY", Range(0,1)) = 0.50
 	}
 	SubShader {
 		// No culling or depth
@@ -33,11 +35,14 @@
 			}
 
 			float _Exposure;
+			float _SplitX, _SplitY;
 
 			// Unitys predefined GBuffer data
 			sampler2D _CameraGBufferTexture0;
 			sampler2D _CameraGBufferTexture1;
 			sampler2D _CameraGBufferTexture2;
+			// sampler2D _CameraDepthTexture;
+			// sampler2D_half _CameraMotionVectorsTexture;
 
 			sampler2D _Accumulation;
 
@@ -48,6 +53,9 @@
 				UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
 				color = data.diffuseColor + data.specularColor;
 				normal = data.normalWorld;
+				// depth = Linear01Depth(tex2D(_CameraDepthTexture, uv).r);
+				// float4 viewPos = float4(i.ray * depth, 1);
+				// float3 worldPos = mul(unity_CameraToWorld, viewPos).xyz;
 			}
 
 			float3 HDR_to_LDR(float3 hdr){
@@ -81,10 +89,12 @@
 				}
 				color *= sum.xyz * (_Exposure / sum.w);
 				color = HDR_to_LDR(color);
-				return float4(color, 1.0);
+				if(uv.x > _SplitX) return float4(color, 1.0);
 				
-				// return float4(uv.y < 0.5 ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);
+				return float4(uv.y < _SplitY ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);
 				// return float4(normalize(normal)*.5+.5, 1.0);
+				// return float4(frac(log2(depth)), 0.0, 0.0, 1.0);
+				// return abs(tex2D(_CameraMotionVectorsTexture, uv)*10.0+0.5);
 			}
 			ENDCG
 		}

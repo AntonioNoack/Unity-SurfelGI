@@ -9,7 +9,6 @@ public class ShaderMapping : MonoBehaviour {
     [System.Serializable]
     public struct Mapping {
         public Shader oldShader, newShader;
-        public PropertyMapping[] properties;
     };
 
     [System.Serializable]
@@ -26,23 +25,16 @@ public class ShaderMapping : MonoBehaviour {
             mappings2[mappings[i].oldShader] = mappings[i];
         }
         foreach(var renderer in FindObjectsOfType<MeshRenderer>()){
-            Material material = renderer.material;
-            if(material != null){
+            // to do can we use shared materials?
+            Material[] materials = renderer.sharedMaterials;
+            for(int i=0,l=materials.Length;i<l;i++){
+                Material material = materials[i];
                 Shader shader = material.shader;
                 if(mappings2.ContainsKey(shader)){
-                    Mapping mapping = mappings2[shader];
-                    PropertyMapping[] properties = mapping.properties;
-                    if(properties != null){
-                        foreach(var property in properties){
-                            if(material.HasProperty(property.oldName)){
-                                
-                            }
-                        }
-                    }
-                    // todo transfer all properties
-                    material.shader = mapping.newShader;
+                    material.shader = mappings2[shader].newShader;
                 }
             }
+            renderer.sharedMaterials = materials;
         }
     }
 

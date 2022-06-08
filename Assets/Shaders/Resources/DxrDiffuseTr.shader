@@ -1,7 +1,9 @@
-﻿Shader "RayTracing/DxrDiffuse" {
+﻿Shader "RayTracing/DxrDiffuseTr" {
 	Properties {
 		_Color ("Color", Color) = (1, 1, 1, 1)
 		_MainTex ("Albedo", 2D) = "white" { }
+		_Metallic ("Metallic", Range(0, 1)) = 0.0
+		_Glossiness ("Smoothness", Range(0, 1)) = 0.5
 	}
 	SubShader {
 		// if the material is fully opaque, you can set it to Opaque, otherwise use Transparent.
@@ -22,14 +24,15 @@
 		};
         	
 		float4 _Color;
+		float _Metallic, _Glossiness;
 		sampler2D _MainTex;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
-			if(c.a < 0.95) discard;
+			if(c.a < 0.5) discard;
 			o.Albedo = c.rgb;
-			o.Metallic = 0.0;
-			o.Smoothness = 0.0;
+			o.Metallic = _Metallic;
+			o.Smoothness = _Glossiness;
 			o.Alpha = c.a;
 		}
 		ENDCG
@@ -46,6 +49,7 @@
 			#include "Common.cginc"
 
 			float4 _Color;
+			float _Metallic, _Glossiness;
 			Texture2D _MainTex;
 			SamplerState sampler_MainTex;
 
@@ -79,6 +83,9 @@
 
 				// get random scattered ray dir along surface normal				
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
+				// perturb reflection direction to get rought metal effect 
+				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
+				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
 				RayDesc rayDesc;
 				rayDesc.Origin = worldPos;
@@ -107,7 +114,7 @@
 				IntersectionVertex vertex;
 				GetCurrentIntersectionVertex(attributeData, vertex);
 				float alpha = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0).a * _Color.a;
-				if(alpha < 0.95){// todo stochastic
+				if(alpha < nextRand(rayPayload.randomSeed)) {
 					IgnoreHit();
 				}
 				

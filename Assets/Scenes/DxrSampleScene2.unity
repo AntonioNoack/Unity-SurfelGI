@@ -542,26 +542,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mappings:
   - oldShader: {fileID: 46, guid: 0000000000000000f000000000000000, type: 0}
-    newShader: {fileID: 4800000, guid: c9af90e41c0575845be4695759c26c82, type: 3}
-    properties:
-    - oldName: _MainTex
-      newName: _Albedo
-    - oldName: _Color
-      newName: _Color
-  - oldShader: {fileID: 45, guid: 0000000000000000f000000000000000, type: 0}
-    newShader: {fileID: 4800000, guid: c9af90e41c0575845be4695759c26c82, type: 3}
-    properties:
-    - oldName: _MainTex
-      newName: _Albedo
-    - oldName: _Color
-      newName: _Color
-  - oldShader: {fileID: 10623, guid: 0000000000000000f000000000000000, type: 0}
-    newShader: {fileID: 4800000, guid: c9af90e41c0575845be4695759c26c82, type: 3}
-    properties:
-    - oldName: _MainTex
-      newName: _Albedo
-    - oldName: _Color
-      newName: _Color
+    newShader: {fileID: 4800000, guid: ed155800372eb5c4999dc5cb7ab8cc02, type: 3}
+  - oldShader: {fileID: 4800000, guid: c9af90e41c0575845be4695759c26c82, type: 3}
+    newShader: {fileID: 4800000, guid: ed155800372eb5c4999dc5cb7ab8cc02, type: 3}
 --- !u!4 &323702782
 Transform:
   m_ObjectHideFlags: 0
@@ -2124,9 +2107,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   SkyColor: {r: 0.13461198, g: 0.19870014, b: 0.23584908, a: 1}
   GroundColor: {r: 0, g: 0, b: 0, a: 1}
-  Exposure: 2
   rayTracingShader: {fileID: 4807578003741378534, guid: 0bb68a59504205f45aea8c7ec633569a,
     type: 3}
+  accuMaterial: {fileID: 2100000, guid: aeba0872614025643995254ec4134f35, type: 2}
+  displayMaterial: {fileID: 2100000, guid: ba25e187c9e511745b3a05cfbf345bfc, type: 2}
 --- !u!81 &1637561762
 AudioListener:
   m_ObjectHideFlags: 0

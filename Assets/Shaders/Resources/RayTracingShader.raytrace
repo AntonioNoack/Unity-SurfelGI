@@ -32,14 +32,8 @@ void RaygenShader() {
 	uint seed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
 
 	// get random uv inside current pixel
-	// this will give us anti-aliasing for free
-	// 
-	// float2 uv = ((float2)dispatchIdx + float2(nextRand(seed), nextRand(seed))) / (float2)launchDim;
-	// translate screen uv to ray direction
-	// float3 topHorizontalRayDir = lerp(_TopLeftFrustumDir, _TopRightFrustumDir, uv.x);
-	// float3 bottomHorizontalRayDir = lerp(_BottomLeftFrustumDir, _BottomRightFrustumDir, uv.x);
-	// float3 rayDir = normalize(lerp(bottomHorizontalRayDir, topHorizontalRayDir, uv.y));
-
+	// this gives us anti-aliasing for free
+	// + float2(nextRand(seed), nextRand(seed))
 	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 
 	// init ray decriptor

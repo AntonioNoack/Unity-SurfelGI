@@ -6,8 +6,6 @@ public class DXRCamera : MonoBehaviour {
     public Color SkyColor = Color.blue;
     public Color GroundColor = Color.gray;
 
-    public float Exposure = 1f;
-
     private Camera _camera;
     // target texture for raytracing
     private RenderTexture giTarget;
@@ -21,7 +19,7 @@ public class DXRCamera : MonoBehaviour {
     // raytracing shader
     public RayTracingShader rayTracingShader;
     // helper material to accumulate raytracing results
-    private Material accuMaterial, displayMaterial;
+    public Material accuMaterial, displayMaterial;
 
     private Matrix4x4 cameraWorldMatrix;
 
@@ -30,6 +28,8 @@ public class DXRCamera : MonoBehaviour {
     private void Start() {
 
         _camera = GetComponent<Camera>();
+
+        EnableMotionVectors();
 
         CreateTargets();
 
@@ -41,8 +41,10 @@ public class DXRCamera : MonoBehaviour {
         // update raytracing parameters
         UpdateParameters();
 
-        accuMaterial = new Material(Shader.Find("Hidden/Accumulation"));
-        displayMaterial = new Material(Shader.Find("Hidden/Display"));
+    }
+
+    private void EnableMotionVectors(){
+        _camera.depthTextureMode |= DepthTextureMode.Depth | DepthTextureMode.MotionVectors;
     }
 
 	private void LoadShader() {
@@ -142,7 +144,6 @@ public class DXRCamera : MonoBehaviour {
         Graphics.Blit(giTarget, accu2, accuMaterial);
 
         // display result on screen
-        displayMaterial.SetFloat("_Exposure", Exposure);
         displayMaterial.SetTexture("_Accumulation", accu2);
         Graphics.Blit(accu2, destination, displayMaterial);
 
