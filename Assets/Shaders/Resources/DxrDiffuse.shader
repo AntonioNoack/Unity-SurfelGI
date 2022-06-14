@@ -78,7 +78,7 @@
 					randomVector = float3(nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed)) * 2-1;
 				} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
 
-				// get random scattered ray dir along surface normal				
+				// get random scattered ray dir along surface normal
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
 				// perturb reflection direction to get rought metal effect 
 				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);

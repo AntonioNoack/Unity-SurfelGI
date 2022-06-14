@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: AccuMaterial
-  m_Shader: {fileID: 4800000, guid: 9d29bcbb81ae9084b8cb78753a325279, type: 3}
+  m_Name: CopyGBuffD
+  m_Shader: {fileID: 4800000, guid: f46eff1fa45dd8d4884cc8a8a4ceb19b, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords:
   - USE_MOTION_VECTORS

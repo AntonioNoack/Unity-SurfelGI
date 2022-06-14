@@ -3,7 +3,6 @@
 		_Color ("Color", Color) = (1, 1, 1, 1)
 		_Roughness ("Roughness", Range(0, 1)) = 0.5
 		_IoR ("IoR", Range(0, 5)) = 1.5
-		_StartDepth("Start Depth", Int) = 0
 	}
 	SubShader {
 		Tags { "RenderType" = "Opaque" }
@@ -26,7 +25,7 @@
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			fixed4 c = _Color;
 			o.Albedo = c.rgb;
-			o.Metallic = 0.0;
+			o.Metallic = 1.0;
 			o.Smoothness = 1.0 - _Roughness;
 			o.Alpha = c.a;
 		}
@@ -46,7 +45,6 @@
 			float4 _Color;
 			float _Roughness;
 			float _IoR;
-			int _StartDepth;
 
 			float3 ComputeRefractionDirection(float3 rayDir, float3 normal, float ior) {
 				// flip normal if we hit back face
@@ -122,7 +120,7 @@
 				// shoot refraction/reflection ray
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 				
-				rayPayload.color = rayPayload.depth < _StartDepth ? 
+				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :
 					_Color * scatterRayPayload.color;
 			}

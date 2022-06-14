@@ -2,9 +2,7 @@
 
 // texture to store raytracing result
 RWTexture2D<float4> _DxrTarget;
-
-float4 _SkyColor;
-float4 _GroundColor;
+TextureCube _SkyBox;
 
 float3 _CameraPosition;
 float4 _CameraRotation;
@@ -50,7 +48,10 @@ void RaygenShader() {
 	rayPayload.depth = 0;
 
 	// shoot primary ray
-	TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+	// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
+	// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+	TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+		RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
 	// store result
 	_DxrTarget[dispatchIdx] = float4(rayPayload.color, 1);	
@@ -60,16 +61,15 @@ void RaygenShader() {
 [shader("closesthit")]
 void ClosestHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 	// simply return pink color to signal error
-	// todo this is never called... why?
+	// to do this is never called... why?
 	rayPayload.color = float3(1.0, 0.0, 0.5);
 }
 
+SamplerState _LinearClamp;
 // miss shader, used when we don't hit any geometry
 [shader("miss")]
 void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
-	// return sky color
-	float3 rayDir = WorldRayDirection();
-	float3 sunDir = normalize(float3(0.8, 2.5, 0.3));
-	float sunLight = 50.0 * pow(max(dot(rayDir, sunDir), 0.0), 100.0);
-	rayPayload.color = lerp(_GroundColor, _SkyColor, rayDir.y * 0.5 + 0.5) + sunLight;	
+	// todo this looks like SDR... how do we get HDR colors?
+	float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+	rayPayload.color = rayPayload.depth == 0 ? float3(1,1,1) : color;
 }
