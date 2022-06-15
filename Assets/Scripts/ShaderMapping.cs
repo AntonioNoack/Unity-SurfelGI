@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -31,6 +32,9 @@ public class ShaderMapping : MonoBehaviour {
                 Material material = materials[i];
                 Shader shader = material.shader;
                 if(mappings2.ContainsKey(shader)){
+                Debug.Log("Material "+material+
+                    " has texs "+String.Join(", ", material.GetTexturePropertyNames())+
+                    " with ids "+String.Join(", ", material.GetTexturePropertyNameIDs()));
                     material.shader = mappings2[shader].newShader;
                 }
             }

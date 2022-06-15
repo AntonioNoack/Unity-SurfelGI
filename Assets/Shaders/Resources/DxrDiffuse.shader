@@ -4,6 +4,10 @@
 		_MainTex ("Albedo", 2D) = "white" { }
 		_Metallic ("Metallic", Range(0, 1)) = 0.0
 		_Glossiness ("Smoothness", Range(0, 1)) = 0.5
+		// [Normal] _DetailNormalMap ("Normal Map", 2D) = "bump" {}
+		// _DetailNormalMapScale("Scale", Float) = 1.0
+		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
+		_BumpMap("Normal Map", 2D) = "bump" {}
 	}
 	SubShader {
 		
@@ -45,12 +49,25 @@
 					   
 			#include "Common.cginc"
 
+			// the naming comes from Unitys default shader
+
 			float4 _Color;
-			float _Metallic, _Glossiness;
 			Texture2D _MainTex;
 			SamplerState sampler_MainTex;
+			
+			float _Metallic;
+			Texture2D _MetallicGlossMap;
 
-			int _StartDepth;
+			float _Glossiness;
+			Texture2D _SpecGlossMap;
+
+			float _DetailNormalMapScale;
+			Texture2D _DetailNormalMap;
+			SamplerState sampler_DetailNormalMap;
+			
+			// for testing, because _DetailNormalMap is not working
+			Texture2D _BumpMap;
+			SamplerState sampler_BumpMap;
 
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
@@ -63,9 +80,24 @@
 				IntersectionVertex vertex;
 				GetCurrentIntersectionVertex(attributeData, vertex);
 
+				float lod = 0;
+
 				// transform normal to world space
-				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-				float3 worldNormal = normalize(mul(objectToWorld, vertex.normalOS));
+				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
+				float3 objectNormal = vertex.normalOS;
+				float3 objectTangent = vertex.tangentOS;
+				float3 objectBitangent = cross(objectNormal, objectTangent);
+				float2 objectNormal2 = _DetailNormalMap.SampleLevel(sampler_DetailNormalMap, vertex.texCoord0, lod).xy * _DetailNormalMapScale;
+				// todo check that the order & signs are correct
+				float3 objectNormal3 = objectNormal + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
+				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
+				
+				// todo respect metallic and glossiness maps
+
+				// for debugging
+				// rayPayload.color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
+				rayPayload.color = _BumpMap.SampleLevel(sampler_BumpMap, vertex.texCoord0, lod);
+				return;
 								
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
@@ -99,7 +131,7 @@
 				// shoot scattered ray
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 				
-				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, 0);
+				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
 				float3 color = color0.rgb * _Color.rgb;
 				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :

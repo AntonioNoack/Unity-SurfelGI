@@ -39,7 +39,7 @@
 			float _SplitX, _SplitY;
 			float _Far;
 
-			float3 _CameraOffset;
+			float2 _CameraScale;
 			float4 _CameraRotation;
 
 			// Unitys predefined GBuffer data
@@ -78,19 +78,16 @@
 				half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
 				UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
 				return data.normalWorld;
-				// depth = Linear01Depth(tex2D(_CameraDepthTexture, uv).r);
-				// float4 viewPos = float4(i.ray * depth, 1);
-				// float3 worldPos = mul(unity_CameraToWorld, viewPos).xyz;
 			}
 
 			float3 HDR_to_LDR(float3 hdr){
-				hdr *= _Exposure;
+				// hdr *= _Exposure;
 				return hdr/(hdr+1.0);
 			}
 
 			float4 frag (v2f i) : SV_Target {
 				float2 uv = i.uv;
-				float3 rayDir = normalize(quatRot(float3(uv - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));
 				float2 duv = float2(ddx(uv.x), ddy(uv.y));
 
 				// from https://github.com/TwoTailsGames/Unity-Built-in-Shaders/blob/master/DefaultResourcesExtra/Internal-DeferredReflections.shader
@@ -99,7 +96,7 @@
 				float3 color0 = color;
 				
 				// gaussian blur as a first test
-				float4 sum = float4(0.0,0.0,0.0,0.0);
+				float4 sum = float4(0,0,0,0);
 				float numSigmas = 2.5;
 				int di = 5;
 				float sigma = numSigmas / float(di*di);
@@ -113,7 +110,7 @@
 					}
 				}
 				color *= sum.xyz * (_Exposure / sum.w);
-				color = HDR_to_LDR(color);
+				// color = HDR_to_LDR(color);
 				if(uv.x > _SplitX) return float4(color, 1.0);
 				
 				return float4(uv.y < _SplitY ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);

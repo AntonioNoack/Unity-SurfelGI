@@ -33,7 +33,7 @@ public class DXRCamera : MonoBehaviour {
     public int skyResolution = 512;
     private Cubemap skyBox;
     public Camera skyBoxCamera;
-    private bool needsSkyBoxUpdate = false;
+    public bool needsSkyBoxUpdate = false;
 
     private void Start() {
 
@@ -205,8 +205,8 @@ public class DXRCamera : MonoBehaviour {
         // displayMaterial.SetVector("_CameraPosition", pos);
         var rotation = _camera.transform.rotation;
         displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
-        float zFactor = 1.0f / (2.0f * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad));
-        displayMaterial.SetVector("_CameraOffset", new Vector3(0.5f, 0.5f, zFactor));
+        float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
         Graphics.Blit(accu2, destination, displayMaterial);
 
         Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
