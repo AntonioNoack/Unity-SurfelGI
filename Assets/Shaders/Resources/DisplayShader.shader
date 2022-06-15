@@ -110,7 +110,7 @@
 					}
 				}
 				color *= sum.xyz * (_Exposure / sum.w);
-				// color = HDR_to_LDR(color);
+				color = HDR_to_LDR(color);
 				if(uv.x > _SplitX) return float4(color, 1.0);
 				
 				return float4(uv.y < _SplitY ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);

@@ -32,9 +32,9 @@ public class ShaderMapping : MonoBehaviour {
                 Material material = materials[i];
                 Shader shader = material.shader;
                 if(mappings2.ContainsKey(shader)){
-                Debug.Log("Material "+material+
+                /*Debug.Log("Material "+material+
                     " has texs "+String.Join(", ", material.GetTexturePropertyNames())+
-                    " with ids "+String.Join(", ", material.GetTexturePropertyNameIDs()));
+                    " with ids "+String.Join(", ", material.GetTexturePropertyNameIDs()));*/
                     material.shader = mappings2[shader].newShader;
                 }
             }
