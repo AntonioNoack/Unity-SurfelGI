@@ -29,7 +29,8 @@ public class CameraController : MonoBehaviour {
             rotation.y = Mathf.Clamp(rotation.y, -90f, 90f);// clamp up-down rotation
         }
         transform.localRotation = Quaternion.AngleAxis(rotation.x, Vector3.up) * Quaternion.AngleAxis(rotation.y, Vector3.left);
-        velocity = velocity * Mathf.Max(0f, 1f - friction * dt) + acceleration * dt;
+        float dt2 = Mathf.Clamp(friction * dt, 0f, 1f);
+        velocity = velocity * (1f - dt2) + acceleration * dt2;
         float vl = velocity.magnitude;
         if(vl > 0.001f * moveSpeed){
             if(vl > moveSpeed){
