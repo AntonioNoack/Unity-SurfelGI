@@ -93,9 +93,10 @@
 				IntersectionVertex vertex;
 				GetCurrentIntersectionVertex(attributeData, vertex);
 
+				// todo we can compute the lod for the first hit, use it
 				float lod = 0;
 
-				// transform normal to world space
+				// transform normal to world space & apply normal map
 				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
 				float3 objectNormal = normalize(vertex.normalOS);
 				float3 objectTangent = normalize(vertex.tangentOS);
@@ -105,6 +106,8 @@
 				// done check that the order & signs are correct: looks correct :3
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
+				float3 surfaceWorldNormal = normalize(mul(objectToWorld, objectNormal));
+				
 				
 				// todo respect metallic and glossiness maps
 
@@ -128,26 +131,34 @@
 				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
-				RayDesc rayDesc;
-				rayDesc.Origin = worldPos;
-				rayDesc.Direction = scatterRayDir;
-				rayDesc.TMin = 0.001;
-				rayDesc.TMax = 100;
+				// prevent a lot of light bleeding
+				if(dot(scatterRayDir, surfaceWorldNormal) >= 0.0) {
 
-				// Create and init the scattered payload
-				RayPayload scatterRayPayload;
-				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
-				scatterRayPayload.randomSeed = rayPayload.randomSeed;
-				scatterRayPayload.depth = rayPayload.depth + 1;				
+					RayDesc rayDesc;
+					rayDesc.Origin = worldPos;
+					rayDesc.Direction = scatterRayDir;
+					rayDesc.TMin = 0;
+					rayDesc.TMax = 1000;
 
-				// shoot scattered ray
-				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+					// Create and init the scattered payload
+					RayPayload scatterRayPayload;
+					scatterRayPayload.color = float3(0.0, 0.0, 0.0);
+					scatterRayPayload.randomSeed = rayPayload.randomSeed;
+					scatterRayPayload.depth = rayPayload.depth + 1;				
+
+					// shoot scattered ray
+					TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+					
+					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
+					float3 color = color0.rgb * _Color.rgb;
+					rayPayload.color = rayPayload.depth == 0 ? 
+						scatterRayPayload.color :
+						color * scatterRayPayload.color;
+					
+				} // else ambient occlusion, directly by the surface itself
+
 				
-				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
-				float3 color = color0.rgb * _Color.rgb;
-				rayPayload.color = rayPayload.depth == 0 ? 
-					scatterRayPayload.color :
-					color * scatterRayPayload.color;
 			}
 
 			ENDHLSL
