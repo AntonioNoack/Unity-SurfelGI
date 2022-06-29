@@ -40,5 +40,8 @@ public class CameraController : MonoBehaviour {
             // transform movement into global space
             transform.Translate(movement, Space.Self);
         }
+        if(Input.GetKeyDown(KeyCode.Escape)) {// for builds
+            Application.Quit();
+        }
     }
 }

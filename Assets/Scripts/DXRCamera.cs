@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 
 public class DXRCamera : MonoBehaviour {
     
@@ -13,7 +14,11 @@ public class DXRCamera : MonoBehaviour {
     private RenderTexture accu1;
     private RenderTexture accu2;
 
+    // previous GBuffers for motion-vector-improved sample accumulation
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
+
+    // summed global illumination
+    private RenderTexture emissiveTarget;
 
     // scene structure for raytracing
     private RayTracingAccelerationStructure rtas;
@@ -77,6 +82,10 @@ public class DXRCamera : MonoBehaviour {
         prevGBuff2 = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
         prevGBuffD = new RenderTexture(width, height, 0, RenderTextureFormat.RFloat, RenderTextureReadWrite.Default);
 
+        emissiveTarget = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Default);
+        emissiveTarget.enableRandomWrite = true;
+        emissiveTarget.Create();
+
         prevGBuff0.enableRandomWrite = true;
         prevGBuff1.enableRandomWrite = true;
         prevGBuff2.enableRandomWrite = true;
@@ -104,6 +113,7 @@ public class DXRCamera : MonoBehaviour {
         prevGBuff1.Release();
         prevGBuff2.Release();
         prevGBuffD.Release();
+        emissiveTarget.Release();
         // skyBox.Release(); // not supported???
     }
 
@@ -121,6 +131,7 @@ public class DXRCamera : MonoBehaviour {
             RenderSky();
             needsSkyBoxUpdate = false;
         }
+        RenderEmissiveTexture();
     }
 
     private void UpdateParameters() {
@@ -171,53 +182,137 @@ public class DXRCamera : MonoBehaviour {
         else Debug.Log("Missing skybox camera");
     }
 
+    public Mesh cubeMesh;
+    public Material surfelMaterial;
+    public bool doRT = false;
+
+    private CommandBuffer cmdBuffer = null;
+
+    private GraphicsBuffer countBuffer;
+
+    void RenderEmissiveTexture(){
+
+        if(cubeMesh == null || surfelMaterial == null){
+            Debug.Log("Missing surfel "+(
+                cubeMesh == null ? 
+                    surfelMaterial == null ? "mesh and material" :
+                    "mesh" : "material"
+            ));
+            return;
+        }
+
+        if(cmdBuffer == null) {
+            Debug.Log("Creating new command buffer");
+            cmdBuffer = new CommandBuffer();
+            cmdBuffer.name = "Surfel Emission";
+            countBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.IndirectArguments, 1, 4); // element count, stride in bytes
+            int[] data = new int[1];
+            data[0] = 16;
+            countBuffer.SetData(data);
+            _camera.AddCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
+        }
+
+        // surfelMaterial.SetMatrix("_InvViewMatrix", _camera.worldToCameraMatrix.inverse);
+        // surfelMaterial.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
+        float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
+        surfelMaterial.SetVector("_FieldOfViewFactor", new Vector2(fy*_camera.pixelWidth/_camera.pixelHeight, fy));
+
+        cmdBuffer.Clear(); // clear all commands
+        cmdBuffer.SetRenderTarget(emissiveTarget);
+
+
+
+        // https://docs.unity3d.com/ScriptReference/Rendering.CommandBuffer.SetViewProjectionMatrices.html
+        cmdBuffer.SetViewProjectionMatrices(_camera.worldToCameraMatrix, _camera.projectionMatrix);
+        cmdBuffer.ClearRenderTarget(true, true, Color.clear, 1f);// depth, color, color-value, depth-value (default is 1)
+
+
+
+
+        // todo copy original depth into their depth for better performance
+        // RenderTexture prev = RenderTexture.active;
+        // if(changeRT) Graphics.SetRenderTarget(emissiveTarget);
+        // todo define/update surfel positions by previous emissiveTarget density
+        int numInstances = 1023;
+        Matrix4x4[] instData = new Matrix4x4[numInstances];
+        for(int i=0;i<numInstances;i++){
+            int x = i & 31, y = i >> 5;
+            instData[i] = Matrix4x4.Translate(new Vector3((x-15.5f)*0.7f, 0f, (y-15.5f)*0.7f));
+        }
+
+        int pass = -1; // surfelMaterial.FindPass(""); // which shader pass, or -1 for all
+        cmdBuffer.DrawMeshInstanced(cubeMesh, 0, surfelMaterial, pass, instData);
+
+        // crashes
+        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, surfelMaterial, pass, countBuffer);
+
+        // Graphics.ExecuteCommandBuffer(cmdBuffer);
+    }
+
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
 
-        // update frame index and start path tracer
-        rayTracingShader.SetInt("_FrameIndex", frameIndex);
-        // start one thread for each pixel on screen
-        rayTracingShader.SetTexture("_SkyBox", skyBox);
-        rayTracingShader.SetTexture("_DxrTarget", giTarget);
-        rayTracingShader.SetShaderPass("DxrPass");
-        rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
-        
-        // update accumulation material
-        Vector3 pos = _camera.transform.position;
-        Vector3 deltaPos = pos - previousCameraPosition;
-        previousCameraPosition = pos;
-        accuMaterial.SetVector("_DeltaCameraPosition", deltaPos);
-        accuMaterial.SetTexture("_CurrentFrame", giTarget);
-        accuMaterial.SetTexture("_Accumulation", accu1);
-        accuMaterial.SetInt("_FrameIndex", frameIndex++);
+        if(doRT){
 
-        // accumulate current raytracing result
-        accuMaterial.SetTexture("prevGBuff0", prevGBuff0);
-        accuMaterial.SetTexture("prevGBuff1", prevGBuff1);
-        accuMaterial.SetTexture("prevGBuff2", prevGBuff2);
-        accuMaterial.SetTexture("prevGBuffD", prevGBuffD);
-        Graphics.Blit(giTarget, accu2, accuMaterial);
+            // update frame index and start path tracer
+            rayTracingShader.SetInt("_FrameIndex", frameIndex);
+            // start one thread for each pixel on screen
+            rayTracingShader.SetTexture("_SkyBox", skyBox);
+            rayTracingShader.SetTexture("_DxrTarget", giTarget);
+            rayTracingShader.SetShaderPass("DxrPass");
+            rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
 
-        // display result on screen
-        displayMaterial.SetTexture("_SkyBox", skyBox);
-        displayMaterial.SetTexture("_Accumulation", accu2);
-        displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-        // displayMaterial.SetVector("_CameraPosition", pos);
-        var rotation = _camera.transform.rotation;
-        displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
-        float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
-        Graphics.Blit(accu2, destination, displayMaterial);
+            // update accumulation material
+            Vector3 pos = _camera.transform.position;
+            Vector3 deltaPos = pos - previousCameraPosition;
+            previousCameraPosition = pos;
+            accuMaterial.SetVector("_DeltaCameraPosition", deltaPos);
+            accuMaterial.SetTexture("_CurrentFrame", giTarget);
+            accuMaterial.SetTexture("_Accumulation", accu1);
+            accuMaterial.SetInt("_FrameIndex", frameIndex++);
 
-        Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
-        Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
-        Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
-        Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+            // accumulate current raytracing result
+            accuMaterial.SetTexture("prevGBuff0", prevGBuff0);
+            accuMaterial.SetTexture("prevGBuff1", prevGBuff1);
+            accuMaterial.SetTexture("prevGBuff2", prevGBuff2);
+            accuMaterial.SetTexture("prevGBuffD", prevGBuffD);
+            Graphics.Blit(giTarget, accu2, accuMaterial);
 
-        // switch accumulate textures
-        var temp = accu1;
-        accu1 = accu2;
-        accu2 = temp;
+            // display result on screen
+            displayMaterial.SetTexture("_SkyBox", skyBox);
+            displayMaterial.SetTexture("_Accumulation", accu2);
+            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+            // displayMaterial.SetVector("_CameraPosition", pos);
+            var rotation = _camera.transform.rotation;
+            displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+            Graphics.Blit(accu2, destination, displayMaterial);
+
+            Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
+            Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
+            Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
+            Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+
+            // switch accumulate textures
+            var temp = accu1;
+            accu1 = accu2;
+            accu2 = temp;
+
+        } else {
+
+            // display result on screen
+            displayMaterial.SetTexture("_SkyBox", skyBox);
+            displayMaterial.SetTexture("_Accumulation", emissiveTarget);
+            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+            // displayMaterial.SetVector("_CameraPosition", pos);
+            var rotation = _camera.transform.rotation;
+            displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+            Graphics.Blit(null, destination, displayMaterial);
+
+        }
 
     }
 
@@ -229,5 +324,14 @@ public class DXRCamera : MonoBehaviour {
     private void OnDestroy() {
         rtas.Release();
         DestroyTargets();
+        if(countBuffer != null) countBuffer.Release();
+        countBuffer = null;
+        if(_camera != null && cmdBuffer != null) {
+            _camera.RemoveCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
+        }
+        if(cmdBuffer != null){
+            cmdBuffer.Release();
+            cmdBuffer = null;
+        }
     }
 }
