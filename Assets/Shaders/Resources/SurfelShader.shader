@@ -3,99 +3,139 @@ Shader "Custom/SurfelShader" {
     }
     SubShader {
         Tags { "RenderType" = "Opaque" }
-        LOD 200
-        Blend One One // additive blending
+        LOD 100
+        ZTest Always
         ZWrite Off
-        ZTest Always // can be changed to farther in the future
+        Blend One One
         Cull Front
 
-        CGPROGRAM
-        // Physically based Standard lighting model, and enable shadows on all light types
-        #pragma surface surf Standard fullforwardshadows vertex:vert
+        Pass {
 
-        // Use shader model 3.0 target, to get nicer looking lighting
-        #pragma target 3.5
+            CGPROGRAM
 
-        struct Input {
-            float2 uv_MainTex;
-            float3 worldPos;
-            float4 screenPos; // defined by Unity
-            float3 surfelWorldPos;
-        };
-        
-		// GBuffer for metallic & roughness
-		sampler2D _CameraGBufferTexture0;
-		sampler2D _CameraGBufferTexture1;
-		sampler2D _CameraGBufferTexture2;
-		sampler2D _CameraDepthTexture;
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma multi_compile_instancing
+            #pragma target 3.5
 
-        // Add instancing support for this shader. You need to check 'Enable Instancing' on materials that use the shader.
-        // See https://docs.unity3d.com/Manual/GPUInstancing.html for more information about instancing.
-        // #pragma instancing_options assumeuniformscaling
-        UNITY_INSTANCING_BUFFER_START(Props)
-            // put more per-instance properties here
-        UNITY_INSTANCING_BUFFER_END(Props)
+            #include "UnityCG.cginc"
 
-        void vert(inout appdata_full v, out Input o) {
-            UNITY_INITIALIZE_OUTPUT(Input, o);
-            o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
-            o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-        }
+            struct appdata {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+                uint instanceID : SV_InstanceID;
+            };
 
-        float2 _FieldOfViewFactor;
-
-        // possible optimizations:
-        // copying depth, and then using depth-test: https://forum.unity.com/threads/how-do-i-copy-depth-to-the-camera-target-in-unitys-srp.713024/
-
-        void surf(Input i, inout SurfaceOutputStandard o) {
-
-            float2 uv = i.screenPos.xy / i.screenPos.w;
-            half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
-			half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
-			half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
-			UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
-			float specular = SpecularStrength(data.specularColor);
-			float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
-			// float depth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
-			// float depth = DECODE_EYEDEPTH(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
+            struct v2f {
+                float4 vertex : SV_POSITION;
+                float3 worldPos : TEXCOORD1;
+                float4 screenPos : TEXCOORD2; // defined by Unity
+                float3 surfelWorldPos : TEXCOORD3;
+                // UNITY_VERTEX_OUTPUT_STEREO
+            };
+      
             
-			float3 diff = data.diffuseColor;
-			float3 spec = data.specularColor;
-            float3 color = diff + spec;
-            float3 normal = data.normalWorld;
+            sampler2D _CameraGBufferTexture0;
+            sampler2D _CameraGBufferTexture1;
+            sampler2D _CameraGBufferTexture2;
+            sampler2D _CameraDepthTexture;
 
-            // calculate surface world position from depth x direction
-            float3 lookDir0 = mul((float3x3) UNITY_MATRIX_V, float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0));
-            float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
-            // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
-            float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-            float3 surfaceLocalPosition = surfaceWorldPosition - i.surfelWorldPos;
+            struct Surfel {
+                float4 rotation;
+                float3 position;
+                float size;
+            };
 
-            // todo use better falloff function
-            // todo encode direction in surfel, and use normal-alignment for weight
+        #ifdef SHADER_API_D3D11
+            uniform StructuredBuffer<Surfel> _Surfels : register(t1);
+        #endif
 
-            // todo position surfels by compute shader & ray tracing
-            // todo write light data into surfels
+            // global property
+            int _InstanceIDOffset;
+            int _SurfelCount;
 
-            // o.Albedo = normalize(i.surfelWorldPos)*.5+.5;
-            o.Albedo = color;
-            // o.Albedo = normal*.5+.5;
-            // o.Albedo = normalize(surfaceLocalPosition)*.5+.5;
-            float closeness = saturate(1.0 - 2.0 * length(surfaceLocalPosition));
-            if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
-            // float closeness = frac(length(surfaceLocalPosition)); // much too uniform, why???
-            // float closeness = frac(depth);
-            o.Albedo = float3(closeness,closeness,closeness);
-            // o.Albedo = frac(length(lookDir));
-            // o.Albedo = frac(depth);
-            // o.Albedo = frac(surfaceWorldPosition);
+            v2f vert (appdata v) {
+                v2f o;
+                #ifdef UNITY_INSTANCING_ENABLED
+                UNITY_SETUP_INSTANCE_ID(v);
+                #endif
+                UNITY_INITIALIZE_OUTPUT(v2f, o);
+                #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
+                    int surfelId = unity_InstanceID + _InstanceIDOffset;
+                    Surfel surfel;
+                    if(surfelId < _SurfelCount) {
+                        // Surfel surfel = _Surfels[min(unity_InstanceID, _Surfels.Length)]; // doesn't work
+                        surfel = _Surfels[surfelId]; // does work, but only for DrawMeshInstanced
+                        // InitIndirectDrawArgs(0); "unexpected identifier 'ByteAddressBuffer'"
+                        // uint cmdID = GetCommandID(0);
+                        // uint instanceID = GetIndirectInstanceID(svInstanceID);
+                        // Surfel surfel = _Surfels[min(instanceID, 255)]; 
+                        v.vertex.xyz += surfel.position;
+                    } else {
+                        v.vertex = 0; // remove cube visually
+                    }
+                #endif
+                o.vertex = UnityObjectToClipPos(v.vertex);
+                o.screenPos = ComputeScreenPos(o.vertex);
+                o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
+                #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
+                o.surfelWorldPos += surfel.position;
+                #endif
+                o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                return o;
+            }
 
-            // Metallic and smoothness come from slider variables
-            o.Metallic = 0.0;
-            o.Smoothness = 0.0;
-            o.Alpha = 1.0;
+			#include "UnityCG.cginc"
+            #include "UnityGBuffer.cginc"
+			#include "UnityStandardUtils.cginc"
+
+            float2 _FieldOfViewFactor;
+
+            float4 frag (v2f i) : SV_Target {
+                float2 uv = i.screenPos.xy / i.screenPos.w;
+                half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
+                half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
+                half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
+                UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
+                float specular = SpecularStrength(data.specularColor);
+                float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
+                
+                float3 diff = data.diffuseColor;
+                float3 spec = data.specularColor;
+                float3 color = diff + spec;
+                float3 normal = data.normalWorld;
+
+                // calculate surface world position from depth x direction
+                float3 lookDir0 = mul((float3x3) UNITY_MATRIX_V, float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0));
+                float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
+                // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
+                float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
+                float3 surfaceLocalPosition = surfaceWorldPosition - i.surfelWorldPos;
+
+                // todo use better falloff function
+                // todo encode direction in surfel, and use normal-alignment for weight
+
+                // todo position surfels by compute shader & ray tracing
+                // todo write light data into surfels
+                
+                float3 Albedo;
+                // Albedo = color;
+                // Albedo = normal*.5+.5;
+                // Albedo = normalize(surfaceLocalPosition)*.5+.5;
+                // Albedo = lookDir;
+                // Albedo = frac(log2(depth));
+                // Albedo = frac(surfaceWorldPosition);
+                float closeness = 0.001 + 0.999 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
+                if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
+                // float closeness = frac(depth);
+                Albedo = float3(closeness,closeness,closeness);
+                #ifndef UNITY_INSTANCING_ENABLED
+                Albedo.yz = 0;
+                #endif
+                return float4(Albedo,1);
+            }
+            
+            ENDCG
         }
-        ENDCG
     }
-    FallBack "Diffuse"
 }

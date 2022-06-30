@@ -1,11 +1,20 @@
 ﻿using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+using Unity.Mathematics; // float4x3, float3
 
 public class DXRCamera : MonoBehaviour {
-    
-    public Color SkyColor = Color.blue;
-    public Color GroundColor = Color.gray;
+
+    struct Surfel {
+        float4 rotation;
+        float3 position;
+        float size;
+    };
+
+    public ComputeShader surfelDistShader;
+    private ComputeBuffer surfels;
+
+
 
     private Camera _camera;
     // target texture for raytracing
@@ -56,6 +65,29 @@ public class DXRCamera : MonoBehaviour {
         // update raytracing parameters
         UpdateParameters();
 
+        for(int i=0;i<instData.Length;i++){
+            instData[i] = Matrix4x4.identity;
+        }
+
+    }
+
+    private int CeilDiv(int a, int d){
+        return (a + d - 1) / d;
+    }
+
+    private void DistributeSurfels(){
+        var shader = surfelDistShader;
+        if(shader == null) Debug.Log("Missing surfel shader!");
+        if(surfels == null) {
+            surfels = new ComputeBuffer(64 * 1024, 4 * (4 + 3 + 1));
+            Debug.Log("created surfel compute buffer, "+surfels.count);
+        }
+        int kernel = shader.FindKernel("SurfelDistribution");
+        shader.SetFloat("_Time", Time.time);
+        uint gsx, gsy, gsz;
+        shader.SetBuffer(kernel, "Surfels", surfels);
+        shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
+        shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
     }
 
     private void EnableMotionVectors(){
@@ -131,6 +163,7 @@ public class DXRCamera : MonoBehaviour {
             RenderSky();
             needsSkyBoxUpdate = false;
         }
+        DistributeSurfels();
         RenderEmissiveTexture();
     }
 
@@ -188,7 +221,7 @@ public class DXRCamera : MonoBehaviour {
 
     private CommandBuffer cmdBuffer = null;
 
-    private GraphicsBuffer countBuffer;
+    private ComputeBuffer countBuffer;
 
     void RenderEmissiveTexture(){
 
@@ -205,9 +238,13 @@ public class DXRCamera : MonoBehaviour {
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
-            countBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.IndirectArguments, 1, 4); // element count, stride in bytes
-            int[] data = new int[1];
-            data[0] = 16;
+            countBuffer = new ComputeBuffer(5, 4, ComputeBufferType.IndirectArguments); // element count, stride in bytes
+            uint[] data = new uint[4];
+            int subMeshIndex = 0;
+            data[0] = (uint) cubeMesh.GetIndexCount(subMeshIndex);
+            data[1] = (uint) 1023; // instance count
+            data[2] = (uint) cubeMesh.GetIndexStart(subMeshIndex);
+            data[3] = (uint) cubeMesh.GetBaseVertex(subMeshIndex);
             countBuffer.SetData(data);
             _camera.AddCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
         }
@@ -226,28 +263,33 @@ public class DXRCamera : MonoBehaviour {
         cmdBuffer.SetViewProjectionMatrices(_camera.worldToCameraMatrix, _camera.projectionMatrix);
         cmdBuffer.ClearRenderTarget(true, true, Color.clear, 1f);// depth, color, color-value, depth-value (default is 1)
 
-
-
-
         // todo copy original depth into their depth for better performance
         // RenderTexture prev = RenderTexture.active;
         // if(changeRT) Graphics.SetRenderTarget(emissiveTarget);
         // todo define/update surfel positions by previous emissiveTarget density
-        int numInstances = 1023;
-        Matrix4x4[] instData = new Matrix4x4[numInstances];
-        for(int i=0;i<numInstances;i++){
-            int x = i & 31, y = i >> 5;
-            instData[i] = Matrix4x4.Translate(new Vector3((x-15.5f)*0.7f, 0f, (y-15.5f)*0.7f));
-        }
+        
+        
 
+        surfelMaterial.SetBuffer("_Surfels", surfels);        
+        cmdBuffer.SetGlobalFloat("_SurfelCount", surfels.count);
+
+        int numInstances = surfels.count;
         int pass = -1; // surfelMaterial.FindPass(""); // which shader pass, or -1 for all
-        cmdBuffer.DrawMeshInstanced(cubeMesh, 0, surfelMaterial, pass, instData);
+        int offset = 0;
+        while(numInstances > 0){
+            cmdBuffer.SetGlobalFloat("_InstanceIDOffset", offset);
+            cmdBuffer.DrawMeshInstanced(cubeMesh, 0, surfelMaterial, pass, instData);
+            numInstances -= 512;
+            offset += 512;
+        }
+        
 
-        // crashes
-        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, surfelMaterial, pass, countBuffer);
+        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, surfelMaterial, pass, countBuffer, 0);
 
         // Graphics.ExecuteCommandBuffer(cmdBuffer);
     }
+    
+    private Matrix4x4[] instData = new Matrix4x4[512];
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
@@ -332,6 +374,10 @@ public class DXRCamera : MonoBehaviour {
         if(cmdBuffer != null){
             cmdBuffer.Release();
             cmdBuffer = null;
+        }
+        if(surfels != null){
+            surfels.Release();
+            surfels = null;
         }
     }
 }

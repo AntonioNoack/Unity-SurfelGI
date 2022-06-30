@@ -1,0 +1,51 @@
+
+#pragma kernel SurfelDistribution
+
+// todo compute surfel distribution:
+// todo delete surfels, which are too large or too small
+// todo create new surfels, where they are missing
+
+// todo use resulting positions in SurfelShader.shader
+// like https://forum.unity.com/threads/accessing-a-computebuffer-from-a-surface-shader-after-a-computeshader-writes-to-it-solved.497958/
+
+
+struct Surfel {
+    float4 rotation;
+    float3 position;
+    float size;
+    float3 color;
+    int instanceId;
+};
+
+RWStructuredBuffer<Surfel> Surfels;
+
+// todo theoretically, we need a matrix array, and a ptr to the matrix on every Surfel
+RWStructuredBuffer<float4x4> Transforms;
+
+float _Time;
+
+[numthreads(64,1,1)]
+void SurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
+
+    uint index = dispatchIdx.x;
+    if(index < Surfels.Length){
+
+        Surfel result;
+
+        uint x = index & 255;
+        uint y = index >> 8;
+
+        float rx = x - 127.5;
+        float ry = y - 127.5;
+
+        float c = cos(_Time), s = sin(_Time);
+        float2 p2d = mul(float2x2(c,s,-s,c), float2(rx,ry));
+        result.position = float3(p2d.x, 0.0, p2d.y);
+        result.rotation = float4(0,0,0,1);
+        result.size = 1.0;
+
+        Surfels[index] = result;
+
+    }
+    
+}
