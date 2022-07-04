@@ -32,6 +32,7 @@ Shader "Custom/SurfelShader" {
                 float4 screenPos : TEXCOORD2; // defined by Unity
                 float3 surfelWorldPos : TEXCOORD3;
                 float4 color: TEXCOORD4;
+                float size: TEXCOORD5;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
       
@@ -76,7 +77,7 @@ Shader "Custom/SurfelShader" {
                         // uint cmdID = GetCommandID(0);
                         // uint instanceID = GetIndirectInstanceID(svInstanceID);
                         // Surfel surfel = _Surfels[min(instanceID, 255)]; 
-                        v.vertex.xyz = quatRot(v.vertex.xyz, surfel.rotation) * surfel.size + surfel.position;
+                        v.vertex.xyz = quatRot(v.vertex.xyz * float3(1.0,0.2,1.0), surfel.rotation) * surfel.size + surfel.position;
                     } else {
                         v.vertex = 0; // remove cube visually
                     }
@@ -87,6 +88,7 @@ Shader "Custom/SurfelShader" {
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position;
                 o.color = surfel.color;
+                o.size = surfel.size;
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 return o;
@@ -117,7 +119,7 @@ Shader "Custom/SurfelShader" {
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
                 // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-                float3 surfaceLocalPosition = surfaceWorldPosition - i.surfelWorldPos;
+                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) / i.size;
 
                 // todo use better falloff function
                 // todo encode direction in surfel, and use normal-alignment for weight
@@ -132,14 +134,15 @@ Shader "Custom/SurfelShader" {
                 // Albedo = lookDir;
                 // Albedo = frac(log2(depth));
                 // Albedo = frac(surfaceWorldPosition);
-                float closeness = 0.01 + 0.99 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
+                float closeness = 0.001 + 0.999 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
                 if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 // float closeness = frac(depth);
-                Albedo = i.color * float3(closeness,closeness,closeness);
+                return i.color * closeness;
+                Albedo = float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED
                 Albedo.yz = 0;
                 #endif
-                return float4(Albedo,1);
+                return float4(Albedo,1.0);
             }
             
             ENDCG

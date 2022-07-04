@@ -87,7 +87,8 @@
 
 			float4 frag (v2f i) : SV_Target {
 
-				return frac(tex2D(_Accumulation, i.uv));
+				float4 ill = tex2D(_Accumulation, i.uv);
+				/*if(i.uv.x < 0.5)*/ return float4(frac(ill.xyz/max(1.0,ill.w)), 1.0);
 
 				float2 uv = i.uv;
 				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));
@@ -107,10 +108,10 @@
 					for(int i=-di;i<=di;i++){
 						float2 uv2 = uv + float2(i,j) * duv;
 						float3 nor = readSurfaceNormal(uv2);
-						float3 illumination = tex2D(_Accumulation, uv2).rgb;
+						float4 illumination = tex2D(_Accumulation, uv2);
 						// return float4(illumination, 1.0);
 						float weight = i == 0 && j == 0 ? 1.0 : exp(-sigma*float(i*i+j*j)) * max(0.0, dot(nor,normal) - 0.8);
-						sum += float4(illumination.xyz * weight, weight);
+						sum += float4(illumination.xyz * (weight / illumination.w), weight);
 					}
 				}
 				color *= sum.xyz * (_Exposure / sum.w);
