@@ -31,6 +31,7 @@ Shader "Custom/SurfelShader" {
                 float3 worldPos : TEXCOORD1;
                 float4 screenPos : TEXCOORD2; // defined by Unity
                 float3 surfelWorldPos : TEXCOORD3;
+                float4 color: TEXCOORD4;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
       
@@ -44,6 +45,7 @@ Shader "Custom/SurfelShader" {
                 float4 rotation;
                 float3 position;
                 float size;
+                float4 color;
             };
 
         #ifdef SHADER_API_D3D11
@@ -53,6 +55,10 @@ Shader "Custom/SurfelShader" {
             // global property
             int _InstanceIDOffset;
             int _SurfelCount;
+
+            float3 quatRot(float3 v, float4 q){
+				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+			}
 
             v2f vert (appdata v) {
                 v2f o;
@@ -70,7 +76,7 @@ Shader "Custom/SurfelShader" {
                         // uint cmdID = GetCommandID(0);
                         // uint instanceID = GetIndirectInstanceID(svInstanceID);
                         // Surfel surfel = _Surfels[min(instanceID, 255)]; 
-                        v.vertex.xyz += surfel.position;
+                        v.vertex.xyz = quatRot(v.vertex.xyz, surfel.rotation) * surfel.size + surfel.position;
                     } else {
                         v.vertex = 0; // remove cube visually
                     }
@@ -80,6 +86,7 @@ Shader "Custom/SurfelShader" {
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position;
+                o.color = surfel.color;
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 return o;
@@ -125,10 +132,10 @@ Shader "Custom/SurfelShader" {
                 // Albedo = lookDir;
                 // Albedo = frac(log2(depth));
                 // Albedo = frac(surfaceWorldPosition);
-                float closeness = 0.001 + 0.999 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
+                float closeness = 0.01 + 0.99 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
                 if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 // float closeness = frac(depth);
-                Albedo = float3(closeness,closeness,closeness);
+                Albedo = i.color * float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED
                 Albedo.yz = 0;
                 #endif

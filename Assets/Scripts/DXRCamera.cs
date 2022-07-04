@@ -2,6 +2,7 @@
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using Unity.Mathematics; // float4x3, float3
+using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
 
 public class DXRCamera : MonoBehaviour {
 
@@ -9,12 +10,13 @@ public class DXRCamera : MonoBehaviour {
         float4 rotation;
         float3 position;
         float size;
+        float4 color;
     };
 
     public ComputeShader surfelDistShader;
     private ComputeBuffer surfels;
 
-
+    public int maxNumSurfels = 64 * 1024;
 
     private Camera _camera;
     // target texture for raytracing
@@ -79,15 +81,44 @@ public class DXRCamera : MonoBehaviour {
         var shader = surfelDistShader;
         if(shader == null) Debug.Log("Missing surfel shader!");
         if(surfels == null) {
-            surfels = new ComputeBuffer(64 * 1024, 4 * (4 + 3 + 1));
+            surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());
             Debug.Log("created surfel compute buffer, "+surfels.count);
         }
+        
         int kernel = shader.FindKernel("SurfelDistribution");
+
         shader.SetFloat("_Time", Time.time);
+        
+        var camTransform = _camera.transform;
+        shader.SetVector("_CameraPosition", camTransform.position);
+        
+        var rotation = camTransform.rotation;
+        shader.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+        
+        float invZFactor = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        shader.SetVector("_CameraUVScale", new Vector2(((float)giTarget.height / (giTarget.width)) * invZFactor, invZFactor));
+
+        // BuiltinRenderTextureType.GBuffer0
+        /*shader.SetTexture(kernel, "_CameraGBufferTexture0", Shader.GetGlobalTexture("_CameraGBufferTexture0"));
+        shader.SetTexture(kernel, "_CameraGBufferTexture1", Shader.GetGlobalTexture("_CameraGBufferTexture1"));
+        shader.SetTexture(kernel, "_CameraGBufferTexture2", Shader.GetGlobalTexture("_CameraGBufferTexture2"));
+        shader.SetTexture(kernel, "_CameraDepthTexture",    Shader.GetGlobalTexture("_CameraDepthTexture"));*/
+
+        shader.SetTexture(kernel, "_CameraGBufferTexture0", prevGBuff0);
+        shader.SetTexture(kernel, "_CameraGBufferTexture1", prevGBuff1);
+        shader.SetTexture(kernel, "_CameraGBufferTexture2", prevGBuff2);
+        shader.SetTexture(kernel, "_CameraDepthTexture",    prevGBuffD);
+
+        // https://docs.unity3d.com/Manual/SL-UnityShaderVariables.html
+        float near = _camera.nearClipPlane, far = _camera.farClipPlane;
+        float zbpx = 1f - far / near, zbpy = far / near;// zbp = z buffer params
+        shader.SetVector("_ZBufferParams", new Vector4(zbpx, zbpy, zbpx / far, zbpy / far));
+
         uint gsx, gsy, gsz;
         shader.SetBuffer(kernel, "Surfels", surfels);
         shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
         shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
+
     }
 
     private void EnableMotionVectors(){

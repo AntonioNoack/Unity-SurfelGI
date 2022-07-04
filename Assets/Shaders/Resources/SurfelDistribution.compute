@@ -13,39 +13,126 @@ struct Surfel {
     float4 rotation;
     float3 position;
     float size;
-    float3 color;
-    int instanceId;
+    float4 color;
 };
+
+#define PI 3.141592653589793
 
 RWStructuredBuffer<Surfel> Surfels;
 
 // todo theoretically, we need a matrix array, and a ptr to the matrix on every Surfel
 RWStructuredBuffer<float4x4> Transforms;
 
+// GBuffer and depth at camera
+Texture2D<half4> _CameraGBufferTexture0;
+Texture2D<half4> _CameraGBufferTexture1;
+Texture2D<half4> _CameraGBufferTexture2;
+Texture2D<half4> _CameraDepthTexture;
+SamplerState _PointClampSampler;
+
+/*UnityStandardData data;
+data.diffuseColor   = inGBuffer0.rgb;
+data.occlusion      = inGBuffer0.a;
+data.specularColor  = inGBuffer1.rgb;
+data.smoothness     = inGBuffer1.a;
+data.normalWorld    = normalize((float3)inGBuffer2.rgb * 2 - 1);*/
+
 float _Time;
+
+float3 _CameraPosition;
+float4 _CameraRotation;
+float2 _CameraUVScale;
+
+// adopted from https://answers.unity.com/questions/467614/what-is-the-source-code-of-quaternionlookrotation.html
+float4 normalToQuaternion(float3 normal){
+    float3 v1 = normal; // m1x
+    // float3 v0 = normalize(cross(normal, float3(0,1,0)));// could be simplified
+    float3 v0 = dot(normal.xy,normal.xy) < 1.0 ? 
+        normalize(float3(normal.z, 0, -normal.x)) : float3(1,0,0);// m0x; could be simplified when using the fib sphere
+    float3 v2 = cross(v0,v1); // m2x
+    float diag = v0.x + v1.y + v2.z;
+    // we assume diag > 0, is correct for fib sphere
+    float num = sqrt(diag + 1.0);
+    return float4(float3(v1.z - v2.y, v2.x - v0.z, v0.y - v1.x) * (0.5 / num), num * 0.5);
+}
+
+// adopted from https://stackoverflow.com/a/26127012/4979303
+float3 fibonacciSphere(int i, int n){
+    const float phi = PI * (3.0 - sqrt(5.0));
+    float i2 = float(i);
+    float y = 1.0 - 2.0 * i2 / float(n-1);
+    float theta = phi * i2;
+    float radius = sqrt(max(1.0 - y * y, 0.0));
+    return float3(cos(theta) * radius, y, sin(theta) * radius);
+}
+
+float3 quatRot(float3 v, float4 q){
+	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+
+float3 quatRotInv(float3 v, float4 q){
+	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
+}
+
+float4 _ZBufferParams;
+float linearEyeDepth(float z){
+	return 1.0 / (_ZBufferParams.z * z + _ZBufferParams.w);
+}
 
 [numthreads(64,1,1)]
 void SurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
 
     uint index = dispatchIdx.x;
-    if(index < Surfels.Length){
+    uint length = Surfels.Length;
+    if(index < length){
 
         Surfel result;
 
-        uint x = index & 255;
-        uint y = index >> 8;
+        float3 worldDir = fibonacciSphere(index, length);
+        float4 surfelRot = normalToQuaternion(worldDir);
 
-        float rx = x - 127.5;
-        float ry = y - 127.5;
+        // calculate UV coordinates on camera
+        float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
+        /*if(cameraDir.z > 0.0){ // else hidden & no update required
 
-        float c = cos(_Time), s = sin(_Time);
-        float2 p2d = mul(float2x2(c,s,-s,c), float2(rx,ry));
-        result.position = float3(p2d.x, 0.0, p2d.y);
-        result.rotation = float4(0,0,0,1);
-        result.size = 1.0;
+            cameraDir.xy *= _CameraUVScale;
+            float2 uv = cameraDir.xy / cameraDir.z * 0.5 + 0.5;
+
+            if(all(uv > float2(0,0)) && all(uv < float2(1,1))){ // else outside of view frustum
+
+                float3 diffuse  = _CameraGBufferTexture0.SampleLevel(_PointClampSampler, uv, 0).rgb;
+                float3 specular = _CameraGBufferTexture1.SampleLevel(_PointClampSampler, uv, 0).rgb;
+                float3 color = diffuse + specular;
+
+                // float depth = linearEyeDepth(_CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r);
+                
+                float radius = 10.0;// todo use depth buffer / raycast to find distance
+                result.position = _CameraPosition + worldDir * radius;
+
+                result.rotation = surfelRot;
+                // surface area of a sphere: 4*pi*r²
+                float density = 0.5;
+                result.size = density * 4.0 * radius / sqrt(float(length));
+                // result.color = float4(uv,0,1);
+                result.color = float4(color,1);
+
+                Surfels[index] = result;
+                return;
+
+            }
+        }*/
+
+        float radius = 10.0;
+        result.position = _CameraPosition + worldDir * radius;
+
+        result.rotation = surfelRot;
+        // surface area of a sphere: 4*pi*r²
+        float density = 0.5;
+        result.size = density * 4.0 * radius / sqrt(float(length));
+        // result.color = float4(abs(cameraDir),1);
+        result.color = float4(1,1,1,1);
 
         Surfels[index] = result;
 
     }
-    
 }
