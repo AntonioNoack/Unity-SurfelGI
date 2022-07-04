@@ -33,6 +33,7 @@ Shader "Custom/SurfelShader" {
                 float3 surfelWorldPos : TEXCOORD3;
                 float4 color: TEXCOORD4;
                 float size: TEXCOORD5;
+                float3 surfelNormal: TEXCOORD6; // in world space
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
       
@@ -89,6 +90,7 @@ Shader "Custom/SurfelShader" {
                 o.surfelWorldPos += surfel.position;
                 o.color = surfel.color;
                 o.size = surfel.size;
+                o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 return o;
@@ -134,7 +136,10 @@ Shader "Custom/SurfelShader" {
                 // Albedo = lookDir;
                 // Albedo = frac(log2(depth));
                 // Albedo = frac(surfaceWorldPosition);
-                float closeness = 0.001 + 0.999 * saturate(1.0 - 2.0 * length(surfaceLocalPosition));
+                float closeness = 0.001 + 
+                    0.999 * 
+                    saturate(1.0 - 2.0 * length(surfaceLocalPosition)) *
+                    saturate(dot(i.surfelNormal, normal));
                 if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 // float closeness = frac(depth);
                 return i.color * closeness;
