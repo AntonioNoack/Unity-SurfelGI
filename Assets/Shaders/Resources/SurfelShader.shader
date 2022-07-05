@@ -34,6 +34,7 @@ Shader "Custom/SurfelShader" {
                 float4 color: TEXCOORD4;
                 float invSize: TEXCOORD5;
                 float3 surfelNormal: TEXCOORD6; // in world space
+                float3 localPos : TEXCOORD7;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
       
@@ -44,9 +45,8 @@ Shader "Custom/SurfelShader" {
             sampler2D _CameraDepthTexture;
 
             struct Surfel {
+                float4 position;
                 float4 rotation;
-                float3 position;
-                float size;
                 float4 color;
             };
 
@@ -64,6 +64,7 @@ Shader "Custom/SurfelShader" {
 
             v2f vert (appdata v) {
                 v2f o;
+                float3 localPos = v.vertex;
                 #ifdef UNITY_INSTANCING_ENABLED
                 UNITY_SETUP_INSTANCE_ID(v);
                 #endif
@@ -78,7 +79,8 @@ Shader "Custom/SurfelShader" {
                         // uint cmdID = GetCommandID(0);
                         // uint instanceID = GetIndirectInstanceID(svInstanceID);
                         // Surfel surfel = _Surfels[min(instanceID, 255)]; 
-                        v.vertex.xyz = quatRot(v.vertex.xyz * float3(1.0,0.2,1.0), surfel.rotation) * surfel.size + surfel.position;
+                        v.vertex.xyz = quatRot(v.vertex.xyz * float3(1.0,0.2,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
+                        if(surfel.color.w < 0.0001) v.vertex = 0; // invalid surfel / surfel without known color
                     } else {
                         v.vertex = 0; // remove cube visually
                     }
@@ -87,12 +89,13 @@ Shader "Custom/SurfelShader" {
                 o.screenPos = ComputeScreenPos(o.vertex);
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
-                o.surfelWorldPos += surfel.position;
+                o.surfelWorldPos += surfel.position.xyz;
                 o.color = surfel.color;
-                o.invSize = 1.0 / surfel.size;
+                o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                o.localPos = localPos;
                 return o;
             }
 
@@ -133,19 +136,31 @@ Shader "Custom/SurfelShader" {
                 // Albedo = lookDir;
                 // Albedo = frac(log2(depth));
                 // Albedo = frac(surfaceWorldPosition);
-                float dist = dot(surfaceLocalPosition,surfaceLocalPosition);
-                float closeness = 0.001 + 
-                    0.999 * 
-                    max(1.0/(1.0+5.0*dist)-0.1667, 0.0) *
-                    max(dot(i.surfelNormal, normal), 0.0);
+                float closeness;
+                float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
+                if(depth > 500.0 && dist > 3.0) {
+
+                    // disc like closeness
+                    dist = length(i.localPos.xz);
+                    closeness = max(1.0/(1.0+10.0*dist)-0.16667, 0.0);
+                    // return float4(closeness,closeness,closeness,1);
+                    
+                } else {
+                    closeness = /*0.001 + 
+                        0.999 * */
+                        max(1.0/(1.0+10.0*dist)-0.1667, 0.0) *
+                        max(dot(i.surfelNormal, normal), 0.0);
+                }
+
+                // return float4(closeness,closeness,closeness,1);
                 if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
-                // float closeness = frac(depth);
-                return i.color * closeness;
+                return i.color * (closeness / i.color.w);
                 Albedo = float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED
                 Albedo.yz = 0;
                 #endif
                 return float4(Albedo,1.0);
+                
             }
             
             ENDCG

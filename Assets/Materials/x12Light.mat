@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: x12Light
-  m_Shader: {fileID: 4800000, guid: b646d6dd7437f3d4ba948b4a96d92d7b, type: 3}
+  m_Shader: {fileID: 4800000, guid: 9351333cd660a494b93f77e999496617, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4

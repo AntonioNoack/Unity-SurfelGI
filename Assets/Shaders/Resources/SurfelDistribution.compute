@@ -3,22 +3,15 @@
 #pragma kernel UpdateSurfelDistribution
 #pragma kernel UpdateSurfelDistribution2
 
-// todo compute surfel distribution:
-// todo delete surfels, which are too large or too small
-// todo create new surfels, where they are missing
-
-// todo use resulting positions in SurfelShader.shader
-// like https://forum.unity.com/threads/accessing-a-computebuffer-from-a-surface-shader-after-a-computeshader-writes-to-it-solved.497958/
-
-
 struct Surfel {
+    float4 position;
     float4 rotation;
-    float3 position;
-    float size;
     float4 color;
 };
 
 #define PI 3.141592653589793
+
+#define START_WEIGHT 0.0
 
 RWStructuredBuffer<Surfel> Surfels;
 
@@ -41,6 +34,10 @@ data.normalWorld    = normalize((float3)inGBuffer2.rgb * 2 - 1);*/
 
 float _Time;
 float _Far;
+
+float _Density;
+
+int _FrameIndex;
 
 float3 _CameraPosition;
 float4 _CameraRotation;
@@ -87,21 +84,18 @@ float linearEyeDepth(float z){
 	return 1.0 / (_ZBufferParams.z * z + _ZBufferParams.w);
 }
 
-// default values don't work 🙄
-float _Density;
-
 float calculateSize(float distance){
-    return _Density * 4.0 * distance / sqrt(float(Surfels.Length));
+    return min(_Density * 4.0 * distance / sqrt(float(Surfels.Length)), _Far * 0.5);
 }
 
 Surfel InitSkySurfel(float3 worldDir) {
     float distance = _Far * 0.5;
     Surfel surfel;
-    surfel.position = _CameraPosition + worldDir * distance;
+    surfel.position.xyz = _CameraPosition + worldDir * distance;
     surfel.rotation = normalToQuaternion(worldDir);
     // surface area of a sphere: 4*pi*r²
-    surfel.size = calculateSize(distance);
-    surfel.color = float4(1,1,1,1);
+    surfel.position.w = calculateSize(distance);
+    surfel.color = START_WEIGHT * float4(1,1,1,1);
     return surfel;
 }
 
@@ -131,14 +125,14 @@ Surfel InitSurfel(float3 worldDir) {
             if(rawDepth > 0.0) {
 
                 float distance = linearEyeDepth(rawDepth) / cameraDir.z;
-                surfel.position = _CameraPosition + worldDir * distance;
+                surfel.position.xyz = _CameraPosition + worldDir * distance;
 
                 float3 surfaceDir = normalize(_CameraGBufferTexture2.SampleLevel(_PointClampSampler, uv, 0).xyz*2.0-1.0);
                 surfel.rotation = normalToQuaternion(surfaceDir);
                 // surface area of a sphere: 4*pi*r²
-                surfel.size = calculateSize(distance);
+                surfel.position.w = calculateSize(distance);
                 // surfel.color = float4(uv,frac(depth),1);
-                surfel.color = float4(color,1.0);
+                surfel.color = START_WEIGHT * float4(color,1.0);
                 // float dt = max(-dot(worldDir, surfaceDir), 0.1);
                 // surfel.color = float4(dt,dt,dt,1);
                 // surfel.color = float4(max(worldDir,0),1);
@@ -176,7 +170,7 @@ void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
         Surfel surfel = Surfels[index];
 
         // only update if surfel is visible? sounds good :)
-        float3 deltaPos = surfel.position - _CameraPosition;
+        float3 deltaPos = surfel.position.xyz - _CameraPosition;
         float  distance = length(deltaPos);
         float3 worldDir = deltaPos / distance;
         float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
@@ -187,20 +181,19 @@ void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
                 // todo if object was moving, update surfel: when we have transforms in the shader
                 // if surfel is too large, replace it
                 // if surfel is too small, replace it
-                // todo check too low or too high density
+                // to do check too low or too high density -> done in part 2
                 float targetSize = calculateSize(distance);
-                if(surfel.size < targetSize * 0.707 || surfel.size > targetSize * 1.414) {
-                    // todo use original dir, or updated dir?
+                float surfelSize = surfel.position.w;
+                if(surfelSize < targetSize * 0.707 || surfelSize > targetSize * 1.414) {
+                    // to do use original dir, or updated dir?
                     Surfels[index] = InitSurfel(fibonacciSphere(index, length1)); 
                 } else {
-                    // todo if surfel has become invisible, replace it
-                    // todo check visibility
-
+                    // to do if surfel has become invisible, replace it
+                    // to do check visibility
                 }
             }
         }
     }
-    // todo trace a few rays in different shader
 }
 
 Texture2D<half4> _Weights;
@@ -232,13 +225,14 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
         }
     }
     // todo stochastic
-    if(lowestWeight < 0.5) {
+    if(lowestWeight < 0.01) {
 
         // spawn new surfel
-        // todo find free surfel
 
         int3 uv = int3(bestX, bestY, 0);
-        int freeIndex = (bestX + bestY * width) % (Surfels.Length);
+
+        // todo find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
+        int freeIndex = (bestX + bestY * width + _FrameIndex) % (Surfels.Length);
         
 
         // distribute surfel onto pixel
@@ -254,17 +248,15 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
         float rawDepth = _CameraDepthTexture.Load(uv).r;
         if(rawDepth > 0.0) {
 
-            
-
             float2 tmpUV = cameraDir.xy/cameraDir.z;
             float cameraDirZ = sqrt(1.0 + dot(tmpUV,tmpUV));
             float distance = linearEyeDepth(rawDepth) * cameraDirZ;
-            surfel.position = _CameraPosition + worldDir * distance;
+            surfel.position.xyz = _CameraPosition + worldDir * distance;
 
             float3 surfaceDir = normalize(_CameraGBufferTexture2.Load(uv).xyz*2.0-1.0);
             surfel.rotation = normalToQuaternion(surfaceDir);
-            surfel.size = calculateSize(distance);
-            surfel.color = float4(color,1.0);
+            surfel.position.w = calculateSize(distance);
+            surfel.color = START_WEIGHT * float4(color,1.0);
 
         } else surfel = InitSkySurfel(worldDir);
 

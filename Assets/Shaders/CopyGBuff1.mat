@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: CopyGBuff1
-  m_Shader: {fileID: 4800000, guid: 4e3559e2d02cbc941ab07e1c09545c2a, type: 3}
+  m_Shader: {fileID: 4800000, guid: 549be347722db1448bf4ec8261c50422, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords:
   - USE_MOTION_VECTORS

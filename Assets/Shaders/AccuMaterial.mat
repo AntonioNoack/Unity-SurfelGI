@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: AccuMaterial
-  m_Shader: {fileID: 4800000, guid: 9d29bcbb81ae9084b8cb78753a325279, type: 3}
+  m_Shader: {fileID: 4800000, guid: a762f9149f27932499dfa2df87db6db5, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords:
   - USE_MOTION_VECTORS

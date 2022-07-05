@@ -3,6 +3,7 @@
 		_Exposure("Exposure", Range(0.0, 1000.0)) = 1.0
 		_SplitX("SplitX", Range(0,1)) = 0.75
 		_SplitY("SplitY", Range(0,1)) = 0.50
+		_DivideByAlpha("Divide By Alpha", Range(0,1)) = 0.0
 	}
 	SubShader {
 		// No culling or depth
@@ -41,6 +42,7 @@
 
 			float2 _CameraScale;
 			float4 _CameraRotation;
+			float _DivideByAlpha;
 
 			// Unitys predefined GBuffer data
 			sampler2D _CameraGBufferTexture0;
@@ -88,7 +90,12 @@
 			float4 frag (v2f i) : SV_Target {
 
 				float4 ill = tex2D(_Accumulation, i.uv);
-				/*if(i.uv.x < 0.5)*/ return float4((ill.xyz/max(1.0,ill.w)), 1.0);
+
+				// return float4(ill.w,ill.w,ill.w,1.0);
+
+				/*if(i.uv.x < 0.5)*/ 
+				if(_DivideByAlpha > 0.5) return float4(ill.xyz/max(ill.w,0.01), 1.0);
+				else return float4(ill.xyz, 1.0);
 
 				float2 uv = i.uv;
 				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));

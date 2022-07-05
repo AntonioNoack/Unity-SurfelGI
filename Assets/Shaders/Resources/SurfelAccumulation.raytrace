@@ -1,21 +1,26 @@
 ﻿#include "Common.cginc"
 
 struct Surfel {
+    float4 position;
     float4 rotation;
-    float3 position;
-    float size;
     float4 color;
 };
 
 float3 _CameraPosition;
 float4 _CameraRotation;
 float3 _CameraOffset;
+float2 _CameraUVSize;
+float _Far;
 
 int _FrameIndex;
 
 #pragma max_recursion_depth 8
 
-RWStructuredBuffer<Surfel> Surfels;
+RWStructuredBuffer<Surfel> _Surfels;
+
+float3 quatRotInv(float3 v, float4 q){
+	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
+}
 
 [shader("raygeneration")]
 void RaygenShader() {
@@ -24,51 +29,59 @@ void RaygenShader() {
 	// current surfel
 	uint index = DispatchRaysIndex().x;
 	uint numSurfels, stride;
-	Surfels.GetDimensions(numSurfels, stride);
+	_Surfels.GetDimensions(numSurfels, stride);
 	if(index < numSurfels) {
-
-		// todo only update surfels, which are in front of the camera
 
 		// we know the surface, but we do not know the local BDRF ->
 		// we need to trace the first ray, even if we know where it ends
 
-		Surfel surfel = Surfels[index];
+		Surfel surfel = _Surfels[index];
+		float surfelSize = surfel.position.w;
+		if(surfelSize < _Far * 0.5) {
 
-		// init random seed from current pixel location and frame index
-		uint seed = initRand(index, _FrameIndex);
+			float3 surfelPos = surfel.position.xyz;
+			float3 worldDir = normalize(surfelPos - _CameraPosition);
+			float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
 
-		// get random uv inside current pixel
-		// this gives us anti-aliasing for free
-		// + float2(nextRand(seed), nextRand(seed))
-		// todo we could spawn random rays to any point of the surfel disk
-		float3 deltaPos = surfel.position - _CameraPosition;
-		float distance = length(deltaPos);
-		float3 rayDir = deltaPos / distance;
+			// only update surfels, which are in front of the camera
+			if(all(abs(cameraDir.xy) < _CameraUVSize)){
+				
+				// init random seed from current pixel location and frame index
+				uint seed = initRand(index, _FrameIndex);
 
-		// init ray decriptor
-		RayDesc rayDesc;
-		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = rayDir;
-		rayDesc.TMin = distance * 0.99;
-		rayDesc.TMax = distance * 1.01;
+				// get random uv inside current pixel
+				// this gives us anti-aliasing for free
+				// + float2(nextRand(seed), nextRand(seed))
+				// todo we could spawn random rays to any point of the surfel disk
 
-		// Create and init the ray payload
-		RayPayload rayPayload;
-		rayPayload.color = float3(0.0, 0.0, 0.0);
-		rayPayload.randomSeed = seed;
-		rayPayload.depth = 0;
+				float startDist = 0.1 * surfelSize;
 
-		// shoot primary ray
-		// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
-		// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-		TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+				// init ray decriptor
+				RayDesc rayDesc;
+				rayDesc.Origin = _CameraPosition; // todo start close to the surface instead
+				rayDesc.Direction = worldDir;
+				rayDesc.TMin = 0.0;
+				rayDesc.TMax = 100.0;
 
-		surfel.color += float4(rayPayload.color, 1.0);
-		Surfels[index] = surfel;
+				// Create and init the ray payload
+				RayPayload rayPayload;
+				rayPayload.color = float3(0.0, 0.0, 0.0);
+				rayPayload.randomSeed = seed;
+				rayPayload.depth = 1;
 
+				// shoot primary ray
+				// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
+				// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+				surfel.color += float4(rayPayload.color, 1.0);
+				float maxWeight = 256.0;
+				if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
+				_Surfels[index] = surfel;
+			}
+		}
 	}
-	
 }
 
 // "back up" closest hit shader. it is used when we hit material without raytracing shader pass
