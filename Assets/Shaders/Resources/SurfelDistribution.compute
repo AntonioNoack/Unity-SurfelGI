@@ -1,5 +1,7 @@
 
-#pragma kernel SurfelDistribution
+#pragma kernel InitSurfelDistribution
+#pragma kernel UpdateSurfelDistribution
+#pragma kernel UpdateSurfelDistribution2
 
 // todo compute surfel distribution:
 // todo delete surfels, which are too large or too small
@@ -38,6 +40,7 @@ data.smoothness     = inGBuffer1.a;
 data.normalWorld    = normalize((float3)inGBuffer2.rgb * 2 - 1);*/
 
 float _Time;
+float _Far;
 
 float3 _CameraPosition;
 float4 _CameraRotation;
@@ -84,75 +87,188 @@ float linearEyeDepth(float z){
 	return 1.0 / (_ZBufferParams.z * z + _ZBufferParams.w);
 }
 
-[numthreads(64,1,1)]
-void SurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
+// default values don't work 🙄
+float _Density;
 
+float calculateSize(float distance){
+    return _Density * 4.0 * distance / sqrt(float(Surfels.Length));
+}
+
+Surfel InitSkySurfel(float3 worldDir) {
+    float distance = _Far * 0.5;
+    Surfel surfel;
+    surfel.position = _CameraPosition + worldDir * distance;
+    surfel.rotation = normalToQuaternion(worldDir);
+    // surface area of a sphere: 4*pi*r²
+    surfel.size = calculateSize(distance);
+    surfel.color = float4(1,1,1,1);
+    return surfel;
+}
+
+bool uvsOnScreen(float2 uv){
+    return all(uv > float2(0,0)) && all(uv < float2(1,1));
+}
+
+Surfel InitSurfel(float3 worldDir) {
+
+    Surfel surfel;
+
+    // calculate UV coordinates on camera
+    float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
+    if(cameraDir.z > 0.0){ // else hidden & no update required
+
+        cameraDir.xy *= _CameraUVScale;
+        float2 uv = cameraDir.xy / cameraDir.z * 0.5 + 0.5;
+
+        if(uvsOnScreen(uv)){ // else outside of view frustum
+
+            float3 diffuse  = _CameraGBufferTexture0.SampleLevel(_PointClampSampler, uv, 0).rgb;
+            float3 specular = _CameraGBufferTexture1.SampleLevel(_PointClampSampler, uv, 0).rgb;
+            float3 color = diffuse + specular;
+
+            // float depth = 1.0 / _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
+            float rawDepth = _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
+            if(rawDepth > 0.0) {
+
+                float distance = linearEyeDepth(rawDepth) / cameraDir.z;
+                surfel.position = _CameraPosition + worldDir * distance;
+
+                float3 surfaceDir = normalize(_CameraGBufferTexture2.SampleLevel(_PointClampSampler, uv, 0).xyz*2.0-1.0);
+                surfel.rotation = normalToQuaternion(surfaceDir);
+                // surface area of a sphere: 4*pi*r²
+                surfel.size = calculateSize(distance);
+                // surfel.color = float4(uv,frac(depth),1);
+                surfel.color = float4(color,1.0);
+                // float dt = max(-dot(worldDir, surfaceDir), 0.1);
+                // surfel.color = float4(dt,dt,dt,1);
+                // surfel.color = float4(max(worldDir,0),1);
+                // if(uv.x > 0.5) surfel.color = float4(max(surfaceDir, 0),1);
+                // float fd = frac(log2(distance));
+                // surfel.color = float4(fd,depth>0.0?fd:0.0,depth>0.0?fd:0.0,1);
+
+
+    // written this ugly, to prevent https://stackoverflow.com/questions/54781030/why-warning-x4000-use-of-potentially-uninitialized-variable-shows-for-more-th
+    // warnings 🙄
+            } else surfel = InitSkySurfel(worldDir);
+        } else surfel = InitSkySurfel(worldDir);
+    } else surfel = InitSkySurfel(worldDir);
+
+    return surfel;
+
+}
+
+[numthreads(64,1,1)]
+void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x;
     uint length = Surfels.Length;
-    if(index < length){
-
-        Surfel result;
-
+    if(index < length) {
         float3 worldDir = fibonacciSphere(index, length);
-        float4 surfelRot = normalToQuaternion(worldDir);
+        Surfels[index] = InitSurfel(worldDir);
+    }
+}
 
-        float far = 1000;
+[numthreads(64,1,1)]
+void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
+    uint index = dispatchIdx.x;
+    uint length1 = Surfels.Length;
+    if(index < length1) {
 
-        // calculate UV coordinates on camera
+        Surfel surfel = Surfels[index];
+
+        // only update if surfel is visible? sounds good :)
+        float3 deltaPos = surfel.position - _CameraPosition;
+        float  distance = length(deltaPos);
+        float3 worldDir = deltaPos / distance;
         float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
-        float density = false ? 0.7 : 3.0;
-        if(cameraDir.z > 0.0){ // else hidden & no update required
-
+        if(cameraDir.z > 0.0) {
             cameraDir.xy *= _CameraUVScale;
             float2 uv = cameraDir.xy / cameraDir.z * 0.5 + 0.5;
-
-            if(all(uv > float2(0,0)) && all(uv < float2(1,1))){ // else outside of view frustum
-
-                float3 diffuse  = _CameraGBufferTexture0.SampleLevel(_PointClampSampler, uv, 0).rgb;
-                float3 specular = _CameraGBufferTexture1.SampleLevel(_PointClampSampler, uv, 0).rgb;
-                float3 color = diffuse + specular;
-
-                // float depth = 1.0 / _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
-                float rawDepth = _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
-                if(rawDepth > 0.0){
-
-                    float depth = linearEyeDepth(rawDepth) / cameraDir.z;
-                
-                    float radius = depth;
-                    result.position = _CameraPosition + worldDir * radius;
-
-                    float3 surfaceDir = normalize(_CameraGBufferTexture2.SampleLevel(_PointClampSampler, uv, 0).xyz*2.0-1.0);
-                    result.rotation = normalToQuaternion(surfaceDir);
-                    // surface area of a sphere: 4*pi*r²
-                    float dt = max(-dot(worldDir, surfaceDir), 0.1);
-                    result.size = density * 4.0 * radius / (sqrt(float(length) * dt));
-                    // result.color = float4(uv,frac(depth),1);
-                    result.color = float4(color,1.0);
-                    // result.color = float4(dt,dt,dt,1);
-                    // result.color = float4(max(worldDir,0),1);
-                    // if(uv.x > 0.5) result.color = float4(max(surfaceDir, 0),1);
-                    float fd = frac(log2(depth));
-                    // result.color = float4(fd,depth>0.0?fd:0.0,depth>0.0?fd:0.0,1);
-
-                    Surfels[index] = result;
-                    return;
+            if(uvsOnScreen(uv)) {
+                // todo if object was moving, update surfel: when we have transforms in the shader
+                // if surfel is too large, replace it
+                // if surfel is too small, replace it
+                // todo check too low or too high density
+                float targetSize = calculateSize(distance);
+                if(surfel.size < targetSize * 0.707 || surfel.size > targetSize * 1.414) {
+                    // todo use original dir, or updated dir?
+                    Surfels[index] = InitSurfel(fibonacciSphere(index, length1)); 
+                } else {
+                    // todo if surfel has become invisible, replace it
+                    // todo check visibility
 
                 }
-                
-
             }
         }
+    }
+    // todo trace a few rays in different shader
+}
 
-        float radius = far * 0.5;
-        result.position = _CameraPosition + worldDir * radius;
+Texture2D<half4> _Weights;
+float3 _CameraOffset;
 
-        result.rotation = surfelRot;
-        // surface area of a sphere: 4*pi*r²
-        result.size = density * 4.0 * radius / sqrt(float(length));
-        // result.color = float4(abs(cameraDir),1);
-        result.color = float4(1,1,1,1);
+[numthreads(8,8,1)]
+void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
 
-        Surfels[index] = result;
+    // each thread searches a 16x16 tile for the lowest weight
+    // idea from https://media.contentapi.ea.com/content/dam/ea/seed/presentations/cedec2018-towards-effortless-photorealism-through-real-time-raytracing.pdf
+    // which seems to be also used in "global illumination based on surfels", Siggraph 2021 EA
+
+    int  tileSizeX = 16;
+    int  tileSizeY = 16;
+    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
+    _Weights.GetDimensions(mipLevel, width, height, numLevels);
+    uint x0 = dispatchIdx.x * tileSizeX, x1 = min(x0 + tileSizeX, width);
+    uint y0 = dispatchIdx.y * tileSizeY, y1 = min(y0 + tileSizeX, height);
+    float lowestWeight = 1.0;
+    uint  bestX = x0, bestY = y0;
+    for(uint y=y0;y<y1;y++){
+        for(uint x=x0;x<x1;x++){
+            float weight = _Weights.Load(int3(x,y,0)).a;
+            if(weight < lowestWeight){
+                lowestWeight = weight;
+                bestX = x;
+                bestY = y;
+            }
+        }
+    }
+    // todo stochastic
+    if(lowestWeight < 0.5) {
+
+        // spawn new surfel
+        // todo find free surfel
+
+        int3 uv = int3(bestX, bestY, 0);
+        int freeIndex = (bestX + bestY * width) % (Surfels.Length);
+        
+
+        // distribute surfel onto pixel
+
+        Surfel surfel;
+        float3 cameraDir = float3(float2(bestX, bestY) - _CameraOffset.xy, _CameraOffset.z);
+	    float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
+
+        float3 diffuse  = _CameraGBufferTexture0.Load(uv).rgb;
+        float3 specular = _CameraGBufferTexture1.Load(uv).rgb;
+        float3 color = diffuse + specular;
+
+        float rawDepth = _CameraDepthTexture.Load(uv).r;
+        if(rawDepth > 0.0) {
+
+            
+
+            float2 tmpUV = cameraDir.xy/cameraDir.z;
+            float cameraDirZ = sqrt(1.0 + dot(tmpUV,tmpUV));
+            float distance = linearEyeDepth(rawDepth) * cameraDirZ;
+            surfel.position = _CameraPosition + worldDir * distance;
+
+            float3 surfaceDir = normalize(_CameraGBufferTexture2.Load(uv).xyz*2.0-1.0);
+            surfel.rotation = normalToQuaternion(surfaceDir);
+            surfel.size = calculateSize(distance);
+            surfel.color = float4(color,1.0);
+
+        } else surfel = InitSkySurfel(worldDir);
+
+        Surfels[freeIndex] = surfel;
 
     }
 }

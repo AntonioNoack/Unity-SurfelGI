@@ -32,7 +32,7 @@ Shader "Custom/SurfelShader" {
                 float4 screenPos : TEXCOORD2; // defined by Unity
                 float3 surfelWorldPos : TEXCOORD3;
                 float4 color: TEXCOORD4;
-                float size: TEXCOORD5;
+                float invSize: TEXCOORD5;
                 float3 surfelNormal: TEXCOORD6; // in world space
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -89,7 +89,7 @@ Shader "Custom/SurfelShader" {
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position;
                 o.color = surfel.color;
-                o.size = surfel.size;
+                o.invSize = 1.0 / surfel.size;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
@@ -121,13 +121,10 @@ Shader "Custom/SurfelShader" {
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
                 // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) / i.size;
+                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
-                // todo use better falloff function
-                // todo encode direction in surfel, and use normal-alignment for weight
-
-                // todo position surfels by compute shader & ray tracing
-                // todo write light data into surfels
+                // todo update surfel transform properly
+                // todo update light data in surfels via raytracing
                 
                 float3 Albedo;
                 // Albedo = color;
@@ -136,10 +133,11 @@ Shader "Custom/SurfelShader" {
                 // Albedo = lookDir;
                 // Albedo = frac(log2(depth));
                 // Albedo = frac(surfaceWorldPosition);
+                float dist = dot(surfaceLocalPosition,surfaceLocalPosition);
                 float closeness = 0.001 + 
                     0.999 * 
-                    saturate(1.0 - 2.0 * length(surfaceLocalPosition)) *
-                    saturate(dot(i.surfelNormal, normal));
+                    max(1.0/(1.0+5.0*dist)-0.1667, 0.0) *
+                    max(dot(i.surfelNormal, normal), 0.0);
                 if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 // float closeness = frac(depth);
                 return i.color * closeness;

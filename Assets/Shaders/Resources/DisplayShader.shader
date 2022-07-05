@@ -88,7 +88,7 @@
 			float4 frag (v2f i) : SV_Target {
 
 				float4 ill = tex2D(_Accumulation, i.uv);
-				/*if(i.uv.x < 0.5)*/ return float4(frac(ill.xyz/max(1.0,ill.w)), 1.0);
+				/*if(i.uv.x < 0.5)*/ return float4((ill.xyz/max(1.0,ill.w)), 1.0);
 
 				float2 uv = i.uv;
 				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));

@@ -13,6 +13,9 @@ public class DXRCamera : MonoBehaviour {
         float4 color;
     };
 
+    public float surfelDensity = 2f;
+
+    public bool hasPlacedSurfels = false;
     public ComputeShader surfelDistShader;
     private ComputeBuffer surfels;
 
@@ -67,6 +70,8 @@ public class DXRCamera : MonoBehaviour {
         // update raytracing parameters
         UpdateParameters();
 
+        hasPlacedSurfels = false;
+
         for(int i=0;i<instData.Length;i++){
             instData[i] = Matrix4x4.identity;
         }
@@ -77,17 +82,27 @@ public class DXRCamera : MonoBehaviour {
         return (a + d - 1) / d;
     }
 
-    private void DistributeSurfels(){
+    private void DistributeSurfels() {
+
         var shader = surfelDistShader;
         if(shader == null) Debug.Log("Missing surfel shader!");
         if(surfels == null) {
             surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());
             Debug.Log("created surfel compute buffer, "+surfels.count);
         }
+
+        var depthTex = Shader.GetGlobalTexture("_CameraDepthTexture");
+        if(depthTex == null) return; // is null at the very start of the game
+
+        bool screenSpaceDist = true;
         
-        int kernel = shader.FindKernel("SurfelDistribution");
+        int kernel = shader.FindKernel(hasPlacedSurfels ? (
+            screenSpaceDist ? "UpdateSurfelDistribution2" : "UpdateSurfelDistribution"
+        ) : "InitSurfelDistribution");
 
         shader.SetFloat("_Time", Time.time);
+        shader.SetFloat("_Density", surfelDensity);
+        shader.SetFloat("_Far", _camera.farClipPlane);
         
         var camTransform = _camera.transform;
         shader.SetVector("_CameraPosition", camTransform.position);
@@ -98,19 +113,16 @@ public class DXRCamera : MonoBehaviour {
         float invZFactor = 1f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVScale", new Vector2(((float)giTarget.height / (giTarget.width)) * invZFactor, invZFactor));
 
-        // BuiltinRenderTextureType.GBuffer0
         shader.SetTexture(kernel, "_CameraGBufferTexture0", Shader.GetGlobalTexture("_CameraGBufferTexture0"));
         shader.SetTexture(kernel, "_CameraGBufferTexture1", Shader.GetGlobalTexture("_CameraGBufferTexture1"));
         shader.SetTexture(kernel, "_CameraGBufferTexture2", Shader.GetGlobalTexture("_CameraGBufferTexture2"));
-        var depthTex = Shader.GetGlobalTexture("_CameraDepthTexture");
-        if(depthTex != null) shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
-        else Debug.Log("Depth texture was null");
+        shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
 
-        // completely black, why ever...
-        /*shader.SetTexture(kernel, "_CameraGBufferTexture0", prevGBuff0);
-        shader.SetTexture(kernel, "_CameraGBufferTexture1", prevGBuff1);
-        shader.SetTexture(kernel, "_CameraGBufferTexture2", prevGBuff2);
-        shader.SetTexture(kernel, "_CameraDepthTexture",    prevGBuffD);*/
+        if(hasPlacedSurfels && screenSpaceDist) {
+            shader.SetTexture(kernel, "_Weights", emissiveTarget);
+            float zFactor = giTarget.height / (2.0f * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad));
+            shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
+        }
 
         // https://docs.unity3d.com/Manual/SL-UnityShaderVariables.html
         // the docs are wrong 😐,
@@ -126,7 +138,14 @@ public class DXRCamera : MonoBehaviour {
         uint gsx, gsy, gsz;
         shader.SetBuffer(kernel, "Surfels", surfels);
         shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
-        shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
+        
+        if(screenSpaceDist){
+            shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
+        } else {
+            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
+        }
+
+        hasPlacedSurfels = true;
 
     }
 
@@ -237,9 +256,7 @@ public class DXRCamera : MonoBehaviour {
         settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Automatic;
         // include all renderer types
         settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
-
         rtas = new RayTracingAccelerationStructure(settings);
-
         // collect all objects in scene and add them to raytracing scene
         Renderer[] renderers = FindObjectsOfType<Renderer>();
         foreach (Renderer r in renderers)
@@ -265,6 +282,11 @@ public class DXRCamera : MonoBehaviour {
 
     void RenderEmissiveTexture(){
 
+        if(!hasPlacedSurfels){
+            Debug.Log("Waiting for surfels to be placed");
+            return;
+        }
+
         if(cubeMesh == null || surfelMaterial == null){
             Debug.Log("Missing surfel "+(
                 cubeMesh == null ? 
@@ -274,6 +296,7 @@ public class DXRCamera : MonoBehaviour {
             return;
         }
 
+
         if(cmdBuffer == null) {
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
@@ -282,7 +305,7 @@ public class DXRCamera : MonoBehaviour {
             uint[] data = new uint[4];
             int subMeshIndex = 0;
             data[0] = (uint) cubeMesh.GetIndexCount(subMeshIndex);
-            data[1] = (uint) 1023; // instance count
+            data[1] = (uint) instancesPerBatch;
             data[2] = (uint) cubeMesh.GetIndexStart(subMeshIndex);
             data[3] = (uint) cubeMesh.GetBaseVertex(subMeshIndex);
             countBuffer.SetData(data);
@@ -319,8 +342,8 @@ public class DXRCamera : MonoBehaviour {
         while(numInstances > 0){
             cmdBuffer.SetGlobalFloat("_InstanceIDOffset", offset);
             cmdBuffer.DrawMeshInstanced(cubeMesh, 0, surfelMaterial, pass, instData);
-            numInstances -= 512;
-            offset += 512;
+            numInstances -= instancesPerBatch;
+            offset += instancesPerBatch;
         }
         
 
@@ -329,7 +352,8 @@ public class DXRCamera : MonoBehaviour {
         // Graphics.ExecuteCommandBuffer(cmdBuffer);
     }
     
-    private Matrix4x4[] instData = new Matrix4x4[512];
+    private static int instancesPerBatch = 512;// 1023 at max; limitation by Unity :/
+    private Matrix4x4[] instData = new Matrix4x4[instancesPerBatch];
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
