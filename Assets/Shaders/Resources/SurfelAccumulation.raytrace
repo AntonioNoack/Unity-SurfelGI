@@ -11,12 +11,18 @@ float4 _CameraRotation;
 float3 _CameraOffset;
 float2 _CameraUVSize;
 float _Far;
+bool _AllowStrayRays;
+bool _AllowSkySurfels;
 
 int _FrameIndex;
 
 #pragma max_recursion_depth 8
 
 RWStructuredBuffer<Surfel> _Surfels;
+
+float3 quatRot(float3 v, float4 q){
+	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
 
 float3 quatRotInv(float3 v, float4 q){
 	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
@@ -37,14 +43,20 @@ void RaygenShader() {
 
 		Surfel surfel = _Surfels[index];
 		float surfelSize = surfel.position.w;
-		if(surfelSize < _Far * 0.5) {
+		if(_AllowSkySurfels || surfelSize < _Far * 0.5) {// todo since we know the sky has GI = 1, don't place any surfels there
 
 			float3 surfelPos = surfel.position.xyz;
-			float3 worldDir = normalize(surfelPos - _CameraPosition);
+			float3 deltaPos = surfelPos - _CameraPosition;
+			float  distance = length(deltaPos);
+			float3 worldDir = deltaPos / distance;
+			float3 worldNormal = quatRot(float3(0,1,0), surfel.rotation);
 			float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
 
 			// only update surfels, which are in front of the camera
-			if(all(abs(cameraDir.xy) < _CameraUVSize)){
+			// todo how is worldDir x worldNormal > 0 for the sky and < 0 for all else?
+			if( all(abs(cameraDir.xy) < _CameraUVSize) && 
+				(_AllowSkySurfels || dot(worldDir, worldNormal) < 0.0) &&
+				distance > 0.001 ) {
 				
 				// init random seed from current pixel location and frame index
 				uint seed = initRand(index, _FrameIndex);
@@ -54,20 +66,22 @@ void RaygenShader() {
 				// + float2(nextRand(seed), nextRand(seed))
 				// todo we could spawn random rays to any point of the surfel disk
 
-				float startDist = 0.1 * surfelSize;
+				float startDist = clamp(0.1 * surfelSize, 0.01, 100.0);
 
 				// init ray decriptor
 				RayDesc rayDesc;
-				rayDesc.Origin = _CameraPosition; // todo start close to the surface instead
+				// rayDesc.Origin = _CameraPosition;
+				rayDesc.Origin = surfelPos - startDist * worldDir; // start close to the surface
 				rayDesc.Direction = worldDir;
-				rayDesc.TMin = 0.0;
-				rayDesc.TMax = 100.0;
+				rayDesc.TMin = startDist * 0.5;
+				rayDesc.TMax = startDist * 2.0;
 
 				// Create and init the ray payload
 				RayPayload rayPayload;
 				rayPayload.color = float3(0.0, 0.0, 0.0);
 				rayPayload.randomSeed = seed;
-				rayPayload.depth = 1;
+				rayPayload.depth = 0;
+				rayPayload.distance = 0.0;
 
 				// shoot primary ray
 				// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
@@ -75,10 +89,15 @@ void RaygenShader() {
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
-				surfel.color += float4(rayPayload.color, 1.0);
-				float maxWeight = 256.0;
-				if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
-				_Surfels[index] = surfel;
+				// todo this only works, if the camera is not moving... why?
+				// if we land outside the expected region, reject the sample
+				if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
+					// rayPayload.color = frac(rayPayload.distance + 0.5);
+					surfel.color += float4(rayPayload.color, 1.0);
+					float maxWeight = 256.0;
+					if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
+					_Surfels[index] = surfel;
+				}
 			}
 		}
 	}
@@ -95,5 +114,6 @@ SamplerState _LinearClamp;
 void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
 	// todo this looks like SDR... how do we get HDR colors?
 	float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+	rayPayload.distance = _Far;
 	rayPayload.color = rayPayload.depth == 0 ? float3(1,1,1) : color;
 }

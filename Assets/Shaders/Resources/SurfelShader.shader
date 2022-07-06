@@ -1,5 +1,6 @@
 Shader "Custom/SurfelShader" {
     Properties {
+        _AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
     }
     SubShader {
         Tags { "RenderType" = "Opaque" }
@@ -105,6 +106,8 @@ Shader "Custom/SurfelShader" {
 
             float2 _FieldOfViewFactor;
 
+            float _AllowSkySurfels;
+
             float4 frag (v2f i) : SV_Target {
                 float2 uv = i.screenPos.xy / i.screenPos.w;
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
@@ -112,7 +115,13 @@ Shader "Custom/SurfelShader" {
                 half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
                 UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
                 float specular = SpecularStrength(data.specularColor);
-                float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
+                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+
+                if(!_AllowSkySurfels && rawDepth == 0.0) {
+                    return float4(1,1,1,1);// GI in the sky is 1
+                }
+
+                float depth = LinearEyeDepth(rawDepth);
                 
                 float3 diff = data.diffuseColor;
                 float3 spec = data.specularColor;
@@ -126,9 +135,6 @@ Shader "Custom/SurfelShader" {
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
                 float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
-                // todo update surfel transform properly
-                // todo update light data in surfels via raytracing
-                
                 float3 Albedo;
                 // Albedo = color;
                 // Albedo = normal*.5+.5;
@@ -138,7 +144,7 @@ Shader "Custom/SurfelShader" {
                 // Albedo = frac(surfaceWorldPosition);
                 float closeness;
                 float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
-                if(depth > 500.0 && dist > 3.0) {
+                if(rawDepth == 0.0 && dist > 3.0) {
 
                     // disc like closeness
                     dist = length(i.localPos.xz);
@@ -153,7 +159,7 @@ Shader "Custom/SurfelShader" {
                 }
 
                 // return float4(closeness,closeness,closeness,1);
-                if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
+                // if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 return i.color * (closeness / i.color.w);
                 Albedo = float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED

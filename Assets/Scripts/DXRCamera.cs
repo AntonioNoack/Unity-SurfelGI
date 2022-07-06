@@ -13,6 +13,9 @@ public class DXRCamera : MonoBehaviour {
     };
 
     public float surfelDensity = 2f;
+    public bool allowSkySurfels = false;
+    public bool showIllumination = false;
+    public bool allowStrayRays = false;
 
     public bool hasPlacedSurfels = false;
     public ComputeShader surfelDistShader;
@@ -107,6 +110,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_Density", surfelDensity);
         shader.SetFloat("_Far", _camera.farClipPlane);
         shader.SetFloat("_FrameIndex", frameIndex);
+        shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         
         var camTransform = _camera.transform;
         shader.SetVector("_CameraPosition", camTransform.position);
@@ -331,6 +335,7 @@ public class DXRCamera : MonoBehaviour {
         // surfelMaterial.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
         surfelMaterial.SetVector("_FieldOfViewFactor", new Vector2(fy*_camera.pixelWidth/_camera.pixelHeight, fy));
+        surfelMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
 
         cmdBuffer.Clear(); // clear all commands
         cmdBuffer.SetRenderTarget(emissiveTarget);
@@ -369,7 +374,7 @@ public class DXRCamera : MonoBehaviour {
 
     public bool updateSurfels = false;
     
-    private static int instancesPerBatch = 512;// 1023 at max; limitation by Unity :/
+    private static int instancesPerBatch = 511;// 1023 at max; limitation by Unity :/
     private Matrix4x4[] instData = new Matrix4x4[instancesPerBatch];
 
     [ImageEffectOpaque]
@@ -411,7 +416,8 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetTexture("_SkyBox", skyBox);
             displayMaterial.SetTexture("_Accumulation", accu2);
             displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-            // displayMaterial.SetVector("_CameraPosition", pos);
+            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+            displayMaterial.SetVector("_CameraPosition", pos);
             displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
             float zFactor2 = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * _camera.pixelWidth) / _camera.pixelHeight, zFactor2));
@@ -441,6 +447,8 @@ public class DXRCamera : MonoBehaviour {
                 surfelTracingShader.SetBuffer("_Surfels", surfels);
                 surfelTracingShader.SetFloat("_Far", _camera.farClipPlane);
                 surfelTracingShader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
+                surfelTracingShader.SetBool("_AllowSkySurfels", allowSkySurfels);
+                surfelTracingShader.SetBool("_AllowStrayRays", allowStrayRays);
                 surfelTracingShader.SetShaderPass("DxrPass");
                 surfelTracingShader.Dispatch("RaygenShader", surfels.count, 1, 1, null);
             }
@@ -450,7 +458,9 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetTexture("_SkyBox", skyBox);
             displayMaterial.SetTexture("_Accumulation", emissiveTarget);
             displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-            // displayMaterial.SetVector("_CameraPosition", pos);
+            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+            displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+            displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
             displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
             float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));

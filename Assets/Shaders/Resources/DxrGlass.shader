@@ -61,6 +61,9 @@
 
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				
+				rayPayload.distance = RayTCurrent();
+				
 				// stop if we have reached max recursion depth
 				if(rayPayload.depth + 1 == gMaxDepth) {
 					return;

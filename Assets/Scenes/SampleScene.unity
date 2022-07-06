@@ -637,11 +637,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  surfelDensity: 2
+  surfelDensity: 3
+  allowSkySurfels: 0
+  showIllumination: 0
+  allowStrayRays: 0
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
-  maxNumSurfels: 131072
+  maxNumSurfels: 1048576
   rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
   accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}
@@ -1328,7 +1331,7 @@ Camera:
   m_Depth: 0
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 0
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -1348,7 +1351,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1974688715}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.522854, y: -4.1158805, z: -6.859641}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

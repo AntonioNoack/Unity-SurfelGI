@@ -45,6 +45,11 @@ float2 _CameraUVScale;
 
 float4 _ZBufferParams;
 
+bool _AllowSkySurfels;
+
+Texture2D<half4> _Weights;
+float3 _CameraOffset;
+
 // adopted from https://answers.unity.com/questions/467614/what-is-the-source-code-of-quaternionlookrotation.html
 float4 normalToQuaternion(float3 normal){
     float3 v1 = normal; // m1x
@@ -196,9 +201,6 @@ void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
-Texture2D<half4> _Weights;
-float3 _CameraOffset;
-
 [numthreads(8,8,1)]
 void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
 
@@ -216,8 +218,10 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
     uint  bestX = x0, bestY = y0;
     for(uint y=y0;y<y1;y++){
         for(uint x=x0;x<x1;x++){
-            float weight = _Weights.Load(int3(x,y,0)).a;
-            if(weight < lowestWeight){
+            int3  uvi = int3(x,y,0);
+            float weight = _Weights.Load(uvi).a;
+            float depth = _AllowSkySurfels ? 1.0 : _CameraDepthTexture.Load(uvi).r;
+            if(depth > 0.0 && weight < lowestWeight) {
                 lowestWeight = weight;
                 bestX = x;
                 bestY = y;
@@ -237,7 +241,6 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
 
         // distribute surfel onto pixel
 
-        Surfel surfel;
         float3 cameraDir = float3(float2(bestX, bestY) - _CameraOffset.xy, _CameraOffset.z);
 	    float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
 
@@ -248,6 +251,7 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
         float rawDepth = _CameraDepthTexture.Load(uv).r;
         if(rawDepth > 0.0) {
 
+            Surfel surfel;
             float2 tmpUV = cameraDir.xy/cameraDir.z;
             float cameraDirZ = sqrt(1.0 + dot(tmpUV,tmpUV));
             float distance = linearEyeDepth(rawDepth) * cameraDirZ;
@@ -258,9 +262,12 @@ void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
             surfel.position.w = calculateSize(distance);
             surfel.color = START_WEIGHT * float4(color,1.0);
 
-        } else surfel = InitSkySurfel(worldDir);
+            Surfels[freeIndex] = surfel;
 
-        Surfels[freeIndex] = surfel;
+        } else if(_AllowSkySurfels) {
+            
+            Surfels[freeIndex] = InitSkySurfel(worldDir);
 
+        }
     }
 }

@@ -41,6 +41,7 @@
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	
 				// emissive material, simply return emission color
+				rayPayload.distance = RayTCurrent();
 				rayPayload.color = _Color.xyz;		
 			}			
 

@@ -3,7 +3,9 @@
 		_Exposure("Exposure", Range(0.0, 1000.0)) = 1.0
 		_SplitX("SplitX", Range(0,1)) = 0.75
 		_SplitY("SplitY", Range(0,1)) = 0.50
-		_DivideByAlpha("Divide By Alpha", Range(0,1)) = 0.0
+		_DivideByAlpha("Divide By Alpha", Float) = 0.0
+		_ShowIllumination("Show GI", Float) = 0.0
+		_AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
 	}
 	SubShader {
 		// No culling or depth
@@ -39,10 +41,12 @@
 			float _Exposure;
 			float _SplitX, _SplitY;
 			float _Far;
+			float _AllowSkySurfels;
 
 			float2 _CameraScale;
 			float4 _CameraRotation;
 			float _DivideByAlpha;
+			float _ShowIllumination;
 
 			// Unitys predefined GBuffer data
 			sampler2D _CameraGBufferTexture0;
@@ -91,11 +95,10 @@
 
 				float4 ill = tex2D(_Accumulation, i.uv);
 
-				// return float4(ill.w,ill.w,ill.w,1.0);
-
-				/*if(i.uv.x < 0.5)*/ 
-				if(_DivideByAlpha > 0.5) return float4(ill.xyz/max(ill.w,0.01), 1.0);
-				else return float4(ill.xyz, 1.0);
+				if(_ShowIllumination) {
+					if(_DivideByAlpha) return ill.w == 0.0 ? float4(1,1,1,1) : float4(ill.xyz/ill.w, 1.0);
+					else return float4(ill.xyz, 1.0);
+				}
 
 				float2 uv = i.uv;
 				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));
@@ -116,9 +119,11 @@
 						float2 uv2 = uv + float2(i,j) * duv;
 						float3 nor = readSurfaceNormal(uv2);
 						float4 illumination = tex2D(_Accumulation, uv2);
+						if(_DivideByAlpha && !_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
 						// return float4(illumination, 1.0);
 						float weight = i == 0 && j == 0 ? 1.0 : exp(-sigma*float(i*i+j*j)) * max(0.0, dot(nor,normal) - 0.8);
-						sum += float4(illumination.xyz * (weight / illumination.w), weight);
+						if(_DivideByAlpha) sum += float4(illumination.xyz * (weight / illumination.w), weight);
+						else sum += float4(illumination.xyz, 1) * weight;
 					}
 				}
 				color *= sum.xyz * (_Exposure / sum.w);

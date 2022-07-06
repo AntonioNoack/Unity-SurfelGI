@@ -61,11 +61,13 @@ float nextRandS3(inout uint seed0) {
 // ray payload
 struct RayPayload {
 	// Color of the ray
-	float3  color;
+	float3 color;
 	// Random Seed
 	uint randomSeed;
 	// Recursion depth
 	uint depth;
+	// Distance to the first hit
+	float distance;
 };
 
 // Triangle attributes
@@ -93,11 +95,11 @@ struct IntersectionVertex {
 	// Vertex color
 	float4 color;
 	// Value used for LOD sampling
-	float  triangleArea;
-	float  texCoord0Area;
-	float  texCoord1Area;
-	float  texCoord2Area;
-	float  texCoord3Area;
+	float triangleArea;
+	float texCoord0Area;
+	float texCoord1Area;
+	float texCoord2Area;
+	float texCoord3Area;
 };
 
 // Fetch the intersetion vertex data for the target vertex
