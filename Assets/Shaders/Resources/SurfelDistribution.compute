@@ -1,7 +1,7 @@
 
 #pragma kernel InitSurfelDistribution
-#pragma kernel UpdateSurfelDistribution
-#pragma kernel UpdateSurfelDistribution2
+#pragma kernel DiscardSmallAndLargeSurfels
+#pragma kernel SpawnSurfelsInGaps
 
 struct Surfel {
     float4 position;
@@ -54,13 +54,11 @@ float3 _CameraOffset;
 float4 normalToQuaternion(float3 normal){
     float3 v1 = normal; // m1x
     // float3 v0 = normalize(cross(normal, float3(0,1,0)));// could be simplified
-    float3 v0 = dot(normal.xy,normal.xy) < 1.0 ? 
+    float3 v0 = dot(normal.xz,normal.xz) > 0.01 ? 
         normalize(float3(normal.z, 0, -normal.x)) : float3(1,0,0);// m0x; could be simplified when using the fib sphere
     float3 v2 = cross(v0,v1); // m2x
     float diag = v0.x + v1.y + v2.z;
-    // we assume diag > 0, is correct for fib sphere
-    float num = sqrt(diag + 1.0);
-    return float4(float3(v1.z - v2.y, v2.x - v0.z, v0.y - v1.x) * (0.5 / num), num * 0.5);
+    return normalize(float4(v1.z - v2.y, v2.x - v0.z, v0.y - v1.x, diag + 1.0));
 }
 
 // adopted from https://stackoverflow.com/a/26127012/4979303
@@ -167,14 +165,11 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
 }
 
 [numthreads(64,1,1)]
-void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
+void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x;
     uint length1 = Surfels.Length;
     if(index < length1) {
-
         Surfel surfel = Surfels[index];
-
-        // only update if surfel is visible? sounds good :)
         float3 deltaPos = surfel.position.xyz - _CameraPosition;
         float  distance = length(deltaPos);
         float3 worldDir = deltaPos / distance;
@@ -182,19 +177,15 @@ void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
         if(cameraDir.z > 0.0) {
             cameraDir.xy *= _CameraUVScale;
             float2 uv = cameraDir.xy / cameraDir.z * 0.5 + 0.5;
+            // only update if surfel is visible
             if(uvsOnScreen(uv)) {
-                // todo if object was moving, update surfel: when we have transforms in the shader
                 // if surfel is too large, replace it
                 // if surfel is too small, replace it
-                // to do check too low or too high density -> done in part 2
                 float targetSize = calculateSize(distance);
                 float surfelSize = surfel.position.w;
                 if(surfelSize < targetSize * 0.707 || surfelSize > targetSize * 1.414) {
                     // to do use original dir, or updated dir?
                     Surfels[index] = InitSurfel(fibonacciSphere(index, length1)); 
-                } else {
-                    // to do if surfel has become invisible, replace it
-                    // to do check visibility
                 }
             }
         }
@@ -202,7 +193,7 @@ void UpdateSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
 }
 
 [numthreads(8,8,1)]
-void UpdateSurfelDistribution2(uint3 dispatchIdx: SV_DispatchThreadID){
+void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
 
     // each thread searches a 16x16 tile for the lowest weight
     // idea from https://media.contentapi.ea.com/content/dam/ea/seed/presentations/cedec2018-towards-effortless-photorealism-through-real-time-raytracing.pdf

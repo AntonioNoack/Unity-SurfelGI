@@ -6,6 +6,7 @@
 		_DivideByAlpha("Divide By Alpha", Float) = 0.0
 		_ShowIllumination("Show GI", Float) = 0.0
 		_AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
+		_VisualizeSurfels("Visualize Surfels", Float) = 0.0
 	}
 	SubShader {
 		// No culling or depth
@@ -47,6 +48,7 @@
 			float4 _CameraRotation;
 			float _DivideByAlpha;
 			float _ShowIllumination;
+			float _VisualizeSurfels;
 
 			// Unitys predefined GBuffer data
 			sampler2D _CameraGBufferTexture0;
@@ -94,9 +96,12 @@
 			float4 frag (v2f i) : SV_Target {
 
 				float4 ill = tex2D(_Accumulation, i.uv);
+				if(_VisualizeSurfels) return ill;
 
 				if(_ShowIllumination) {
-					if(_DivideByAlpha) return ill.w == 0.0 ? float4(1,1,1,1) : float4(ill.xyz/ill.w, 1.0);
+					if(_DivideByAlpha) return ill.w == 0.0 && !_AllowSkySurfels ? 
+						float4(1,1,1,1) : 
+						float4(ill.xyz/min(0.001, ill.w), 1.0);
 					else return float4(ill.xyz, 1.0);
 				}
 

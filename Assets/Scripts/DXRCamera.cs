@@ -16,6 +16,7 @@ public class DXRCamera : MonoBehaviour {
     public bool allowSkySurfels = false;
     public bool showIllumination = false;
     public bool allowStrayRays = false;
+    public bool visualizeSurfels = false;
 
     public bool hasPlacedSurfels = false;
     public ComputeShader surfelDistShader;
@@ -125,19 +126,19 @@ public class DXRCamera : MonoBehaviour {
         shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
-        
+
         for(int i = 0; i < (hasPlacedSurfels ? 2 : 1) ; i++){
 
-            bool screenSpaceDist = i > 0;
+            bool screenSpace = i > 0;
 
-            int kernel = PrepareDistribution(shader, screenSpaceDist, depthTex);
+            int kernel = PrepareDistribution(shader, screenSpace, depthTex);
             if(kernel < 0) continue;
 
             uint gsx, gsy, gsz;
             shader.SetBuffer(kernel, "Surfels", surfels);
             shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
             
-            if(screenSpaceDist) {
+            if(screenSpace) {
                 shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
             } else {
                 shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
@@ -149,11 +150,15 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
-    int PrepareDistribution(ComputeShader shader, bool screenSpaceDist, Texture depthTex){
+    private int PrepareDistribution(ComputeShader shader, bool screenSpace, Texture depthTex){
         
-        int kernel = shader.FindKernel(hasPlacedSurfels ? (
-            screenSpaceDist ? "UpdateSurfelDistribution2" : "UpdateSurfelDistribution"
-        ) : "InitSurfelDistribution");
+        int kernel = shader.FindKernel(
+            hasPlacedSurfels ? 
+                screenSpace ? 
+                    "SpawnSurfelsInGaps" : 
+                    "DiscardSmallAndLargeSurfels" :
+                "InitSurfelDistribution"
+        );
 
         var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
         var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
@@ -162,24 +167,15 @@ public class DXRCamera : MonoBehaviour {
             Debug.Log("Missing GBuffers");
             return -1;
         }
+
+        if(emissiveTarget != null) {
+            shader.SetTexture(kernel, "_Weights", emissiveTarget);
+        }
+
         shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
         shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
         shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
         shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
-
-        if(hasPlacedSurfels && screenSpaceDist) {
-            shader.SetTexture(kernel, "_Weights", emissiveTarget);
-        }
-
-        uint gsx, gsy, gsz;
-        shader.SetBuffer(kernel, "Surfels", surfels);
-        shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
-        
-        if(screenSpaceDist) {
-            shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
-        } else {
-            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
-        }
 
         return kernel;
 
@@ -230,7 +226,6 @@ public class DXRCamera : MonoBehaviour {
         skyBox = new Cubemap(skyResolution, TextureFormat.RGBAHalf, skyBoxMipmaps);
         needsSkyBoxUpdate = true;
 
-
 	}
 
     private void DestroyTargets(){
@@ -256,13 +251,11 @@ public class DXRCamera : MonoBehaviour {
             needsSkyBoxUpdate = false;
         }
         DistributeSurfels();
-        RenderEmissiveTexture();
+        AccumulateSurfelEmissions();
     }
 
     private void UpdateParameters() {
-		if(rtas == null) {
-			InitRaytracingAccelerationStructure();
-		}
+		if(rtas == null) InitRaytracingAccelerationStructure();
         // update raytracing scene, in case something moved
         rtas.Build();
     }
@@ -280,62 +273,73 @@ public class DXRCamera : MonoBehaviour {
         Renderer[] renderers = FindObjectsOfType<Renderer>();
         foreach (Renderer r in renderers)
             rtas.AddInstance(r);
-
+            
         // build raytrasing scene
         rtas.Build();
     }
 
     private void RenderSky(){
-        // render sky
         if(skyBoxCamera != null) skyBoxCamera.RenderToCubemap(skyBox, -1);
         else Debug.Log("Missing skybox camera");
     }
 
     public Mesh cubeMesh;
-    public Material surfelMaterial;
+    public Material surfelMaterial, surfelProcMaterial;
     public bool doRT = false;
 
     private CommandBuffer cmdBuffer = null;
 
     private ComputeBuffer countBuffer;
 
-    void RenderEmissiveTexture(){
+    private ComputeBuffer cubeMeshVertices;
+
+    public bool useProceduralSurfels = false;
+
+    void AccumulateSurfelEmissions() {
+
+        Material shader = useProceduralSurfels ? surfelProcMaterial : surfelMaterial;
 
         if(!hasPlacedSurfels){
             Debug.Log("Waiting for surfels to be placed");
             return;
-        }
-
-        if(cubeMesh == null || surfelMaterial == null){
-            Debug.Log("Missing surfel "+(
-                cubeMesh == null ? 
-                    surfelMaterial == null ? "mesh and material" :
-                    "mesh" : "material"
-            ));
+        } else if(shader == null){
+            Debug.Log("Missing surfel material");
+            return;
+        } else if(cubeMesh == null){
+            Debug.Log("Missing surfel mesh");
             return;
         }
-
 
         if(cmdBuffer == null) {
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
-            countBuffer = new ComputeBuffer(5, 4, ComputeBufferType.IndirectArguments); // element count, stride in bytes
+            /*countBuffer = new ComputeBuffer(5, 4, ComputeBufferType.IndirectArguments); // element count, stride in bytes
             uint[] data = new uint[4];
             int subMeshIndex = 0;
             data[0] = (uint) cubeMesh.GetIndexCount(subMeshIndex);
             data[1] = (uint) instancesPerBatch;
             data[2] = (uint) cubeMesh.GetIndexStart(subMeshIndex);
             data[3] = (uint) cubeMesh.GetBaseVertex(subMeshIndex);
-            countBuffer.SetData(data);
+            countBuffer.SetData(data);*/
+            cubeMeshVertices = new ComputeBuffer(3 * 2 * 6, sizeof(float) * 3);
+            float3[] vertices = new float3[36];
+            Vector3[] srcPositions = cubeMesh.vertices;
+            int[] srcTriangles = cubeMesh.triangles;
+            Debug.Log("vertices(24): "+srcPositions.Length+", triangles(36): "+srcTriangles.Length);
+            for(int i=0,l=Mathf.Min(srcTriangles.Length,vertices.Length);i<l;i++){
+                vertices[i] = srcPositions[srcTriangles[i]];
+            }
+            cubeMeshVertices.SetData(vertices);
             _camera.AddCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
         }
 
-        // surfelMaterial.SetMatrix("_InvViewMatrix", _camera.worldToCameraMatrix.inverse);
-        // surfelMaterial.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
+        // shader.SetMatrix("_InvViewMatrix", _camera.worldToCameraMatrix.inverse);
+        // shader.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
-        surfelMaterial.SetVector("_FieldOfViewFactor", new Vector2(fy*_camera.pixelWidth/_camera.pixelHeight, fy));
-        surfelMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+        shader.SetVector("_FieldOfViewFactor", new Vector2(fy*_camera.pixelWidth/_camera.pixelHeight, fy));
+        shader.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+        shader.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
 
         cmdBuffer.Clear(); // clear all commands
         cmdBuffer.SetRenderTarget(emissiveTarget);
@@ -349,27 +353,29 @@ public class DXRCamera : MonoBehaviour {
         // todo copy original depth into their depth for better performance
         // RenderTexture prev = RenderTexture.active;
         // if(changeRT) Graphics.SetRenderTarget(emissiveTarget);
-        // todo define/update surfel positions by previous emissiveTarget density
-        
-        
 
-        surfelMaterial.SetBuffer("_Surfels", surfels);        
+        shader.SetBuffer("_Surfels", surfels);
+        shader.SetBuffer("_Vertices", cubeMeshVertices);
         cmdBuffer.SetGlobalFloat("_SurfelCount", surfels.count);
 
         int numInstances = surfels.count;
-        int pass = -1; // surfelMaterial.FindPass(""); // which shader pass, or -1 for all
-        int offset = 0;
-        while(numInstances > 0){
-            cmdBuffer.SetGlobalFloat("_InstanceIDOffset", offset);
-            cmdBuffer.DrawMeshInstanced(cubeMesh, 0, surfelMaterial, pass, instData);
-            numInstances -= instancesPerBatch;
-            offset += instancesPerBatch;
+        int pass = -1; // shader.FindPass(""); // which shader pass, or -1 for all
+        if(useProceduralSurfels){
+            cmdBuffer.SetGlobalFloat("_InstanceIDOffset", 0);
+            cmdBuffer.DrawProcedural(instData[0], shader, pass, MeshTopology.Triangles, cubeMeshVertices.count, numInstances);
+        } else {
+            int offset = 0;
+            while(numInstances > 0){
+                cmdBuffer.SetGlobalFloat("_InstanceIDOffset", offset);
+                cmdBuffer.DrawMeshInstanced(cubeMesh, 0, shader, pass, instData);
+                numInstances -= instancesPerBatch;
+                offset += instancesPerBatch;
+            }
         }
         
-
-        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, surfelMaterial, pass, countBuffer, 0);
-
+        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, shader, pass, countBuffer, 0);
         // Graphics.ExecuteCommandBuffer(cmdBuffer);
+
     }
 
     public bool updateSurfels = false;
@@ -460,6 +466,7 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetFloat("_Far", _camera.farClipPlane);
             displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
             displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+            displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
             displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
             displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
             float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
@@ -482,6 +489,8 @@ public class DXRCamera : MonoBehaviour {
         DestroyTargets();
         if(countBuffer != null) countBuffer.Release();
         countBuffer = null;
+        if(cubeMeshVertices != null) cubeMeshVertices.Release();
+        cubeMeshVertices = null;
         if(_camera != null && cmdBuffer != null) {
             _camera.RemoveCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
         }

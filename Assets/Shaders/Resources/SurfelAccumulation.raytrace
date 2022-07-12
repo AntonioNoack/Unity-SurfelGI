@@ -43,7 +43,7 @@ void RaygenShader() {
 
 		Surfel surfel = _Surfels[index];
 		float surfelSize = surfel.position.w;
-		if(_AllowSkySurfels || surfelSize < _Far * 0.5) {// todo since we know the sky has GI = 1, don't place any surfels there
+		if(_AllowSkySurfels || surfelSize < _Far * 0.5) {// the sky has GI = 1, so no updates required
 
 			float3 surfelPos = surfel.position.xyz;
 			float3 deltaPos = surfelPos - _CameraPosition;
@@ -53,10 +53,14 @@ void RaygenShader() {
 			float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
 
 			// only update surfels, which are in front of the camera
-			// todo how is worldDir x worldNormal > 0 for the sky and < 0 for all else?
-			if( all(abs(cameraDir.xy) < _CameraUVSize) && 
+			if(// all(abs(cameraDir.xy) < _CameraUVSize) && 
+				// test whether the surfel can be visible from the camera; the sky has no GBuffer information in Unity -> skip this test
 				(_AllowSkySurfels || dot(worldDir, worldNormal) < 0.0) &&
-				distance > 0.001 ) {
+				distance > 0.001) {
+
+				// problem stays the same
+				// distance = 1;
+				// worldDir = -worldNormal;
 				
 				// init random seed from current pixel location and frame index
 				uint seed = initRand(index, _FrameIndex);
@@ -94,8 +98,8 @@ void RaygenShader() {
 				if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
 					// rayPayload.color = frac(rayPayload.distance + 0.5);
 					surfel.color += float4(rayPayload.color, 1.0);
-					float maxWeight = 256.0;
-					if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
+					// float maxWeight = 256.0;
+					// if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
 					_Surfels[index] = surfel;
 				}
 			}

@@ -115,7 +115,7 @@ void FetchIntersectionVertex(uint vertexIndex, out IntersectionVertex outVertex)
 }
 
 void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionVertex outVertex) {
-	// Fetch the indices of the currentr triangle
+	// Fetch the indices of the current triangle
 	uint3 triangleIndices = UnityRayTracingFetchTriangleIndices(PrimitiveIndex());
 
 	// Fetch the 3 vertices

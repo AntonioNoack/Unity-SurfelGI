@@ -5,4 +5,7 @@ It uses DXR raytracing for better performance. This unfortunately is only availa
 # Setting up DXR in a new project:
 - go to Edit/Project Settings/Player/Other and add DX 12 as the primary graphics API for Windows
 - go to Edit/Project Settings/Graphics and enable deferred rendering for all profiles
+
+# Additional setup for surfels:
 - add the mathematics package
+- open Edit/Project Settings/Script Execution Order and make sure your camera controller is executed before the DXRCamera script

@@ -1,4 +1,4 @@
-Shader "Custom/SurfelShader" {
+Shader "Custom/SurfelProcShader" {
     Properties {
         _AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
         _VisualizeSurfels("Visualize Surfels", Float) = 0.0
@@ -22,11 +22,11 @@ Shader "Custom/SurfelShader" {
 
             #include "UnityCG.cginc"
 
-            struct appdata {
+            /*struct appdata {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
                 uint instanceID : SV_InstanceID;
-            };
+            };*/
 
             struct v2f {
                 float4 vertex : SV_POSITION;
@@ -53,8 +53,10 @@ Shader "Custom/SurfelShader" {
             };
 
         #ifdef SHADER_API_D3D11
-            uniform StructuredBuffer<Surfel> _Surfels : register(t1);
+            StructuredBuffer<Surfel> _Surfels : register(t1);
         #endif
+
+            StructuredBuffer<float3> _Vertices;
 
             // global property
             int _InstanceIDOffset;
@@ -69,39 +71,38 @@ Shader "Custom/SurfelShader" {
 				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
 			}
 
-            v2f vert (appdata v) {
+            // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/
+            v2f vert (uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) {
+                
                 v2f o;
-                float3 localPos = v.vertex;
-                #ifdef UNITY_INSTANCING_ENABLED
-                UNITY_SETUP_INSTANCE_ID(v);
-                #endif
+                float3 localPos = _Vertices[vertexId];
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
-                #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
-                    int surfelId = unity_InstanceID + _InstanceIDOffset;
+                #if defined(SHADER_API_D3D11)
+                    int surfelId = instanceId + _InstanceIDOffset;
                     Surfel surfel;
                     if(surfelId < _SurfelCount) {
                         // Surfel surfel = _Surfels[min(unity_InstanceID, _Surfels.Length)]; // doesn't work
                         surfel = _Surfels[surfelId]; // does work, but only for DrawMeshInstanced
                         // InitIndirectDrawArgs(0); "unexpected identifier 'ByteAddressBuffer'"
                         // uint cmdID = GetCommandID(0);
-                        // uint instanceID = GetIndirectInstanceID(svInstanceID);
+                        // uint instanceId = GetIndirectInstanceID(svInstanceID);
                         // Surfel surfel = _Surfels[min(instanceID, 255)]; 
-                        v.vertex.xyz = quatRot(v.vertex.xyz * float3(1.0,0.2,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
-                        if(!_VisualizeSurfels && surfel.color.w < 0.0001) v.vertex = 0; // invalid surfel / surfel without known color
+                        localPos = quatRot(localPos * float3(1.0,0.2,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
+                        if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
                     } else {
-                        v.vertex = 0; // remove cube visually
+                        localPos = 0; // remove cube visually
                     }
                 #endif
-                o.vertex = UnityObjectToClipPos(v.vertex);
+                o.vertex = UnityObjectToClipPos(localPos);
                 o.screenPos = ComputeScreenPos(o.vertex);
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
-                #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
+                #if defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position.xyz;
                 o.color = surfel.color;
                 o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 #endif
-                o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                o.worldPos = mul(unity_ObjectToWorld, localPos).xyz;
                 o.localPos = localPos;
                 return o;
             }
