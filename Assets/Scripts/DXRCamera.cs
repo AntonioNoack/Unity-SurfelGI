@@ -3,6 +3,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using Unity.Mathematics; // float4x3, float3
 using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
+using System.Threading; // sleep for manual fps limit
 
 public class DXRCamera : MonoBehaviour {
 
@@ -13,6 +14,10 @@ public class DXRCamera : MonoBehaviour {
     };
 
     public float surfelDensity = 2f;
+
+    [Range(0.0f, 0.2f)]
+    public float sleep = 0f;
+
     public bool allowSkySurfels = false;
     public bool showIllumination = false;
     public bool allowStrayRays = false;
@@ -33,6 +38,9 @@ public class DXRCamera : MonoBehaviour {
     private RenderTexture accu2;
 
     // previous GBuffers for motion-vector-improved sample accumulation
+    private Vector3 prevCameraPosition;
+    private Vector3 prevCameraOffset;
+    private Vector4 prevCameraRotation;
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
 
     // summed global illumination
@@ -46,8 +54,6 @@ public class DXRCamera : MonoBehaviour {
     // helper material to accumulate raytracing results
     public Material accuMaterial, displayMaterial;
     public Material copyGBuffMat0, copyGBuffMat1, copyGBuffMat2, copyGBuffMatD;
-
-    private Vector3 previousCameraPosition;
 
     private Matrix4x4 cameraWorldMatrix;
 
@@ -113,11 +119,9 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_FrameIndex", frameIndex);
         shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         
-        var camTransform = _camera.transform;
-        shader.SetVector("_CameraPosition", camTransform.position);
-        
-        var rotation = camTransform.rotation;
-        shader.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+        var transform = _camera.transform;
+        shader.SetVector("_CameraPosition", usePrevFrameForDistribution ? prevCameraPosition : transform.position);
+        shader.SetVector("_CameraRotation", usePrevFrameForDistribution ? prevCameraRotation : QuatToVec(transform.rotation));
         
         float invZFactor = 1f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVScale", new Vector2(((float)giTarget.height / (giTarget.width)) * invZFactor, invZFactor));
@@ -150,6 +154,8 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
+    public bool usePrevFrameForDistribution = false;
+
     private int PrepareDistribution(ComputeShader shader, bool screenSpace, Texture depthTex){
         
         int kernel = shader.FindKernel(
@@ -160,22 +166,33 @@ public class DXRCamera : MonoBehaviour {
                 "InitSurfelDistribution"
         );
 
-        var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
-        var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
-        var t2 = Shader.GetGlobalTexture("_CameraGBufferTexture2");
-        if(t0 == null || t1 == null || t2 == null){
-            Debug.Log("Missing GBuffers");
-            return -1;
+        if(usePrevFrameForDistribution){
+
+            shader.SetTexture(kernel, "_CameraGBufferTexture0", prevGBuff0);
+            shader.SetTexture(kernel, "_CameraGBufferTexture1", prevGBuff1);
+            shader.SetTexture(kernel, "_CameraGBufferTexture2", prevGBuff2);
+            shader.SetTexture(kernel, "_CameraDepthTexture",    prevGBuffD);
+
+        } else {
+
+            var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
+            var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
+            var t2 = Shader.GetGlobalTexture("_CameraGBufferTexture2");
+            if(t0 == null || t1 == null || t2 == null){
+                Debug.Log("Missing GBuffers");
+                return -1;
+            }
+
+            shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
+            shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
+            shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
+            shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
+
         }
 
         if(emissiveTarget != null) {
             shader.SetTexture(kernel, "_Weights", emissiveTarget);
         }
-
-        shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
-        shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
-        shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
-        shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
 
         return kernel;
 
@@ -250,8 +267,6 @@ public class DXRCamera : MonoBehaviour {
             RenderSky();
             needsSkyBoxUpdate = false;
         }
-        DistributeSurfels();
-        AccumulateSurfelEmissions();
     }
 
     private void UpdateParameters() {
@@ -310,18 +325,12 @@ public class DXRCamera : MonoBehaviour {
             return;
         }
 
+        bool firstFrame = false;
         if(cmdBuffer == null) {
+            firstFrame = true;
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
-            /*countBuffer = new ComputeBuffer(5, 4, ComputeBufferType.IndirectArguments); // element count, stride in bytes
-            uint[] data = new uint[4];
-            int subMeshIndex = 0;
-            data[0] = (uint) cubeMesh.GetIndexCount(subMeshIndex);
-            data[1] = (uint) instancesPerBatch;
-            data[2] = (uint) cubeMesh.GetIndexStart(subMeshIndex);
-            data[3] = (uint) cubeMesh.GetBaseVertex(subMeshIndex);
-            countBuffer.SetData(data);*/
             cubeMeshVertices = new ComputeBuffer(3 * 2 * 6, sizeof(float) * 3);
             float3[] vertices = new float3[36];
             Vector3[] srcPositions = cubeMesh.vertices;
@@ -331,23 +340,31 @@ public class DXRCamera : MonoBehaviour {
                 vertices[i] = srcPositions[srcTriangles[i]];
             }
             cubeMeshVertices.SetData(vertices);
-            _camera.AddCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
+            // _camera.AddCommandBuffer(CameraEvent.AfterGBuffer, cmdBuffer);
         }
 
         // shader.SetMatrix("_InvViewMatrix", _camera.worldToCameraMatrix.inverse);
         // shader.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
-        shader.SetVector("_FieldOfViewFactor", new Vector2(fy*_camera.pixelWidth/_camera.pixelHeight, fy));
+        shader.SetVector("_FieldOfViewFactor", new Vector2(fy*giTarget.width/giTarget.height, fy));
         shader.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
         shader.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+
+        // if(!firstFrame) return; // command buffer doesn't change, only a few shader variables
 
         cmdBuffer.Clear(); // clear all commands
         cmdBuffer.SetRenderTarget(emissiveTarget);
 
-
-
         // https://docs.unity3d.com/ScriptReference/Rendering.CommandBuffer.SetViewProjectionMatrices.html
         cmdBuffer.SetViewProjectionMatrices(_camera.worldToCameraMatrix, _camera.projectionMatrix);
+        var matrix = _camera.projectionMatrix * _camera.worldToCameraMatrix;
+        // y is flipped in DirectX with Unity (like described in the docs)
+        // since we always use DirectX 12, because it's the only API supporting RayTracing in Unity,
+        // we apply this flipping by standard;
+        for(int i=1;i<16;i+=4) matrix[i] = -matrix[i];
+        shader.SetMatrix("_CustomMVP", matrix);
+        shader.SetVector("_CameraPos", _camera.transform.position);
+
         cmdBuffer.ClearRenderTarget(true, true, Color.clear, 1f);// depth, color, color-value, depth-value (default is 1)
 
         // todo copy original depth into their depth for better performance
@@ -373,8 +390,7 @@ public class DXRCamera : MonoBehaviour {
             }
         }
         
-        // cmdBuffer.DrawMeshInstancedIndirect(cubeMesh, 0, shader, pass, countBuffer, 0);
-        // Graphics.ExecuteCommandBuffer(cmdBuffer);
+        Graphics.ExecuteCommandBuffer(cmdBuffer);
 
     }
 
@@ -383,16 +399,38 @@ public class DXRCamera : MonoBehaviour {
     private static int instancesPerBatch = 511;// 1023 at max; limitation by Unity :/
     private Matrix4x4[] instData = new Matrix4x4[instancesPerBatch];
 
+    private static Vector4 QuatToVec(Quaternion q){
+        return new Vector4(q.x, q.y, q.z, q.w);
+    }
+
+    private void PreservePrevState(){
+        Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
+        Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
+        Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
+        Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+        var transform = _camera.transform;
+        prevCameraPosition = transform.position;
+        prevCameraRotation = QuatToVec(transform.rotation);
+    }
+
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
 
+        if(sleep > 0f){
+            Thread.Sleep((int) (sleep * 1000));
+        }
+        
+        DistributeSurfels();
+        AccumulateSurfelEmissions();
+
+        var transform = _camera.transform;
+        // Debug.Log("on-rimage: "+_camera.worldToCameraMatrix);
         if(doRT){
 
             // update frame index and start path tracer
             rayTracingShader.SetInt("_FrameIndex", frameIndex);
-            rayTracingShader.SetVector("_CameraPosition", _camera.transform.position);
-            var rotation = _camera.transform.rotation;
-            rayTracingShader.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            rayTracingShader.SetVector("_CameraPosition", transform.position);
+            rayTracingShader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
             float zFactor1 = giTarget.height / (2.0f * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad));
             rayTracingShader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor1));
 
@@ -402,9 +440,8 @@ public class DXRCamera : MonoBehaviour {
             rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
 
             // update accumulation material
-            Vector3 pos = _camera.transform.position;
-            Vector3 deltaPos = pos - previousCameraPosition;
-            previousCameraPosition = pos;
+            Vector3 pos = transform.position;
+            Vector3 deltaPos = pos - prevCameraPosition;
             accuMaterial.SetVector("_DeltaCameraPosition", deltaPos);
             accuMaterial.SetTexture("_CurrentFrame", giTarget);
             accuMaterial.SetTexture("_Accumulation", accu1);
@@ -424,15 +461,12 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetFloat("_Far", _camera.farClipPlane);
             displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
             displayMaterial.SetVector("_CameraPosition", pos);
-            displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
             float zFactor2 = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * _camera.pixelWidth) / _camera.pixelHeight, zFactor2));
             Graphics.Blit(accu2, destination, displayMaterial);
 
-            Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
-            Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
-            Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
-            Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+            PreservePrevState();
 
             // switch accumulate textures
             var temp = accu1;
@@ -441,11 +475,10 @@ public class DXRCamera : MonoBehaviour {
 
         } else {
 
-            var rotation = _camera.transform.rotation;
             if(updateSurfels && surfelTracingShader != null) {
                 surfelTracingShader.SetInt("_FrameIndex", frameIndex);
-                surfelTracingShader.SetVector("_CameraPosition", _camera.transform.position);
-                surfelTracingShader.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+                surfelTracingShader.SetVector("_CameraPosition", transform.position);
+                surfelTracingShader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
                 float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
                 float zFactor1 = giTarget.height / (2.0f * tan);
                 surfelTracingShader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor1));
@@ -468,10 +501,12 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
             displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
             displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
-            displayMaterial.SetVector("_CameraRotation", new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
             float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
             Graphics.Blit(null, destination, displayMaterial);
+            
+            PreservePrevState();
 
         }
 
