@@ -183,8 +183,12 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
                 // if surfel is too small, replace it
                 float targetSize = calculateSize(distance);
                 float surfelSize = surfel.position.w;
-                if(surfelSize < targetSize * 0.707 || surfelSize > targetSize * 1.414) {
+                if(surfelSize > targetSize * 0.707 && surfelSize < targetSize * 1.414) {
                     // to do use original dir, or updated dir?
+                    surfel.position.w = targetSize;
+                    surfel.color *= min(surfelSize, targetSize) / max(surfelSize, targetSize);
+                    Surfels[index] = surfel;
+                } else {
                     Surfels[index] = InitSurfel(fibonacciSphere(index, length1)); 
                 }
             }
