@@ -50,6 +50,7 @@ Shader "Custom/SurfelShader" {
                 float4 position;
                 float4 rotation;
                 float4 color;
+                float4 data;
             };
 
         #ifdef SHADER_API_D3D11

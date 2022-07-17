@@ -11,6 +11,7 @@ public class DXRCamera : MonoBehaviour {
         float4 position;
         float4 rotation;
         float4 color;
+        float4 data;
     };
 
     public float surfelDensity = 2f;
@@ -120,8 +121,10 @@ public class DXRCamera : MonoBehaviour {
         shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         
         var transform = _camera.transform;
-        shader.SetVector("_CameraPosition", usePrevFrameForDistribution ? prevCameraPosition : transform.position);
-        shader.SetVector("_CameraRotation", usePrevFrameForDistribution ? prevCameraRotation : QuatToVec(transform.rotation));
+        shader.SetVector("_CameraPosition", transform.position);
+        shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+        shader.SetVector("_CameraDirection", transform.forward);
+        shader.SetVector("_PrevCameraPosition", prevCameraPosition);
         
         float invZFactor = 1f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVScale", new Vector2(((float)giTarget.height / (giTarget.width)) * invZFactor, invZFactor));
@@ -131,22 +134,29 @@ public class DXRCamera : MonoBehaviour {
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
 
-        for(int i = 0; i < (hasPlacedSurfels ? 2 : 1) ; i++){
+        int kernel;
+        uint gsx, gsy, gsz;
+        if(hasPlacedSurfels) {// update surfels
 
-            bool screenSpace = i > 0;
-
-            int kernel = PrepareDistribution(shader, screenSpace, depthTex);
-            if(kernel < 0) continue;
-
-            uint gsx, gsy, gsz;
+            kernel = shader.FindKernel("DiscardSmallAndLargeSurfels");
+            PrepareDistribution(shader, kernel, depthTex);
             shader.SetBuffer(kernel, "Surfels", surfels);
             shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
+            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
             
-            if(screenSpace) {
-                shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
-            } else {
-                shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
-            }
+            kernel = shader.FindKernel("SpawnSurfelsInGaps");
+            PrepareDistribution(shader, kernel, depthTex);
+            shader.SetBuffer(kernel, "Surfels", surfels);
+            shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
+            shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
+
+        } else {// init surfels
+
+            kernel = shader.FindKernel("InitSurfelDistribution");
+            PrepareDistribution(shader, kernel, depthTex);
+            shader.SetBuffer(kernel, "Surfels", surfels);
+            shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
+            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
 
         }
 
@@ -154,48 +164,26 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
-    public bool usePrevFrameForDistribution = false;
-
-    private int PrepareDistribution(ComputeShader shader, bool screenSpace, Texture depthTex){
+    private int PrepareDistribution(ComputeShader shader, int kernel, Texture depthTex){
         
-        int kernel = shader.FindKernel(
-            hasPlacedSurfels ? 
-                screenSpace ? 
-                    "SpawnSurfelsInGaps" : 
-                    "DiscardSmallAndLargeSurfels" :
-                "InitSurfelDistribution"
-        );
-
-        if(usePrevFrameForDistribution){
-
-            shader.SetTexture(kernel, "_CameraGBufferTexture0", prevGBuff0);
-            shader.SetTexture(kernel, "_CameraGBufferTexture1", prevGBuff1);
-            shader.SetTexture(kernel, "_CameraGBufferTexture2", prevGBuff2);
-            shader.SetTexture(kernel, "_CameraDepthTexture",    prevGBuffD);
-
-        } else {
-
-            var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
-            var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
-            var t2 = Shader.GetGlobalTexture("_CameraGBufferTexture2");
-            if(t0 == null || t1 == null || t2 == null){
-                Debug.Log("Missing GBuffers");
-                return -1;
-            }
-
-            shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
-            shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
-            shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
-            shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
-
+        var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
+        var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
+        var t2 = Shader.GetGlobalTexture("_CameraGBufferTexture2");
+        if(t0 == null || t1 == null || t2 == null){
+            Debug.Log("Missing GBuffers");
+            return -1;
         }
+
+        shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
+        shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
+        shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
+        shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
 
         if(emissiveTarget != null) {
             shader.SetTexture(kernel, "_Weights", emissiveTarget);
         }
 
         return kernel;
-
     }
 
     private void EnableMotionVectors(){
@@ -325,9 +313,7 @@ public class DXRCamera : MonoBehaviour {
             return;
         }
 
-        bool firstFrame = false;
         if(cmdBuffer == null) {
-            firstFrame = true;
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
@@ -403,14 +389,62 @@ public class DXRCamera : MonoBehaviour {
         return new Vector4(q.x, q.y, q.z, q.w);
     }
 
-    private void PreservePrevState(){
+    private void PreservePrevGBuffers(){
         Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
         Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
         Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
         Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+    }
+
+    private void PreservePrevTransform(){
         var transform = _camera.transform;
         prevCameraPosition = transform.position;
         prevCameraRotation = QuatToVec(transform.rotation);
+    }
+
+    private void UpdateSurfelGI() {
+        var shader = surfelTracingShader;
+        shader.SetInt("_FrameIndex", frameIndex);
+        shader.SetVector("_CameraPosition", transform.position);
+        shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        float zFactor = giTarget.height / (2.0f * tan);
+        shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
+        shader.SetTexture("_SkyBox", skyBox);
+        shader.SetBuffer("_Surfels", surfels);
+        shader.SetFloat("_Far", _camera.farClipPlane);
+        shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
+        shader.SetBool("_AllowSkySurfels", allowSkySurfels);
+        shader.SetBool("_AllowStrayRays", allowStrayRays);
+        shader.SetShaderPass("DxrPass");
+        shader.Dispatch("RaygenShader", surfels.count, 1, 1, null);
+    }
+
+    private void UpdatePixelGI() {
+        var shader = rayTracingShader;
+        shader.SetInt("_FrameIndex", frameIndex);
+        shader.SetVector("_CameraPosition", transform.position);
+        shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        float zFactor = giTarget.height / (2.0f * tan);
+        shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
+        shader.SetTexture("_SkyBox", skyBox);
+        shader.SetTexture("_DxrTarget", giTarget);
+        shader.SetShaderPass("DxrPass");
+        shader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
+    }
+
+    private void AccumulatePixelGI(Vector3 deltaPos) {
+        var shader = accuMaterial;
+        shader.SetVector("_DeltaCameraPosition", deltaPos);
+        shader.SetTexture("_CurrentFrame", giTarget);
+        shader.SetTexture("_Accumulation", accu1);
+        shader.SetInt("_FrameIndex", frameIndex);
+        shader.SetTexture("prevGBuff0", prevGBuff0);
+        shader.SetTexture("prevGBuff1", prevGBuff1);
+        shader.SetTexture("prevGBuff2", prevGBuff2);
+        shader.SetTexture("prevGBuffD", prevGBuffD);
+        Graphics.Blit(giTarget, accu2, shader);
     }
 
     [ImageEffectOpaque]
@@ -419,40 +453,18 @@ public class DXRCamera : MonoBehaviour {
         if(sleep > 0f){
             Thread.Sleep((int) (sleep * 1000));
         }
-        
-        DistributeSurfels();
-        AccumulateSurfelEmissions();
 
         var transform = _camera.transform;
         // Debug.Log("on-rimage: "+_camera.worldToCameraMatrix);
         if(doRT){
 
-            // update frame index and start path tracer
-            rayTracingShader.SetInt("_FrameIndex", frameIndex);
-            rayTracingShader.SetVector("_CameraPosition", transform.position);
-            rayTracingShader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-            float zFactor1 = giTarget.height / (2.0f * Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad));
-            rayTracingShader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor1));
-
-            rayTracingShader.SetTexture("_SkyBox", skyBox);
-            rayTracingShader.SetTexture("_DxrTarget", giTarget);
-            rayTracingShader.SetShaderPass("DxrPass");
-            rayTracingShader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
-
-            // update accumulation material
-            Vector3 pos = transform.position;
-            Vector3 deltaPos = pos - prevCameraPosition;
-            accuMaterial.SetVector("_DeltaCameraPosition", deltaPos);
-            accuMaterial.SetTexture("_CurrentFrame", giTarget);
-            accuMaterial.SetTexture("_Accumulation", accu1);
-            accuMaterial.SetInt("_FrameIndex", frameIndex);
+            // start path tracer
+            UpdatePixelGI();
 
             // accumulate current raytracing result
-            accuMaterial.SetTexture("prevGBuff0", prevGBuff0);
-            accuMaterial.SetTexture("prevGBuff1", prevGBuff1);
-            accuMaterial.SetTexture("prevGBuff2", prevGBuff2);
-            accuMaterial.SetTexture("prevGBuffD", prevGBuffD);
-            Graphics.Blit(giTarget, accu2, accuMaterial);
+            Vector3 pos = transform.position;
+            Vector3 deltaPos = pos - prevCameraPosition;
+            AccumulatePixelGI(deltaPos);
 
             // display result on screen
             displayMaterial.SetFloat("_DivideByAlpha", 0f);
@@ -466,30 +478,21 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * _camera.pixelWidth) / _camera.pixelHeight, zFactor2));
             Graphics.Blit(accu2, destination, displayMaterial);
 
-            PreservePrevState();
+            PreservePrevGBuffers();
+            PreservePrevTransform();
 
-            // switch accumulate textures
+            // switch accumulation textures
             var temp = accu1;
             accu1 = accu2;
             accu2 = temp;
 
         } else {
+        
+            DistributeSurfels();
+            AccumulateSurfelEmissions();
 
             if(updateSurfels && surfelTracingShader != null) {
-                surfelTracingShader.SetInt("_FrameIndex", frameIndex);
-                surfelTracingShader.SetVector("_CameraPosition", transform.position);
-                surfelTracingShader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-                float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-                float zFactor1 = giTarget.height / (2.0f * tan);
-                surfelTracingShader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor1));
-                surfelTracingShader.SetTexture("_SkyBox", skyBox);
-                surfelTracingShader.SetBuffer("_Surfels", surfels);
-                surfelTracingShader.SetFloat("_Far", _camera.farClipPlane);
-                surfelTracingShader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
-                surfelTracingShader.SetBool("_AllowSkySurfels", allowSkySurfels);
-                surfelTracingShader.SetBool("_AllowStrayRays", allowStrayRays);
-                surfelTracingShader.SetShaderPass("DxrPass");
-                surfelTracingShader.Dispatch("RaygenShader", surfels.count, 1, 1, null);
+                UpdateSurfelGI();
             }
 
             // display result on screen
@@ -506,17 +509,12 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
             Graphics.Blit(null, destination, displayMaterial);
             
-            PreservePrevState();
-
+            PreservePrevTransform();
+            
         }
 
         frameIndex++;
 
-    }
-
-    private void OnGUI() {
-        // display samples per pixel
-        GUILayout.Label("SPP: " + frameIndex);
     }
 
     private void OnDestroy() {
@@ -538,4 +536,73 @@ public class DXRCamera : MonoBehaviour {
             surfels = null;
         }
     }
+
+    /**
+     * Poisson Image Reconstruction
+     */
+    
+    private void blur(RenderTexture src, RenderTexture tmp, RenderTexture dst){
+        blurX(src, tmp);
+        blurY(tmp, dst);
+    }
+
+    private Material signedBlurMaterial, unsignedBlurMaterial, poissonMaterial, addMaterial;
+    private void kernel(RenderTexture src, RenderTexture dst, int dx, int dy, Material material) {
+        material.SetVector("delta", new Vector2(dx/src.width,dy/src.height));
+        Graphics.Blit(src,dst,material);
+    }
+
+    private void blurX(RenderTexture src, RenderTexture dst) {
+        kernel(src, dst, 1, 0, unsignedBlurMaterial);
+    }
+
+    private void blurY(RenderTexture src, RenderTexture dst) {
+        kernel(src, dst, 0, 1, unsignedBlurMaterial);
+    }
+
+    private void blurXSigned(RenderTexture src, RenderTexture dst) {
+        kernel(src, dst, 1, 0, signedBlurMaterial);
+    }
+
+    private void blurYSigned(RenderTexture src, RenderTexture dst) {
+        kernel(src, dst, 0, 1, signedBlurMaterial);
+    }
+
+    private void poissonIterate(RenderTexture src, RenderTexture dst, RenderTexture dx, RenderTexture dy, RenderTexture blurred) {
+        var shader = poissonMaterial;
+        shader.SetTexture("src", src);
+        shader.SetTexture("dx", dx);
+        shader.SetTexture("dy", dy);
+        shader.SetTexture("blurred", blurred);
+        Graphics.Blit(null, dst, shader);
+    }
+
+    private void add(RenderTexture a, RenderTexture b, RenderTexture c, RenderTexture dst) {
+        var shader = addMaterial;
+        shader.SetTexture("a", a);
+        shader.SetTexture("b", b);
+        shader.SetTexture("c", c);
+        Graphics.Blit(null, dst, shader);
+    }
+
+    private int numPoissonIterations = 10;
+    private RenderTexture blurred, bdx, bdy, res0;
+    private RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
+        RenderTexture tmp = bdx;
+        blur(src, tmp, blurred);
+        blurXSigned(dx, bdx);
+        blurYSigned(dy, bdy);
+        add(blurred, bdx, bdy, res0);
+        RenderTexture res1 = bdx;
+        for(int i=0;i<numPoissonIterations;i++){
+
+            poissonIterate(res0, res1, dx, dy, blurred);
+
+             tmp = res0;
+            res0 = res1;
+            res1 = tmp;
+        }
+        return res0;
+    }
+
 }

@@ -861,7 +861,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  surfelDensity: 3
+  surfelDensity: 10
   sleep: 0
   allowSkySurfels: 0
   showIllumination: 0
@@ -870,7 +870,7 @@ MonoBehaviour:
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
-  maxNumSurfels: 262144
+  maxNumSurfels: 1048576
   rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
   accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}

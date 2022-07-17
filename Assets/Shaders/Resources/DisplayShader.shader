@@ -115,9 +115,9 @@
 				float3 color0 = color;
 				
 				// gaussian blur as a first test
-				float4 sum = float4(0,0,0,0);
+				float4 sum = 0;
 				float numSigmas = 2.5;
-				int di = 5;
+				int di = 0;
 				float sigma = numSigmas / float(di*di);
 				for(int j=-di;j<=di;j++){
 					for(int i=-di;i<=di;i++){
@@ -127,11 +127,16 @@
 						if(_DivideByAlpha && !_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
 						// return float4(illumination, 1.0);
 						float weight = i == 0 && j == 0 ? 1.0 : exp(-sigma*float(i*i+j*j)) * max(0.0, dot(nor,normal) - 0.8);
-						if(_DivideByAlpha) sum += float4(illumination.xyz * (weight / illumination.w), weight);
-						else sum += float4(illumination.xyz, 1) * weight;
+						if(_DivideByAlpha) {
+							sum += float4(illumination.xyz * (weight / illumination.w), weight);
+						} else {
+							sum += float4(illumination.xyz, 1) * weight;
+						}
 					}
 				}
+				
 				color *= sum.xyz * (_Exposure / sum.w);
+				
 				// color = HDR_to_LDR(color);
 				if(uv.x > _SplitX) return float4(color, 1.0);
 				

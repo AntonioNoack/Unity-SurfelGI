@@ -4,6 +4,7 @@ struct Surfel {
     float4 position;
     float4 rotation;
     float4 color;
+	float4 data;
 };
 
 float3 _CameraPosition;
@@ -53,7 +54,8 @@ void RaygenShader() {
 			float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
 
 			// only update surfels, which are in front of the camera
-			if(// all(abs(cameraDir.xy) < _CameraUVSize) && 
+			float2 uvTolerance = 1.05; // close to edge should be traced as well
+			if(cameraDir.z > 0.0 && all(abs(cameraDir.xy) < _CameraUVSize * uvTolerance) && 
 				// test whether the surfel can be visible from the camera; the sky has no GBuffer information in Unity -> skip this test
 				(_AllowSkySurfels || dot(worldDir, worldNormal) < 0.0) &&
 				distance > 0.001) {
@@ -80,26 +82,36 @@ void RaygenShader() {
 				rayDesc.TMin = startDist * 0.5;
 				rayDesc.TMax = startDist * 2.0;
 
+				int remainingTries = max(1, 8 - (int) surfel.color.w);
+
 				// Create and init the ray payload
 				RayPayload rayPayload;
-				rayPayload.color = float3(0.0, 0.0, 0.0);
 				rayPayload.randomSeed = seed;
-				rayPayload.depth = 0;
-				rayPayload.distance = 0.0;
 
-				// shoot primary ray
-				// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
-				// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+				bool hasChanged = false;
+				for(int i=0;i<remainingTries;i++){
 
-				// todo this only works, if the camera is not moving... why?
-				// if we land outside the expected region, reject the sample
-				if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
-					// rayPayload.color = frac(rayPayload.distance + 0.5);
-					surfel.color += float4(rayPayload.color, 1.0);
-					// float maxWeight = 256.0;
-					// if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
+					rayPayload.color = float3(0.0, 0.0, 0.0);
+					rayPayload.depth = 0;
+					rayPayload.distance = 0.0;
+
+					// shoot primary ray
+					// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
+					// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+					TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+					// todo this only works, if the camera is not moving... why?
+					// if we land outside the expected region, reject the sample
+					if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
+						// rayPayload.color = frac(rayPayload.distance + 0.5);
+						surfel.color += float4(rayPayload.color, 1.0);
+						// float maxWeight = 256.0;
+						// if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
+						hasChanged = true;
+					}
+				}
+				if(hasChanged) {
 					_Surfels[index] = surfel;
 				}
 			}

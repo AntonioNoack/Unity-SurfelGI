@@ -17,7 +17,7 @@ public class FPSCounter : MonoBehaviour {
 
     private void OnGUI() {
         int fps = Mathf.RoundToInt(10f / smoothFrameTime);
-        GUILayout.Label("\n"+(fps/10) + "." + (fps%10) + " fps");
+        GUILayout.Label((fps/10) + "." + (fps%10) + " fps");
     }
 
 }

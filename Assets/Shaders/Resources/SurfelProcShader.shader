@@ -43,6 +43,7 @@ Shader "Custom/SurfelProcShader" {
                 float4 position;
                 float4 rotation;
                 float4 color;
+                float4 data;
             };
 
         #ifdef SHADER_API_D3D11
@@ -75,7 +76,7 @@ Shader "Custom/SurfelProcShader" {
                     Surfel surfel;
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId];
-                        localPos = quatRot(localPos * float3(1.0,0.2,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
+                        localPos = quatRot(localPos * float3(1.0,1.0,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
                         if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
                     } else {
                         localPos = 0; // remove cube visually
@@ -146,7 +147,7 @@ Shader "Custom/SurfelProcShader" {
                     closeness = /*0.001 + 
                         0.999 * */
                         saturate(1.0/(1.0+20.0*dist)-0.1667) *
-                        saturate(dot(i.surfelNormal, normal)*25.0-24.0);
+                        saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roguhness maybe? :)
                 }
 
                 if(_VisualizeSurfels > 0.0) return float4(1,1,1,1)*closeness;
