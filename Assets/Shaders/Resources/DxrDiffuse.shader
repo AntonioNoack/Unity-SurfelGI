@@ -69,6 +69,11 @@
 			Texture2D _BumpMap;
 			SamplerState sampler_BumpMap;
 
+			float _EnableRayDifferentials;
+
+			#define TAU 6.283185307179586
+			#define PI 3.141592653589793
+
 			// many thanks to CustomPhase on Reddit for suggesting this to me:
 			// https://forum.unity.com/threads/runtime-generated-bump-maps-are-not-marked-as-normal-maps.413778/#post-4935776
 			// Unpack normal as DXT5nm (1, y, 1, x) or BC5 (x, y, 0, 1)
@@ -80,6 +85,14 @@
 				// this could be set to 1, idk whether we need full accuracy like this
 				normal.z = sqrt(1 - saturate(dot(normal.xy, normal.xy)));
 				return normal;
+			}
+
+			float3 quatRot(float3 v, float4 q){
+				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+			}
+
+			float3 quatRotInv(float3 v, float4 q){
+				return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
 			}
 
 			[shader("closesthit")]
@@ -147,10 +160,11 @@
 					RayPayload scatterRayPayload;
 					scatterRayPayload.color = float3(0.0, 0.0, 0.0);
 					scatterRayPayload.randomSeed = rayPayload.randomSeed;
-					scatterRayPayload.depth = rayPayload.depth + 1;				
+					scatterRayPayload.depth = rayPayload.depth + 1;	
 
 					// shoot scattered ray
-					TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+					TraceRay(_RaytracingAccelerationStructure,
+						scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 					
 					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
@@ -158,6 +172,87 @@
 					rayPayload.color = rayPayload.depth == 0 ? 
 						scatterRayPayload.color :
 						color * scatterRayPayload.color;
+
+					// check if we need to trace ray differentials
+					if(_EnableRayDifferentials && rayPayload.depth == 0){
+
+						float distanceToNextSurface = scatterRayPayload.distance;
+						float3 nextSurfacePos = worldPos + distanceToNextSurface * scatterRayDir;
+
+						// todo generate both ray starting points and directions
+						// todo calculate actual gradient values
+
+						float baseAngle = TAU * nextRand(rayPayload.randomSeed);
+						float2 baseSinCos = float2(sin(baseAngle), cos(baseAngle));
+						float4 surfelRotation = float4(0,0,0,1);// todo get this value
+						float surfelSize = 1.0;// todo get this value
+						float distance = surfelSize * lerp(0.01, 1.0, nextRand(rayPayload.randomSeed));
+
+						float3 baseX = quatRot(float3(1,0,0), surfelRotation);
+						float3 baseZ = quatRot(float3(0,0,1), surfelRotation);
+						float3 ray1Pos = worldPos + baseSinCos.x * baseX + baseSinCos.y * baseZ;
+						float3 ray2Pos = worldPos + baseSinCos.y * baseX - baseSinCos.x * baseZ;
+
+						
+						// todo only check for surface properties and visibility at that location,
+						// todo perhaps with some kind of flag
+
+						/**
+						 * trace differential ray 1
+						 */
+						rayDesc.Origin = ray1Pos;
+						float3 deltaPos1 = nextSurfacePos - ray1Pos;
+						float deltaLen1 = length(deltaPos1);
+						rayDesc.Direction = deltaPos1 / deltaLen1;
+						rayDesc.TMin = 0;
+						rayDesc.TMax = deltaLen1 * 1.01;
+
+						RayPayload scatterRayPayload1;
+						scatterRayPayload1.color = float3(0.0, 0.0, 0.0);
+						scatterRayPayload1.randomSeed = rayPayload.randomSeed;
+						scatterRayPayload1.depth = 0x1000;
+						scatterRayPayload1.withinGlassDepth = rayPayload.withinGlassDepth;
+
+						TraceRay(_RaytracingAccelerationStructure,
+							scatterRayPayload1.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload1);
+
+						/**
+						 * trace differential ray 2
+						 */
+						rayDesc.Origin = ray2Pos;
+						float3 deltaPos2 = nextSurfacePos - ray1Pos;
+						float deltaLen2 = length(deltaPos2);
+						rayDesc.Direction = deltaPos2 / deltaLen2;
+						rayDesc.TMin = 0;
+						rayDesc.TMax = deltaLen2 * 1.01;
+						
+						RayPayload scatterRayPayload2;
+						scatterRayPayload2.color = float3(0.0, 0.0, 0.0);
+						scatterRayPayload2.randomSeed = rayPayload.randomSeed;
+						scatterRayPayload2.depth = 0x1000;
+						scatterRayPayload2.withinGlassDepth = rayPayload.withinGlassDepth;
+
+						TraceRay(_RaytracingAccelerationStructure, 
+							scatterRayPayload2.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload2);
+
+						// todo check if those rays have hit the target
+
+						// todo trace two rays to find these
+						float4 value1 = 0;
+						float4 value2 = 0;
+
+						// should be correct
+						float3 value0 = scatterRayPayload.color;
+
+						float3 gradient1 = (value1 - value0) / distance;// store it relative to surfel size?
+						float3 gradient2 = (value2 - value0) / distance;
+
+						float3 gradientDX = baseSinCos.x; // todo reverse rotation
+						float3 gradientDY = baseSinCos.y;
+
+					}
 					
 				} // else ambient occlusion, directly by the surface itself
 

@@ -76,13 +76,14 @@ void RaygenShader() {
 
 				// init ray decriptor
 				RayDesc rayDesc;
-				// rayDesc.Origin = _CameraPosition;
-				rayDesc.Origin = surfelPos - startDist * worldDir; // start close to the surface
 				rayDesc.Direction = worldDir;
 				rayDesc.TMin = startDist * 0.5;
 				rayDesc.TMax = startDist * 2.0;
 
 				int remainingTries = max(1, 8 - (int) surfel.color.w);
+
+				float3 surfelBaseX = quatRot(float3(1,0,0), surfel.rotation);
+				float3 surfelBaseZ = quatRot(float3(0,0,1), surfel.rotation);
 
 				// Create and init the ray payload
 				RayPayload rayPayload;
@@ -90,6 +91,14 @@ void RaygenShader() {
 
 				bool hasChanged = false;
 				for(int i=0;i<remainingTries;i++){
+
+					float randomDist = surfelSize * pow(nextRand(rayPayload.randomSeed), 2.0);
+					float randomAngle = TAU * nextRand(rayPayload.randomSeed);
+
+					rayDesc.Origin = surfelPos - startDist * worldDir // start close to the surface
+					// 	+ surfelBaseX * randomDist * cos(randomAngle) // but also somewhere random
+					// 	+ surfelBaseZ * randomDist * sin(randomAngle) // ; nice idea to make reflections less voronoi-looking, but it introduces bleeding at edges, where there is extra, invisible geometry within the walls
+					;
 
 					rayPayload.color = float3(0.0, 0.0, 0.0);
 					rayPayload.depth = 0;
@@ -101,7 +110,6 @@ void RaygenShader() {
 					TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
-					// todo this only works, if the camera is not moving... why?
 					// if we land outside the expected region, reject the sample
 					if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
 						// rayPayload.color = frac(rayPayload.distance + 0.5);

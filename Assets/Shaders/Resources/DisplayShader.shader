@@ -88,9 +88,12 @@
 				return data.normalWorld;
 			}
 
-			float3 HDR_to_LDR(float3 hdr){
-				// hdr *= _Exposure;
-				return hdr/(hdr+1.0);
+			float3 HDR_to_LDR(float3 c){
+				return c/(max(max(c.x,c.y),max(c.z,0.0))+1.0);
+			}
+
+			float4 HDR_to_LDR(float4 c){
+				return float4(HDR_to_LDR(c.xyz), c.a);
 			}
 
 			float4 frag (v2f i) : SV_Target {
@@ -137,7 +140,7 @@
 				
 				color *= sum.xyz * (_Exposure / sum.w);
 				
-				// color = HDR_to_LDR(color);
+				color = HDR_to_LDR(color);
 				if(uv.x > _SplitX) return float4(color, 1.0);
 				
 				return float4(uv.y < _SplitY ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);

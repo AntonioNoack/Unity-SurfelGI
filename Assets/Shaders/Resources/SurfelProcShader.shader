@@ -33,7 +33,6 @@ Shader "Custom/SurfelProcShader" {
                 float3 localPos : TEXCOORD7;
             };
       
-            
             sampler2D _CameraGBufferTexture0;
             sampler2D _CameraGBufferTexture1;
             sampler2D _CameraGBufferTexture2;

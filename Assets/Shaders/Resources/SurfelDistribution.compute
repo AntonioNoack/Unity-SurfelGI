@@ -3,6 +3,8 @@
 #pragma kernel DiscardSmallAndLargeSurfels
 #pragma kernel SpawnSurfelsInGaps
 
+#include "Random.cginc"
+
 struct Surfel {
     float4 position;
     float4 rotation;
@@ -55,14 +57,23 @@ Texture2D<half4> _Weights;
 float3 _CameraOffset;
 
 // adopted from https://answers.unity.com/questions/467614/what-is-the-source-code-of-quaternionlookrotation.html
-float4 normalToQuaternion(float3 normal){
-    float3 v1 = normal; // m1x
-    // float3 v0 = normalize(cross(normal, float3(0,1,0)));// could be simplified
-    float3 v0 = dot(normal.xz,normal.xz) > 0.01 ? 
-        normalize(float3(normal.z, 0, -normal.x)) : float3(1,0,0);// m0x; could be simplified when using the fib sphere
-    float3 v2 = cross(v0,v1); // m2x
+// and JOML (Java OpenGL Math Library), Matrix3f class, setFromNormalized()
+float4 normalToQuaternion(float3 v1) {
+    float3 v0 = dot(v1.xz, v1.xz) > 0.01 ? 
+        normalize(float3(v1.z, 0, -v1.x)) : float3(1,0,0);// could be simplified when using the fib sphere
+    float3 v2 = cross(v0, v1);
+    float4 dst;
     float diag = v0.x + v1.y + v2.z;
-    return normalize(float4(v1.z - v2.y, v2.x - v0.z, v0.y - v1.x, diag + 1.0));
+    if (diag >= 0.0) {
+        dst = float4(v1.z - v2.y, v2.x - v0.z, v0.y - v1.x, diag + 1.0);
+    } else if (v0.x >= v1.y && v0.x >= v2.z) {
+        dst = float4(v0.x - (v1.y + v2.z) + 1.0, v1.x + v0.y, v0.z + v2.x, v1.z - v2.y);
+    } else if (v1.y > v2.z) {
+        dst = float4(v1.x + v0.y, v1.y - (v2.z + v0.x) + 1.0, v2.y + v1.z, v2.x - v0.z);
+    } else {
+        dst = float4(v0.z + v2.x, v2.y + v1.z, v2.z - (v0.x + v1.y) + 1.0, v0.y - v1.x);
+    }
+    return normalize(dst);
 }
 
 // adopted from https://stackoverflow.com/a/26127012/4979303
@@ -79,20 +90,20 @@ float3 quatRot(float3 v, float4 q){
 	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
 }
 
-float3 quatRotInv(float3 v, float4 q){
+float3 quatRotInv(float3 v, float4 q) {
 	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
 }
 
-float linear01Depth(float z){
+float linear01Depth(float z) {
 	return 1.0 / (_ZBufferParams.x * z + _ZBufferParams.y);
 }
 
-float linearEyeDepth(float z){
+float linearEyeDepth(float z) {
 	return 1.0 / (_ZBufferParams.z * z + _ZBufferParams.w);
 }
 
-float calculateSize(float distance){
-    return min(_Density * 4.0 * distance / sqrt(float(Surfels.Length)), _Far * 0.5);
+float calculateSize(float distance, float dot) {
+    return min(_Density * 4.0 * distance / (sqrt(float(Surfels.Length)) * (abs(dot)*.5+.5)), _Far * 0.5);
 }
 
 Surfel InitSkySurfel(float3 worldDir) {
@@ -101,7 +112,7 @@ Surfel InitSkySurfel(float3 worldDir) {
     surfel.position.xyz = _CameraPosition + worldDir * distance;
     surfel.rotation = normalToQuaternion(worldDir);
     // surface area of a sphere: 4*pi*r²
-    surfel.position.w = calculateSize(distance);
+    surfel.position.w = calculateSize(distance, 1.0);
     surfel.color = 1;// sky has GI = 1
     surfel.data = 0;
     return surfel;
@@ -132,7 +143,7 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
     float3 surfaceDir = normalize(data2.xyz*2.0-1.0);
     surfel.rotation = normalToQuaternion(surfaceDir);
     // surface area of a sphere: 4*pi*r²
-    surfel.position.w = calculateSize(distance);
+    surfel.position.w = calculateSize(distance, dot(surfaceDir, worldDir));
     // surfel.color = float4(uv,frac(depth),1);
     surfel.color = float4(color * START_WEIGHT, START_WEIGHT);
     surfel.data = float4(CalcAngleDepedence(specular, smoothness),0,0,0);// angle-dependance and unused x3
@@ -194,7 +205,9 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             if(uvsOnScreen(uv)) {
                 // if surfel is too large, replace it
                 // if surfel is too small, replace it
-                float targetSize = calculateSize(distance);
+                float4 data2 = _CameraGBufferTexture2.SampleLevel(_PointClampSampler, uv, 0);
+                float3 surfaceDir = normalize(data2.xyz*2.0-1.0);
+                float targetSize = calculateSize(distance, dot(worldDir, surfaceDir));
                 float surfelSize = surfel.position.w;
                 if(surfelSize > targetSize * 0.707 && surfelSize < targetSize * 1.414) {
                     surfel.position.w = targetSize;
@@ -223,51 +236,18 @@ float freeSurfelScore(int surfelIndex) {
     return surfel.color.w * max(1.0 - dot(dir, _CameraDirection), 0.0);
 }
 
-[numthreads(8,8,1)]
-void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
+void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
+    
+    // spawn new surfel
 
-    // each thread searches a 16x16 tile for the lowest weight
-    // idea from https://media.contentapi.ea.com/content/dam/ea/seed/presentations/cedec2018-towards-effortless-photorealism-through-real-time-raytracing.pdf
-    // which seems to be also used in "global illumination based on surfels", Siggraph 2021 EA
+    // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
+	
+    int freeIndex = (nextRandInt(seed) & 0x7fffffff) % (Surfels.Length - 16);
 
-    int  tileSizeX = 16;
-    int  tileSizeY = 16;
-    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
-    _Weights.GetDimensions(mipLevel, width, height, numLevels);
-    uint x0 = dispatchIdx.x * tileSizeX, x1 = min(x0 + tileSizeX, width);
-    uint y0 = dispatchIdx.y * tileSizeY, y1 = min(y0 + tileSizeX, height);
-    float lowestWeight = 1.0;
-    uint  bestX = x0, bestY = y0;
-    for(uint y=y0;y<y1;y++){
-        for(uint x=x0;x<x1;x++){
-            int3  uvi = int3(x,y,0);
-            float weight = _Weights.Load(uvi).a;
-            float depth = _AllowSkySurfels ? 1.0 : _CameraDepthTexture.Load(uvi).r;
-            if(depth > 0.0 && weight < lowestWeight) {
-                lowestWeight = weight;
-                bestX = x;
-                bestY = y;
-            }
-        }
-    }
-    // todo stochastic (?)
-    if(lowestWeight < 0.01) {
-
-        // todo handle multiple empty pixels, and then respect the latest placed surfels
-
-        // todo never spawn surfels with a size of less than 1 pixel
-
-        // spawn new surfel
-
-        int3 uv = int3(bestX, bestY, 0);
-
-        // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
-        // todo truly random index
-        int freeIndex = (bestX + bestY * width + _FrameIndex) % (Surfels.Length - 16);
-        int bestFreeIndex = freeIndex;
-        float bestFreeScore = freeSurfelScore(freeIndex);
-        freeIndex++;
-        for(int l=freeIndex+15;freeIndex<l;freeIndex++){
+    int bestFreeIndex = freeIndex;
+    float bestFreeScore = freeSurfelScore(freeIndex);
+    freeIndex++;
+    for(int l=freeIndex+15;freeIndex<l;freeIndex++){
             float score = freeSurfelScore(freeIndex);
             if(score > bestFreeScore){
                 bestFreeScore = score;
@@ -278,7 +258,7 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
 
         // distribute surfel onto pixel
 
-        float3 cameraDir = float3(float2(bestX, bestY) - _CameraOffset.xy, _CameraOffset.z);
+        float3 cameraDir = float3(uv.xy - _CameraOffset.xy, _CameraOffset.z);
 	    float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
 
         float rawDepth = _CameraDepthTexture.Load(uv).r;
@@ -292,5 +272,40 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
         } else if(_AllowSkySurfels) {
             Surfels[freeIndex] = InitSkySurfel(worldDir);
         }
+}
+
+[numthreads(8,8,1)]
+void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
+
+    // each thread searches a 16x16 tile for the lowest weight
+    // idea from https://media.contentapi.ea.com/content/dam/ea/seed/presentations/cedec2018-towards-effortless-photorealism-through-real-time-raytracing.pdf
+    // which seems to be also used in "global illumination based on surfels", Siggraph 2021 EA
+
+    int  tileSizeX = 16;
+    int  tileSizeY = 16;
+    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
+    _Weights.GetDimensions(mipLevel, width, height, numLevels);
+    uint x0 = dispatchIdx.x * tileSizeX, x1 = min(x0 + tileSizeX, width);
+    uint y0 = dispatchIdx.y * tileSizeY, y1 = min(y0 + tileSizeX, height);
+    // float lowestWeight = 1.0;
+    // uint bestX = x0, bestY = y0;
+    uint seed = initRand(dispatchIdx.x + (dispatchIdx.y << 16), _FrameIndex);
+    for(uint y=y0;y<y1;y++){
+        for(uint x=x0;x<x1;x++){
+            int3  uvi = int3(x, y, 0);
+            float weight = _Weights.Load(uvi).a;
+            float depth = _AllowSkySurfels ? 1.0 : _CameraDepthTexture.Load(uvi).r;
+            if(depth > 0.0 && weight < 0.01) {
+                // lowestWeight = weight;
+                // bestX = x;
+                // bestY = y;
+                SpawnSurfel(dispatchIdx, uvi, seed);
+                // todo spawned surfels need to be added into the consideration for next surfels
+                return;
+            }
+        }
     }
+
+    // todo never spawn surfels with a size of less than 1 pixel
+    
 }

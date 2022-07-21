@@ -117,7 +117,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_Time", Time.time);
         shader.SetFloat("_Density", surfelDensity);
         shader.SetFloat("_Far", _camera.farClipPlane);
-        shader.SetFloat("_FrameIndex", frameIndex);
+        shader.SetInt("_FrameIndex", frameIndex);
         shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         
         var transform = _camera.transform;
@@ -546,10 +546,9 @@ public class DXRCamera : MonoBehaviour {
         blurY(tmp, dst);
     }
 
-    private Material signedBlurMaterial, unsignedBlurMaterial, poissonMaterial, addMaterial;
     private void kernel(RenderTexture src, RenderTexture dst, int dx, int dy, Material material) {
-        material.SetVector("delta", new Vector2(dx/src.width,dy/src.height));
-        Graphics.Blit(src,dst,material);
+        material.SetVector("_DeltaUV", new Vector2(dx / (src.width-1), dy / (src.height-1)));
+        Graphics.Blit(src, dst, material);
     }
 
     private void blurX(RenderTexture src, RenderTexture dst) {
@@ -570,24 +569,81 @@ public class DXRCamera : MonoBehaviour {
 
     private void poissonIterate(RenderTexture src, RenderTexture dst, RenderTexture dx, RenderTexture dy, RenderTexture blurred) {
         var shader = poissonMaterial;
-        shader.SetTexture("src", src);
-        shader.SetTexture("dx", dx);
-        shader.SetTexture("dy", dy);
-        shader.SetTexture("blurred", blurred);
+        float dxf = 1f/(src.width-1), dyf = 1f/(src.height-1);
+        shader.SetVector("_Dx1", new Vector2(1*dxf, 0f));
+        shader.SetVector("_Dx2", new Vector2(2*dxf, 0f));
+        shader.SetVector("_Dy1", new Vector2(0f, 1*dyf));
+        shader.SetVector("_Dy2", new Vector2(0f, 2*dyf));
+        shader.SetTexture("_Src", src);
+        shader.SetTexture("_Dx", dx);
+        shader.SetTexture("_Dy", dy);
+        shader.SetTexture("_Blurred", blurred);
         Graphics.Blit(null, dst, shader);
     }
 
     private void add(RenderTexture a, RenderTexture b, RenderTexture c, RenderTexture dst) {
         var shader = addMaterial;
-        shader.SetTexture("a", a);
-        shader.SetTexture("b", b);
-        shader.SetTexture("c", c);
+        shader.SetTexture("_TexA", a);
+        shader.SetTexture("_TexB", b);
+        shader.SetTexture("_TexC", c);
         Graphics.Blit(null, dst, shader);
     }
 
+    public int poissonBlurRadius = 25;
     private int numPoissonIterations = 10;
     private RenderTexture blurred, bdx, bdy, res0;
+    public Shader blurShader;
+    private float[] unsignedBlurMask, signedBlurMask;
+    public Material poissonMaterial, addMaterial;
+    private Material signedBlurMaterial, unsignedBlurMaterial;
+    private float gaussianWeight(int i, float n, float sigma){ // gaussian bell curve with standard deviation <sigma> from -<n> to <n>
+        float x = i * sigma / (n-1);
+        return Mathf.Exp(-x*x);
+    }
     private RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
+
+        if(signedBlurMaterial == null){
+            if(blurShader == null){
+                Debug.Log("Blur Shader is missing!");
+                return src;
+            }
+            signedBlurMaterial = new Material(blurShader);
+            unsignedBlurMaterial = new Material(blurShader);
+        }
+
+        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1){
+            // create blur masks
+            float sigma = 2.5f;
+            unsignedBlurMask = new float[poissonBlurRadius * 2 + 1];
+            signedBlurMask = new float[poissonBlurRadius * 2 + 1];
+            float weightSum = 0f;
+            int n = Mathf.Max(poissonBlurRadius, 1);
+            for(int i=0;i<=poissonBlurRadius;i++){
+                weightSum += gaussianWeight(i, n, sigma);
+            }
+            float weightScale = 1f / weightSum;
+            for(int i=0;i<=poissonBlurRadius;i++){
+                float weight = weightScale * gaussianWeight(i, n, sigma);
+                int j = i + poissonBlurRadius;
+                unsignedBlurMask[i] = unsignedBlurMask[j] = weight;
+                signedBlurMask[i] = -weight;
+                signedBlurMask[j] = +weight;
+            }
+            signedBlurMask[poissonBlurRadius] = 0; // blur mask must be symmetric
+            signedBlurMaterial.SetInt("_N", poissonBlurRadius);
+            signedBlurMaterial.SetFloatArray("_Weights", signedBlurMask);
+            unsignedBlurMaterial.SetInt("_N", poissonBlurRadius);
+            unsignedBlurMaterial.SetFloatArray("_Weights", unsignedBlurMask);
+        }
+
+        if(addMaterial == null){
+            Debug.Log("AddMaterial is missing!");
+            return src;
+        } else if(poissonMaterial == null){
+            Debug.Log("PoissonMaterial is missing!");
+            return src;
+        }
+
         RenderTexture tmp = bdx;
         blur(src, tmp, blurred);
         blurXSigned(dx, bdx);

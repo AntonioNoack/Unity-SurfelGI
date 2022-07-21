@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: DisplayMaterial
-  m_Shader: {fileID: 4800000, guid: 1d699265539dca14494993e82cf9ca03, type: 3}
+  m_Name: DxrGlass2
+  m_Shader: {fileID: 4800000, guid: 006c8d08a3b5c1f42b097815ac7a91eb, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
@@ -58,30 +58,26 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _AllowSkySurfels: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
-    - _DivideByAlpha: 1
     - _DstBlend: 0
-    - _Exposure: 8
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
+    - _IoR: 1.31
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
-    - _ShowIllumination: 0
+    - _Roughness: 0.001
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
-    - _SplitX: 0
-    - _SplitY: 0.82
     - _SrcBlend: 1
+    - _StartDepth: 1
     - _UVSec: 0
-    - _VisualizeSurfels: 0
     - _ZWrite: 1
     m_Colors:
-    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Color: {r: 0.91211283, g: 0.9622529, b: 0.9716981, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

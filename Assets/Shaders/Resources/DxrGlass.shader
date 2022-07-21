@@ -91,7 +91,8 @@
 				// get index of refraction (IoR)
 				// IoR for front faces = AirIor / MaterialIoR
 				// IoR for back faces = MaterialIoR / AirIor
-				float currentIoR = dot(rayDir, worldNormal) <= 0.0 ? 1.0 / _IoR : _IoR;
+				bool enteringGlass = dot(rayDir, worldNormal) <= 0.0;
+				float currentIoR = enteringGlass ? 1.0 / _IoR : _IoR;
 				// flip angle for backfaces
 				float cosine = abs(dot(rayDir, worldNormal));
 
@@ -119,9 +120,13 @@
 				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
 				scatterRayPayload.randomSeed = rayPayload.randomSeed;
 				scatterRayPayload.depth = rayPayload.depth + 1;
+				scatterRayPayload.withinGlassDepth = max(0, rayPayload.withinGlassDepth + (enteringGlass ? 1 : -1));
 				
 				// shoot refraction/reflection ray
-				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+				// must not discard backfaces, if we are within glass
+				TraceRay(_RaytracingAccelerationStructure, 
+					scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
 				
 				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :
