@@ -21,6 +21,7 @@ Shader "Custom/SurfelProcShader" {
             #pragma target 3.5
 
             #include "UnityCG.cginc"
+            #include "Surfel.cginc"
 
             struct v2f {
                 float4 vertex : SV_POSITION;
@@ -38,13 +39,6 @@ Shader "Custom/SurfelProcShader" {
             sampler2D _CameraGBufferTexture2;
             sampler2D _CameraDepthTexture;
 
-            struct Surfel {
-                float4 position;
-                float4 rotation;
-                float4 color;
-                float4 data;
-            };
-
         #ifdef SHADER_API_D3D11
             StructuredBuffer<Surfel> _Surfels : register(t1);
         #endif
@@ -59,10 +53,6 @@ Shader "Custom/SurfelProcShader" {
 
             float _AllowSkySurfels;
             float _VisualizeSurfels;
-
-            float3 quatRot(float3 v, float4 q){
-				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-			}
 
             // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/
             v2f vert (uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) {
@@ -135,7 +125,7 @@ Shader "Custom/SurfelProcShader" {
                 // return float4(frac(surfaceWorldPosition),1);
                 float closeness;
                 float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
-                if(rawDepth == 0.0 && dist > 3.0) {
+                if(rawDepth == 0.0 && dist > 3.0) {// sky
 
                     // disc like closeness
                     dist = length(i.localPos.xz);
@@ -145,7 +135,10 @@ Shader "Custom/SurfelProcShader" {
                 } else {
                     closeness = /*0.001 + 
                         0.999 * */
+                        // todo use linear falloff for linear transitions
                         saturate(1.0/(1.0+20.0*dist)-0.1667) *
+                        // saturate(1.0 - 2.0 * sqrt(dist)) *
+                        // step(dist, 1.0) *
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roguhness maybe? :)
                 }
 

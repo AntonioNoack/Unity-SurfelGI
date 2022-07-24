@@ -11,6 +11,8 @@ public class DXRCamera : MonoBehaviour {
         float4 position;
         float4 rotation;
         float4 color;
+        float4 colorDx;
+        float4 colorDy;
         float4 data;
     };
 
@@ -45,7 +47,7 @@ public class DXRCamera : MonoBehaviour {
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
 
     // summed global illumination
-    private RenderTexture emissiveTarget;
+    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget;
 
     // scene structure for raytracing
     private RayTracingAccelerationStructure rtas;
@@ -100,8 +102,10 @@ public class DXRCamera : MonoBehaviour {
 
         var shader = surfelDistShader;
         if(shader == null) Debug.Log("Missing surfel shader!");
-        if(surfels == null) {
+        if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
+            if(surfels != null) surfels.Release();
             surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());
+            hasPlacedSurfels = false;
             Debug.Log("created surfel compute buffer, "+surfels.count);
         }
 
@@ -135,33 +139,46 @@ public class DXRCamera : MonoBehaviour {
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
 
         int kernel;
-        uint gsx, gsy, gsz;
         if(hasPlacedSurfels) {// update surfels
 
             kernel = shader.FindKernel("DiscardSmallAndLargeSurfels");
             PrepareDistribution(shader, kernel, depthTex);
             shader.SetBuffer(kernel, "Surfels", surfels);
-            shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
-            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
+            Dispatch(shader, kernel, surfels.count, 1, 1);
             
             kernel = shader.FindKernel("SpawnSurfelsInGaps");
             PrepareDistribution(shader, kernel, depthTex);
             shader.SetBuffer(kernel, "Surfels", surfels);
-            shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
-            shader.Dispatch(kernel, CeilDiv(giTarget.width, (int) gsx * 16), CeilDiv(giTarget.height, (int) gsy * 16), 1);
-
+            Dispatch(shader, kernel, CeilDiv(giTarget.width, 16), CeilDiv(giTarget.height, 16), 1);
+            
         } else {// init surfels
 
             kernel = shader.FindKernel("InitSurfelDistribution");
             PrepareDistribution(shader, kernel, depthTex);
             shader.SetBuffer(kernel, "Surfels", surfels);
-            shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
-            shader.Dispatch(kernel, CeilDiv(surfels.count, (int) gsx), 1, 1);
+            Dispatch(shader, kernel, surfels.count, 1, 1);
 
         }
 
         hasPlacedSurfels = true;
 
+    }
+
+    private void Dispatch(ComputeShader shader, int kernel, int x, int y, int z){
+        uint gsx, gsy, gsz;
+        shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
+        int sx = CeilDiv(x, (int) gsx);
+        int sy = CeilDiv(y, (int) gsy);
+        int sz = CeilDiv(z, (int) gsz);
+        int maxDim = 1 << 16; // maximum dimensions, why ever...; in OpenGL this is 2B for x, and 65k for y and z on my RTX 3070
+        for(x=0;x<sx;x+=maxDim) {
+            for(y=0;y<sy;y+=maxDim) {
+                for(z=0;z<sz;z+=maxDim) {
+                    shader.SetVector("_DispatchOffset", new Vector3(x,y,z));
+                    shader.Dispatch(kernel, Mathf.Min(sx-x, maxDim), Mathf.Min(sy-y, maxDim), Mathf.Min(sz-z, maxDim));
+                }
+            }
+        }
     }
 
     private int PrepareDistribution(ComputeShader shader, int kernel, Texture depthTex){
@@ -207,15 +224,19 @@ public class DXRCamera : MonoBehaviour {
         accu2 = new RenderTexture(giTarget);
 
         prevGBuff0 = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
-        prevGBuff1 = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
-        prevGBuff2 = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
+        prevGBuff0.enableRandomWrite = true;
+        prevGBuff1 = new RenderTexture(prevGBuff0);
+        prevGBuff2 = new RenderTexture(prevGBuff0);
         prevGBuffD = new RenderTexture(width, height, 0, RenderTextureFormat.RFloat, RenderTextureReadWrite.Default);
 
         emissiveTarget = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Default);
         emissiveTarget.enableRandomWrite = true;
         emissiveTarget.Create();
+        emissiveDxTarget = new RenderTexture(emissiveTarget);
+        emissiveDyTarget = new RenderTexture(emissiveTarget);
+        emissiveDxTarget.Create();
+        emissiveDyTarget.Create();
 
-        prevGBuff0.enableRandomWrite = true;
         prevGBuff1.enableRandomWrite = true;
         prevGBuff2.enableRandomWrite = true;
         prevGBuffD.enableRandomWrite = true;
@@ -242,6 +263,8 @@ public class DXRCamera : MonoBehaviour {
         prevGBuff2.Release();
         prevGBuffD.Release();
         emissiveTarget.Release();
+        emissiveDxTarget.Release();
+        emissiveDyTarget.Release();
         // skyBox.Release(); // not supported???
     }
 
@@ -287,7 +310,7 @@ public class DXRCamera : MonoBehaviour {
     }
 
     public Mesh cubeMesh;
-    public Material surfelMaterial, surfelProcMaterial;
+    public Material surfelMaterial, surfelProcMaterial, surfel2ProcMaterial;
     public bool doRT = false;
 
     private CommandBuffer cmdBuffer = null;
@@ -300,7 +323,12 @@ public class DXRCamera : MonoBehaviour {
 
     void AccumulateSurfelEmissions() {
 
-        Material shader = useProceduralSurfels ? surfelProcMaterial : surfelMaterial;
+        if(useDerivatives) {
+            useProceduralSurfels = true;
+        }
+
+        Material shader = useDerivatives ? surfel2ProcMaterial :
+            useProceduralSurfels ? surfelProcMaterial : surfelMaterial;
 
         if(!hasPlacedSurfels){
             Debug.Log("Waiting for surfels to be placed");
@@ -339,7 +367,15 @@ public class DXRCamera : MonoBehaviour {
         // if(!firstFrame) return; // command buffer doesn't change, only a few shader variables
 
         cmdBuffer.Clear(); // clear all commands
-        cmdBuffer.SetRenderTarget(emissiveTarget);
+        if(useDerivatives){
+            RenderTargetIdentifier[] targets = new RenderTargetIdentifier[3];
+            targets[0] = emissiveTarget.colorBuffer;
+            targets[1] = emissiveDxTarget.colorBuffer;
+            targets[2] = emissiveDyTarget.colorBuffer;
+            cmdBuffer.SetRenderTarget(targets, emissiveTarget.depthBuffer);
+        } else {
+            cmdBuffer.SetRenderTarget(emissiveTarget);
+        }
 
         // https://docs.unity3d.com/ScriptReference/Rendering.CommandBuffer.SetViewProjectionMatrices.html
         cmdBuffer.SetViewProjectionMatrices(_camera.worldToCameraMatrix, _camera.projectionMatrix);
@@ -447,6 +483,8 @@ public class DXRCamera : MonoBehaviour {
         Graphics.Blit(giTarget, accu2, shader);
     }
 
+    public bool useDerivatives = false;
+
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
 
@@ -488,7 +526,7 @@ public class DXRCamera : MonoBehaviour {
 
         } else {
         
-            DistributeSurfels();
+            if(updateSurfels) DistributeSurfels();
             AccumulateSurfelEmissions();
 
             if(updateSurfels && surfelTracingShader != null) {

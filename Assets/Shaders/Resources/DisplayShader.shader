@@ -102,10 +102,9 @@
 				if(_VisualizeSurfels) return ill;
 
 				if(_ShowIllumination) {
-					if(_DivideByAlpha) return ill.w == 0.0 && !_AllowSkySurfels ? 
-						float4(1,1,1,1) : 
-						float4(ill.xyz/min(0.001, ill.w), 1.0);
-					else return float4(ill.xyz, 1.0);
+					if(_DivideByAlpha && ill.w > 0.0) ill /= ill.w;
+					if(!_AllowSkySurfels && ill.w == 0.0) ill = 1;
+					return float4(HDR_to_LDR(ill.xyz), 1.0);
 				}
 
 				float2 uv = i.uv;

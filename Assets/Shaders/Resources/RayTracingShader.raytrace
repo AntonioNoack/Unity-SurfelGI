@@ -1,4 +1,5 @@
 ﻿#include "Common.cginc"
+#include "Surfel.cginc"
 
 // texture to store raytracing result
 RWTexture2D<float4> _DxrTarget;
@@ -11,11 +12,6 @@ float3 _CameraOffset;
 int _FrameIndex;
 
 #pragma max_recursion_depth 8
-
-// rotate vector v using quaternion q
-float3 quatRot(float3 v, float4 q){
-    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-}
 
 [shader("raygeneration")]
 void RaygenShader() {

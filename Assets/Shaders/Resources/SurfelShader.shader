@@ -21,6 +21,7 @@ Shader "Custom/SurfelShader" {
             #pragma target 3.5
 
             #include "UnityCG.cginc"
+            #include "Surfel.cginc"
 
             struct appdata {
                 float4 vertex : POSITION;
@@ -39,19 +40,11 @@ Shader "Custom/SurfelShader" {
                 float3 localPos : TEXCOORD7;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
-      
             
             sampler2D _CameraGBufferTexture0;
             sampler2D _CameraGBufferTexture1;
             sampler2D _CameraGBufferTexture2;
             sampler2D _CameraDepthTexture;
-
-            struct Surfel {
-                float4 position;
-                float4 rotation;
-                float4 color;
-                float4 data;
-            };
 
         #ifdef SHADER_API_D3D11
             uniform StructuredBuffer<Surfel> _Surfels : register(t1);
@@ -65,10 +58,6 @@ Shader "Custom/SurfelShader" {
 
             float _AllowSkySurfels;
             float _VisualizeSurfels;
-
-            float3 quatRot(float3 v, float4 q){
-				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-			}
 
             v2f vert (appdata v) {
                 v2f o;

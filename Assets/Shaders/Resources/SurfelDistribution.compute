@@ -4,13 +4,7 @@
 #pragma kernel SpawnSurfelsInGaps
 
 #include "Random.cginc"
-
-struct Surfel {
-    float4 position;
-    float4 rotation;
-    float4 color;
-    float4 data; // angle-dependence
-};
+#include "Surfel.cginc"
 
 #define PI 3.141592653589793
 
@@ -53,6 +47,8 @@ float4 _ZBufferParams;
 
 bool _AllowSkySurfels;
 
+uint3 _DispatchOffset;
+
 Texture2D<half4> _Weights;
 float3 _CameraOffset;
 
@@ -86,14 +82,6 @@ float3 fibonacciSphere(int i, int n){
     return float3(cos(theta) * radius, y, sin(theta) * radius);
 }
 
-float3 quatRot(float3 v, float4 q){
-	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-}
-
-float3 quatRotInv(float3 v, float4 q) {
-	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
-}
-
 float linear01Depth(float z) {
 	return 1.0 / (_ZBufferParams.x * z + _ZBufferParams.y);
 }
@@ -114,6 +102,8 @@ Surfel InitSkySurfel(float3 worldDir) {
     // surface area of a sphere: 4*pi*r²
     surfel.position.w = calculateSize(distance, 1.0);
     surfel.color = 1;// sky has GI = 1
+    surfel.colorDx = 0;
+    surfel.colorDy = 0;
     surfel.data = 0;
     return surfel;
 }
@@ -146,6 +136,8 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
     surfel.position.w = calculateSize(distance, dot(surfaceDir, worldDir));
     // surfel.color = float4(uv,frac(depth),1);
     surfel.color = float4(color * START_WEIGHT, START_WEIGHT);
+    surfel.colorDx = 0;
+    surfel.colorDy = 0;
     surfel.data = float4(CalcAngleDepedence(specular, smoothness),0,0,0);// angle-dependance and unused x3
     // float dt = max(-dot(worldDir, surfaceDir), 0.1);
     // surfel.color = float4(dt,dt,dt,1);
@@ -177,9 +169,9 @@ Surfel InitSurfel(float3 worldDir) {
     return surfel;
 }
 
-[numthreads(64,1,1)]
+[numthreads(256,1,1)]
 void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
-    uint index = dispatchIdx.x;
+    uint index = dispatchIdx.x + _DispatchOffset.x;
     uint length = Surfels.Length;
     if(index < length) {
         float3 worldDir = fibonacciSphere(index, length);
@@ -187,9 +179,9 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
-[numthreads(64,1,1)]
+[numthreads(256,1,1)]
 void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
-    uint index = dispatchIdx.x;
+    uint index = dispatchIdx.x + _DispatchOffset.x;
     uint length1 = Surfels.Length;
     if(index < length1) {
         Surfel surfel = Surfels[index];
@@ -229,7 +221,7 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
-float freeSurfelScore(int surfelIndex) {
+float freeSurfelScore(uint surfelIndex) {
     Surfel surfel = Surfels[surfelIndex];
     float3 worldPos = surfel.position.xyz;
     float3 dir = worldPos - _CameraPosition;
@@ -242,9 +234,9 @@ void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
 
     // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
 	
-    int freeIndex = (nextRandInt(seed) & 0x7fffffff) % (Surfels.Length - 16);
+    uint freeIndex = ((uint) nextRandInt(seed)) % (Surfels.Length - 16);
 
-    int bestFreeIndex = freeIndex;
+    uint bestFreeIndex = freeIndex;
     float bestFreeScore = freeSurfelScore(freeIndex);
     freeIndex++;
     for(int l=freeIndex+15;freeIndex<l;freeIndex++){
@@ -274,7 +266,7 @@ void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
         }
 }
 
-[numthreads(8,8,1)]
+[numthreads(16,16,1)]
 void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
 
     // each thread searches a 16x16 tile for the lowest weight
