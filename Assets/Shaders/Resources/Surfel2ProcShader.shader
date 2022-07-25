@@ -9,8 +9,9 @@ Shader "Custom/Surfel2ProcShader" {
         ZTest Always
         ZWrite Off
         Blend One One
+        // todo this can be removed if we don't need light->surfel tracing / multiple importance sampling; idk about this yet
         // the id layer is rendering the surfel ID, which must not be mixed
-        Blend 3 Max One One
+        BlendOp 3 Max
         Cull Front
 
         Pass {
@@ -59,7 +60,7 @@ Shader "Custom/Surfel2ProcShader" {
             float _AllowSkySurfels;
             float _VisualizeSurfels;
 
-            // todo set this to [~1-2]/surfelDensity
+            // set this to [~1-2]/surfelDensity
             float _IdCutoff;
 
             // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/

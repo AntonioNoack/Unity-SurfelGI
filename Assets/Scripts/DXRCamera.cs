@@ -3,7 +3,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using Unity.Mathematics; // float4x3, float3
 using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
-using System.Threading; // sleep for manual fps limit
+using System.Threading; // sleep for manual fps limit (reduce heat in summer)
 
 public class DXRCamera : MonoBehaviour {
 
@@ -47,7 +47,7 @@ public class DXRCamera : MonoBehaviour {
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
 
     // summed global illumination
-    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget;
+    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget, emissiveIdTarget;
 
     // scene structure for raytracing
     private RayTracingAccelerationStructure rtas;
@@ -236,6 +236,9 @@ public class DXRCamera : MonoBehaviour {
         emissiveDyTarget = new RenderTexture(emissiveTarget);
         emissiveDxTarget.Create();
         emissiveDyTarget.Create();
+        emissiveIdTarget = new RenderTexture(width, height, 0, RenderTextureFormat.RInt, RenderTextureReadWrite.Default);
+        emissiveIdTarget.enableRandomWrite = true;
+        emissiveIdTarget.Create();
 
         prevGBuff1.enableRandomWrite = true;
         prevGBuff2.enableRandomWrite = true;
@@ -265,7 +268,11 @@ public class DXRCamera : MonoBehaviour {
         emissiveTarget.Release();
         emissiveDxTarget.Release();
         emissiveDyTarget.Release();
-        // skyBox.Release(); // not supported???
+        emissiveIdTarget.Release();
+        giTarget = accu1 = accu2 = null;
+        prevGBuff0 = prevGBuff1 = prevGBuff2 = prevGBuffD = null;
+        emissiveTarget = emissiveDxTarget = emissiveDyTarget = emissiveIdTarget = null;
+        // skyBox.Release(); // not supported??? 
     }
 
     private void Update() {
@@ -323,6 +330,7 @@ public class DXRCamera : MonoBehaviour {
 
     void AccumulateSurfelEmissions() {
 
+        bool useProceduralSurfels = this.useProceduralSurfels;
         if(useDerivatives) {
             useProceduralSurfels = true;
         }
@@ -363,15 +371,17 @@ public class DXRCamera : MonoBehaviour {
         shader.SetVector("_FieldOfViewFactor", new Vector2(fy*giTarget.width/giTarget.height, fy));
         shader.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
         shader.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+        shader.SetFloat("_IdCutoff", 2f / surfelDensity);
 
         // if(!firstFrame) return; // command buffer doesn't change, only a few shader variables
 
         cmdBuffer.Clear(); // clear all commands
         if(useDerivatives){
-            RenderTargetIdentifier[] targets = new RenderTargetIdentifier[3];
+            RenderTargetIdentifier[] targets = new RenderTargetIdentifier[4];
             targets[0] = emissiveTarget.colorBuffer;
             targets[1] = emissiveDxTarget.colorBuffer;
             targets[2] = emissiveDyTarget.colorBuffer;
+            targets[3] = emissiveIdTarget.colorBuffer;
             cmdBuffer.SetRenderTarget(targets, emissiveTarget.depthBuffer);
         } else {
             cmdBuffer.SetRenderTarget(emissiveTarget);
@@ -484,6 +494,7 @@ public class DXRCamera : MonoBehaviour {
     }
 
     public bool useDerivatives = false;
+    public int surfelPlacementIterations = 1;
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
@@ -494,7 +505,7 @@ public class DXRCamera : MonoBehaviour {
 
         var transform = _camera.transform;
         // Debug.Log("on-rimage: "+_camera.worldToCameraMatrix);
-        if(doRT){
+        if(doRT) {
 
             // start path tracer
             UpdatePixelGI();
@@ -526,8 +537,17 @@ public class DXRCamera : MonoBehaviour {
 
         } else {
         
-            if(updateSurfels) DistributeSurfels();
-            AccumulateSurfelEmissions();
+            if(updateSurfels) {
+                // for faster convergence, we can use multiple iterations
+                bool uds = useDerivatives;
+                for(int i=0,l=surfelPlacementIterations;i<l;i++){
+                    useDerivatives = uds && i == l-1;
+                    DistributeSurfels();
+                    AccumulateSurfelEmissions();
+                }
+            } else {
+                AccumulateSurfelEmissions();
+            }
 
             if(updateSurfels && surfelTracingShader != null) {
                 UpdateSurfelGI();
@@ -569,7 +589,7 @@ public class DXRCamera : MonoBehaviour {
             cmdBuffer.Release();
             cmdBuffer = null;
         }
-        if(surfels != null){
+        if(surfels != null){ 
             surfels.Release();
             surfels = null;
         }
