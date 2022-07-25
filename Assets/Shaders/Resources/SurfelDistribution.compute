@@ -98,9 +98,13 @@ Surfel InitSkySurfel(float3 worldDir) {
     float distance = _Far * 0.5;
     Surfel surfel;
     surfel.position.xyz = _CameraPosition + worldDir * distance;
-    surfel.rotation = normalToQuaternion(worldDir);
-    // surface area of a sphere: 4*pi*r²
-    surfel.position.w = calculateSize(distance, 1.0);
+    surfel.rotation = 0;
+    surfel.position = 0;
+    if(_AllowSkySurfels){
+        surfel.rotation = normalToQuaternion(worldDir);
+        // surface area of a sphere: 4*pi*r²
+        surfel.position.w = calculateSize(distance, 1.0);
+    }
     surfel.color = 1;// sky has GI = 1
     surfel.colorDx = 0;
     surfel.colorDy = 0;
@@ -174,8 +178,7 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
     uint length = Surfels.Length;
     if(index < length) {
-        float3 worldDir = fibonacciSphere(index, length);
-        Surfels[index] = InitSurfel(worldDir);
+        Surfels[index] = InitSurfel(fibonacciSphere(index, length));
     }
 }
 
@@ -214,7 +217,7 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
                     surfel.color *= (sizeChangeFactor * angleChangeFactor);
                     Surfels[index] = surfel;
                 } else {
-                    Surfels[index] = InitSurfel(fibonacciSphere(index, length1)); 
+                    Surfels[index] = InitSurfel(fibonacciSphere(index, length1));
                 }
             }
         }
@@ -239,7 +242,7 @@ void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
     uint bestFreeIndex = freeIndex;
     float bestFreeScore = freeSurfelScore(freeIndex);
     freeIndex++;
-    for(int l=freeIndex+15;freeIndex<l;freeIndex++){
+    for(uint l=freeIndex+15;freeIndex<l;freeIndex++){
             float score = freeSurfelScore(freeIndex);
             if(score > bestFreeScore){
                 bestFreeScore = score;

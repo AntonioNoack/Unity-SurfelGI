@@ -25,7 +25,7 @@
 		}
 		ENDCG
 
-		// ray tracing pass
+		// surfel -> light pass; emissive, so the end
 		Pass {
 			Name "DxrPass"
 			Tags { "LightMode" = "DxrPass" }
@@ -44,6 +44,25 @@
 				rayPayload.distance = RayTCurrent();
 				rayPayload.color = _Color.xyz;		
 			}			
+
+			ENDHLSL
+		}
+
+		// light -> surfel pass; emissive, so the start a.k.a. cannot be used as reflective surface
+		Pass {
+			Name "DxrPass2"
+			Tags { "LightMode" = "DxrPass2" }
+
+			HLSLPROGRAM
+
+			#pragma raytracing test
+					   
+			#include "Common.cginc"
+
+			[shader("closesthit")]
+			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	
+				rayPayload.color = 0;
+			}
 
 			ENDHLSL
 		}
