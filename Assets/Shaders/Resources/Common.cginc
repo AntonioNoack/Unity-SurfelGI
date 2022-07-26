@@ -3,6 +3,7 @@
 
 #include "UnityRaytracingMeshUtils.cginc"
 #include "Random.cginc"
+#include "Surfel.cginc"
 
 #ifndef SHADER_STAGE_COMPUTE
 // raytracing scene
@@ -36,6 +37,19 @@ struct AttributeData {
 	// Barycentric value of the intersection
 	float2 barycentrics;
 };
+
+// many thanks to CustomPhase on Reddit for suggesting this to me:
+// https://forum.unity.com/threads/runtime-generated-bump-maps-are-not-marked-as-normal-maps.413778/#post-4935776
+// Unpack normal as DXT5nm (1, y, 1, x) or BC5 (x, y, 0, 1)
+// Note neutral texture like "bump" is (0, 0, 1, 1) to work with both plain RGB normal and DXT5nm/BC5
+float3 UnpackNormal(float4 packednormal) {
+	packednormal.x *= packednormal.w;
+	float3 normal;
+	normal.xy = packednormal.xy * 2.0 - 1.0;
+	// this could be set to 1, idk whether we need full accuracy like this
+	normal.z = sqrt(1.0 - saturate(dot(normal.xy, normal.xy)));
+	return normal;
+}
 
 // Macro that interpolate any attribute using barycentric coordinates
 #define INTERPOLATE_RAYTRACING_ATTRIBUTE(A0, A1, A2, BARYCENTRIC_COORDINATES) (A0 * BARYCENTRIC_COORDINATES.x + A1 * BARYCENTRIC_COORDINATES.y + A2 * BARYCENTRIC_COORDINATES.z)

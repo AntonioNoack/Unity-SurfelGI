@@ -1,0 +1,104 @@
+﻿#include "Common.cginc"
+#include "Surfel.cginc"
+
+float3 _CameraPosition;
+float4 _CameraRotation;
+float3 _CameraOffset;
+float2 _CameraUVSize;
+float _Far;
+bool _AllowStrayRays;
+bool _AllowSkySurfels;
+
+int _FrameIndex;
+
+#pragma max_recursion_depth 8
+
+RWStructuredBuffer<Surfel> _Surfels;
+
+// triangles could be inside meshes, and the scene could be described using meshes
+// on the other hand, we'd need binary search to find the correct mesh index,
+// and there shouldn't be THAT many emissive triangles anyway
+struct Triangle {
+	float3 a, b, c;
+	float3 color;
+	// to do could have uv and texture for emissive maps
+	// if we have emissive maps, we need to accumulate all emissive pixels on all triangles, so just skip that
+};
+
+// emissive surfaces
+RWStructuredBuffer<Triangle> _Triangles;
+
+// todo calculate this:
+// todo spawn as many light sampling rays as surfel rays, or adjust sampling weight
+float _SpawnDensity;
+float _SamplingWeight; // typically 1
+
+[shader("raygeneration")]
+void RaygenShader() {
+
+	// start N rays over all triangles
+	uint3 dispatchIdx = DispatchRaysIndex();
+	uint triangleIndex = dispatchIdx.x;
+	uint numTriangles, stride;
+	_Triangles.GetDimensions(numTriangles, stride);
+	if(triangleIndex < numTriangles) {
+		Triangle tri = _Triangles[triangleIndex];
+		uint randomSeed = initRand(dispatchIdx.x, _FrameIndex);
+		// calculate surface area
+		float3 normal = cross(tri.b-tri.a, tri.c-tri.a); // todo check if sign is correct
+		float surfaceArea = abs(length(normal)) * 0.5;
+		float brightness = dot(tri.color,float3(1,1,1)) * 0.33333333;
+		float spawnedSamplesF = surfaceArea * _SpawnDensity * brightness; // can be proportional to the brightness, but then we'd have to say the color is relative
+		float3 color = tri.color * (_SamplingWeight / brightness);
+		int spawnedSamples = (int) (spawnedSamplesF + nextRand(randomSeed));// random rounding
+		normal = normalize(normal);
+		for(int i=0;i<spawnedSamples;i++){
+			// spawn random ray from surface into random direction
+			float u = nextRand(randomSeed), v = nextRand(randomSeed);
+			if(v+u > 1){
+				// mirror sample, such that it is valid triangle coordinates
+				u = 1-u;
+				v = 1-v;
+			}
+			float3 base = lerp(tri.a, tri.b, u);
+			float3 rayPos = lerp(base, tri.c, v*v); // v needs to be squared to equal density
+			
+			// decide ray direction
+			
+			// get random vector
+			float3 randomVector;int i=0;
+			do {
+				randomVector = float3(nextRand(randomSeed),nextRand(randomSeed),nextRand(randomSeed)) * 2-1;
+			} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
+
+			float3 rayDir = normalize(normal + randomVector);
+
+			RayDesc rayDesc;
+			rayDesc.Origin = rayPos;
+			rayDesc.Direction = rayDir;
+			rayDesc.TMin = 0.01;
+			rayDesc.TMax = 1e6;// todo decide this appropiately
+
+			RayPayload rayPayload;
+			rayPayload.color = color;
+			rayPayload.randomSeed = randomSeed;
+			rayPayload.depth = 0;
+
+			TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+			// todo where do we save the result into the surfel? at the final stage, or here?
+
+		}
+	}
+}
+
+// "back up" closest hit shader. it is used when we hit material without raytracing shader pass
+[shader("closesthit")]
+void ClosestHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {}
+
+[shader("miss")]
+void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
+	// if a light ray missed, it has no surface contribution,
+	// so we do nothing
+}

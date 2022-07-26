@@ -61,39 +61,12 @@
 			float _Glossiness;
 			Texture2D _SpecGlossMap;
 
-			float _DetailNormalMapScale;
-			Texture2D _DetailNormalMap;
-			SamplerState sampler_DetailNormalMap;
-			
 			// for testing, because _DetailNormalMap is not working
 			Texture2D _BumpMap;
 			SamplerState sampler_BumpMap;
+			float _DetailNormalMapScale;
 
 			float _EnableRayDifferentials;
-
-			#define TAU 6.283185307179586
-			#define PI 3.141592653589793
-
-			// many thanks to CustomPhase on Reddit for suggesting this to me:
-			// https://forum.unity.com/threads/runtime-generated-bump-maps-are-not-marked-as-normal-maps.413778/#post-4935776
-			// Unpack normal as DXT5nm (1, y, 1, x) or BC5 (x, y, 0, 1)
-			// Note neutral texture like "bump" is (0, 0, 1, 1) to work with both plain RGB normal and DXT5nm/BC5
-			float3 UnpackNormal(float4 packednormal) {
-				packednormal.x *= packednormal.w;
-				float3 normal;
-				normal.xy = packednormal.xy * 2 - 1;
-				// this could be set to 1, idk whether we need full accuracy like this
-				normal.z = sqrt(1 - saturate(dot(normal.xy, normal.xy)));
-				return normal;
-			}
-
-			float3 quatRot(float3 v, float4 q){
-				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-			}
-
-			float3 quatRotInv(float3 v, float4 q){
-				return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
-			}
 
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
@@ -126,9 +99,6 @@
 				
 				
 				// todo respect metallic and glossiness maps
-
-				// rayPayload.color = saturate(worldNormal*.5+.5);
-				// return;
 								
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
@@ -254,6 +224,148 @@
 
 					}
 					
+				} // else ambient occlusion, directly by the surface itself
+
+				
+			}
+
+			ENDHLSL
+		}
+
+		// reverse ray tracing: light -> surfels
+		Pass {
+			Name "DxrPass2"
+			Tags { "LightMode" = "DxrPass2" }
+
+			HLSLPROGRAM
+
+			#pragma raytracing test
+			
+			#include "Common.cginc"
+
+			// the naming comes from Unitys default shader
+
+			float4 _Color;
+			Texture2D _MainTex;
+			SamplerState sampler_MainTex;
+			
+			float _Metallic;
+			Texture2D _MetallicGlossMap;
+
+			float _Glossiness;
+			Texture2D _SpecGlossMap;
+			
+			Texture2D _BumpMap;
+			SamplerState sampler_BumpMap;
+			float _DetailNormalMapScale;
+
+			float _EnableRayDifferentials;
+
+			[shader("closesthit")]
+			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				
+				rayPayload.distance = RayTCurrent();
+
+				int remainingDepth = gMaxDepth - rayPayload.depth;
+				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
+
+					// todo trace towards camera
+					// todo cancel iteration, and return: position + color incl. probability
+					IntersectionVertex vertex;
+					GetCurrentIntersectionVertex(attributeData, vertex);
+					
+					float4x3 objectToWorld = ObjectToWorld4x3();
+					float3 posWS = mul(objectToWorld, float4(vertex.positionOS, 1));
+
+					// only relevant, if we are using no acceleration structure for the surfels
+					// to do calculate UVs -> if we are behind the camera, we don't even need to try, because we cannot save the information
+
+
+					// todo calculate probability, and best multiply it above to waste less rays
+
+
+					// todo if hit, return
+					return;
+				}
+
+				if(remainingDepth <= 1) {
+					return;
+				}
+
+				// todo trace into scene, according to probability distribution at surface
+				
+
+				// stop if we have reached max recursion depth
+				if(rayPayload.depth + 1 == gMaxDepth) {
+					return;
+				}
+
+				// compute vertex data on ray/triangle intersection
+				IntersectionVertex vertex;
+				GetCurrentIntersectionVertex(attributeData, vertex);
+
+				// todo we can compute the lod for the first hit, use it
+				float lod = 0;
+
+				// transform normal to world space & apply normal map
+				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
+				float3 objectNormal = normalize(vertex.normalOS);
+				float3 objectTangent = normalize(vertex.tangentOS);
+				float3 objectBitangent = normalize(cross(objectNormal, objectTangent));
+				float3 objectNormal1 = UnpackNormal(_BumpMap.SampleLevel(sampler_BumpMap, vertex.texCoord0, lod));
+				float2 objectNormal2 = objectNormal1.xy * _DetailNormalMapScale;
+				// done check that the order & signs are correct: looks correct :3
+				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
+				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
+				float3 surfaceWorldNormal = normalize(mul(objectToWorld, objectNormal));
+				
+				// todo respect metallic and glossiness maps
+
+				float3 rayOrigin = WorldRayOrigin();
+				float3 rayDir = WorldRayDirection();
+				// get intersection world position
+				float3 worldPos = rayOrigin + RayTCurrent() * rayDir;
+
+				// get random vector
+				float3 randomVector;int i=0;
+				do {
+					randomVector = float3(nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed)) * 2-1;
+				} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
+
+				// get random scattered ray dir along surface normal
+				float3 scatterRayDir = normalize(worldNormal + randomVector);
+				// perturb reflection direction to get rought metal effect 
+				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
+				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
+
+				// prevent a lot of light bleeding
+				if(dot(scatterRayDir, surfaceWorldNormal) >= 0.0) {
+					
+					RayDesc rayDesc;
+					rayDesc.Origin = worldPos;
+					rayDesc.Direction = scatterRayDir;
+					rayDesc.TMin = 0;
+					rayDesc.TMax = 1000;
+
+					// Create and init the scattered payload
+					RayPayload scatterRayPayload;
+					scatterRayPayload.color = float3(0.0, 0.0, 0.0);
+					scatterRayPayload.randomSeed = rayPayload.randomSeed;
+					scatterRayPayload.depth = rayPayload.depth + 1;	
+
+					// shoot scattered ray
+					TraceRay(_RaytracingAccelerationStructure,
+						scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+					
+					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
+					float3 color = color0.rgb * _Color.rgb;
+					rayPayload.color = rayPayload.depth == 0 ? 
+						scatterRayPayload.color :
+						color * scatterRayPayload.color;
+
+					// todo differentials...
+
 				} // else ambient occlusion, directly by the surface itself
 
 				

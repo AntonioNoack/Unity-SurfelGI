@@ -1,6 +1,6 @@
 # Unity - Surfel GI
 This is the repository for the Unity implementation of my master thesis.
-It uses DXR raytracing for better performance. This unfortunately is only available on GTX 1000 series and RTX series GPUs.
+It uses DXR raytracing for better performance. This unfortunately is only available on Nvidia GTX 1000 series, Nvidia RTX series and AMD RX 6000 series GPUs.
 
 # Setting up DXR in a new project:
 - go to Edit/Project Settings/Player/Other and add DX 12 as the primary graphics API for Windows
