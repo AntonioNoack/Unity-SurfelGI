@@ -18,4 +18,9 @@ struct Surfel {
     float4 data; // angle-dependence
 };
 
+struct AABB {
+    float3 min;
+    float3 max;
+};
+
 #endif // SURFEL_CGING

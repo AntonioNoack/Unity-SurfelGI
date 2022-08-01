@@ -1,0 +1,21 @@
+#pragma kernel SurfelsToAABBs
+
+#include "Surfel.cginc"
+
+uint3 _DispatchOffset;
+
+RWStructuredBuffer<Surfel> Surfels;
+RWStructuredBuffer<AABB> AABBs;
+
+[numthreads(512,1,1)]
+void SurfelsToAABBs(uint3 dispatchIdx : SV_DispatchThreadID) {
+    uint index = dispatchIdx.x + _DispatchOffset.x;
+    uint length1 = Surfels.Length;
+    if(index < length1) {
+        float4 pos = Surfels[index].position;
+        AABB b;
+        b.min = pos.xyz - pos.w;
+        b.max = pos.xyz + pos.w;
+        AABBs[index] = b;
+    }
+}

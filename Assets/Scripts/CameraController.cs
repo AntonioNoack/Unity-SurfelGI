@@ -4,7 +4,7 @@ public class CameraController : MonoBehaviour {
 
     public Vector3 velocity;
     public Vector2 rotation;
-    public float moveSpeed = 1000f;
+    public float moveSpeed = 10f;
     public float rotSpeed = 10f;
     public float friction = 5f;
 

@@ -99,6 +99,5 @@ void ClosestHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData a
 
 [shader("miss")]
 void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
-	// if a light ray missed, it has no surface contribution,
-	// so we do nothing
+	// if a light ray missed, it has no surface contribution, so we do nothing
 }

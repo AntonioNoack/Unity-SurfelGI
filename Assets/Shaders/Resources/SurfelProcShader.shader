@@ -139,7 +139,7 @@ Shader "Custom/SurfelProcShader" {
                         saturate(1.0/(1.0+20.0*dist)-0.1667) *
                         // saturate(1.0 - 2.0 * sqrt(dist)) *
                         // step(dist, 1.0) *
-                        saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roguhness maybe? :)
+                        saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
                 if(_VisualizeSurfels > 0.0) return float4(1,1,1,1)*closeness;
