@@ -262,8 +262,6 @@
 			float _EnableRayDifferentials;
 			float3 _CameraPos;// todo set
 
-			RaytracingAccelerationStructure _SurfelRTAS;// todo set
-
 			float bdrfDensityB(float dot, float roughness) {// basic bdrf density: how likely a ray it to hit with that normal on that surface roughness
 				// abs(d)*d is used instead of d*d to give backside-rays 0 probability
 				float r2 = max(roughness * roughness, 1e-10f);// max to avoid division by zero
@@ -310,8 +308,6 @@
 				float3 scatterBaseDir = isMetallic ? reflectDir : worldNormal;
 
 
-
-				// todo make probability depend on BRDF(ray-camera-angle)
 				// get intersection world position
 				float3 cameraDir = normalize(_CameraPos - worldPos);
 				float hittingCameraProbability = lerp(
@@ -323,17 +319,12 @@
 				int remainingDepth = gMaxDepth - rayPayload.depth;
 				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
 
-					// register result into surfels
-					// result: GI (so without the color of this current material)
-					RayDesc rayDesc;
-					rayDesc.Origin = worldPos;
-					rayDesc.Direction = cameraDir;
-					rayDesc.TMin = 0;
-					rayDesc.TMax = 1e6;// todo decide on good distance
+					// we cannot trace rays on different RTAS here, because we cannot set it :/
+					// save all info into rayPayload, and read it from original sender
 
-					rayPayload.color *= hittingCameraProbability;
-
-					TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+					rayPayload.weight *= hittingCameraProbability;
+					rayPayload.pos = worldPos;
+					rayPayload.dir = cameraDir;
 
 					return;
 				}
@@ -353,25 +344,26 @@
 
 				// prevent a lot of light bleeding
 				// ambient occlusion, directly by the surface itself
-				if(dot(scatterRayDir, surfaceWorldNormal) < 0.0) return;// todo do we need to register this zero weight (color = 0) into the surfels?
-				
+				if(dot(scatterRayDir, surfaceWorldNormal) < 0.0) {
+					// do we need to register this zero weight (color = 0) into the surfels?
+					// this path is illegal, and therefore just not in path space...
+					// mmh..
+					rayPayload.weight = 0.0;
+					return;
+				}
+
 				RayDesc rayDesc;
 				rayDesc.Origin = worldPos;
 				rayDesc.Direction = scatterRayDir;
 				rayDesc.TMin = 0;
 				rayDesc.TMax = 1000;
 
-				// Create and init the scattered payload
-				RayPayload scatterRayPayload;
-				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
-				scatterRayPayload.randomSeed = rayPayload.randomSeed;
-				scatterRayPayload.depth = rayPayload.depth + 1;
-				scatterRayPayload.withinGlassDepth = rayPayload.withinGlassDepth;
+				rayPayload.depth++;
 
 				// shoot scattered ray
 				TraceRay(_RaytracingAccelerationStructure,
-					scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+					rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 				
 				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
 				float3 color = color0.rgb * _Color.rgb;

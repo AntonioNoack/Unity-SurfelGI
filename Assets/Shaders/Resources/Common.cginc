@@ -7,7 +7,7 @@
 
 #ifndef SHADER_STAGE_COMPUTE
 // raytracing scene
-RaytracingAccelerationStructure  _RaytracingAccelerationStructure;
+RaytracingAccelerationStructure _RaytracingAccelerationStructure;
 #endif
 
 #define RAYTRACING_OPAQUE_FLAG      0x0f
@@ -19,7 +19,6 @@ RaytracingAccelerationStructure  _RaytracingAccelerationStructure;
 // max recursion depth
 static const uint gMaxDepth = 8;
 
-// ray payload
 struct RayPayload {
 	// Color of the ray
 	float3 color;
@@ -30,6 +29,14 @@ struct RayPayload {
 	// Distance to the first hit
 	float distance;
 	int withinGlassDepth;
+	float3 pos, dir;
+	float weight;
+};
+
+struct LightIntoSurfelPayload {
+	float4 color;
+	uint[16] hits;
+	uint hitIndex;
 };
 
 // Triangle attributes
@@ -54,7 +61,7 @@ float3 UnpackNormal(float4 packednormal) {
 // Macro that interpolate any attribute using barycentric coordinates
 #define INTERPOLATE_RAYTRACING_ATTRIBUTE(A0, A1, A2, BARYCENTRIC_COORDINATES) (A0 * BARYCENTRIC_COORDINATES.x + A1 * BARYCENTRIC_COORDINATES.y + A2 * BARYCENTRIC_COORDINATES.z)
 
-// Structure to fill for intersections
+// Structure to fill for intersections; OS = object space
 struct IntersectionVertex {
 	// Object space position of the vertex
 	float3 positionOS;

@@ -29,9 +29,13 @@ struct Triangle {
 RWStructuredBuffer<Triangle> _Triangles;
 
 // calculate this:
-// todo spawn as many light sampling rays as surfel rays, or adjust sampling weight
+// spawn as many light sampling rays as surfel rays, or adjust sampling weight
 float _SpawnDensity;
 float _SamplingWeight; // typically 1
+
+RaytracingAccelerationStructure _SurfelRTAS;
+
+float _MaxDistance;
 
 [shader("raygeneration")]
 void RaygenShader() {
@@ -77,15 +81,33 @@ void RaygenShader() {
 			rayDesc.Origin = rayPos;
 			rayDesc.Direction = rayDir;
 			rayDesc.TMin = 0.01;
-			rayDesc.TMax = 1e6;// todo decide this appropiately, maybe 2x camera.far
+			rayDesc.TMax = _MaxDistance;
 
 			RayPayload rayPayload;
 			rayPayload.color = color;
 			rayPayload.randomSeed = randomSeed;
 			rayPayload.depth = 0;
+			rayPayload.weight = 1.0;
 
 			TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+			if(rayPayload.weight > 0){
+
+				// register result into surfels
+				// result: GI (so without the color of this current material)
+				RayDesc rayDesc;
+				rayDesc.Origin = rayPayload.pos;
+				rayDesc.Direction = rayPayload.dir;
+				rayDesc.TMin = 0;
+				rayDesc.TMax = _MaxDistance;
+
+				LightIntoSurfelPayload payload;
+				payload.color = float4(rayPayload.color * rayPayload.weight, rayPayload.weight);
+				payload.hitIndex = 0;
+				
+				TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, payload);
+			}
 			
 		}
 	}

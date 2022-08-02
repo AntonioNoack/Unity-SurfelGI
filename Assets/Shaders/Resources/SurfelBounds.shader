@@ -34,20 +34,43 @@
 			#pragma raytracing test
 			
 			#include "Common.cginc"
+			#include "Surfel.cginc"
+
+			RWStructuredBuffer<Surfel> _Surfels;
 
 			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void ClosestHit(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				// the closest surfel is nothing special
 			}
 
 			[shader("anyhit")]
-			void AnyHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void AnyHitMain(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 
-				// todo get surfel id
-				// todo calculate distance (and alignment?)
+				// get surfel id
 				// todo if close enough, add value to surfel
 
-				
+				uint surfelId = PrimitiveIndex();
+				uint length1, stride;
+				_Surfels.GetDimensions(length1, stride);
+				if(surfelId < length1) {
+					Surfel surfel = _Surfels[surfelId];
+					float3 pos = surfel.position.xyz;
+					float size = surfel.position.w;
+
+					// calculate distance
+					float3 rayPos = WorldRayOrigin(), rayDir = WorldRayDirection();
+					float3 pa = pos - rayPos;
+					float3 cl = pa - rayDir * dot(rayDir, pa);
+					float distanceSq = dot(cl, cl);
+
+					// todo calculate alignment
+
+					if(distanceSq < size * size) {
+						surfel.color += rayPayload.color;
+						_Surfels[surfelId] = surfel;
+					}
+
+ 				}
 
 				IgnoreHit(); // we want to hit all surfels :D
 			}
