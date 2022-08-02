@@ -4,6 +4,7 @@ using UnityEngine.Rendering;
 using Unity.Mathematics; // float4x3, float3
 using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
 using System.Threading; // sleep for manual fps limit (reduce heat in summer)
+using System.Collections.Generic; // list
 
 public class DXRCamera : MonoBehaviour {
 
@@ -38,8 +39,11 @@ public class DXRCamera : MonoBehaviour {
 
     public bool hasPlacedSurfels = false;
     public ComputeShader surfelDistShader;
-    private ComputeBuffer surfels, surfelBounds;
+    private ComputeBuffer surfels;
+    private GraphicsBuffer surfelBounds;
     public RayTracingShader surfelTracingShader;
+
+    public bool enableLightSampling = false;
 
     public int maxNumSurfels = 64 * 1024;
 
@@ -112,22 +116,24 @@ public class DXRCamera : MonoBehaviour {
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
             if(surfels != null) surfels.Release();
             surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());
-            surfelBounds = new ComputeBuffer(maxNumSurfels, 4 * 3 * 2);// size of AABB
             hasPlacedSurfels = false;
-            RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
-            // include all layers
-            settings.layerMask = ~0;
-            // enable automatic updates
-            // todo does this work with updates to the surfels?
-            settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Automatic;
-            // include all renderer types
-            settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
-            surfelRTAS = new RayTracingAccelerationStructure(settings);
-            var properties = new MaterialPropertyBlock();
-            properties.SetBuffer("AABBs", surfelBounds);
-            properties.SetBuffer("Surfels", surfels);
-            surfelRTAS.AddInstance(surfelBounds, maxNumSurfels, false, Matrix4x4.identity, surfelBoundsMaterial, true, properties);
-            surfelRTAS.Build();
+            if(enableLightSampling){
+                surfelBounds = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxNumSurfels, UnsafeUtility.SizeOf<AABB>());
+                RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
+                // include all layers
+                settings.layerMask = ~0;
+                // enable automatic updates
+                // todo does this work with updates to the surfels?
+                settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Automatic;
+                // include all renderer types
+                settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
+                surfelRTAS = new RayTracingAccelerationStructure(settings);
+                var properties = new MaterialPropertyBlock();
+                properties.SetBuffer("AABBs", surfelBounds);
+                properties.SetBuffer("Surfels", surfels);
+                surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, false, Matrix4x4.identity, surfelBoundsMaterial, true, properties);
+                surfelRTAS.Build();
+            }
         }
 
         var depthTex = Shader.GetGlobalTexture("_CameraDepthTexture");
@@ -314,8 +320,15 @@ public class DXRCamera : MonoBehaviour {
         var rtas = sceneRTAS = new RayTracingAccelerationStructure(settings);
         // collect all objects in scene and add them to raytracing scene
         Renderer[] renderers = FindObjectsOfType<Renderer>();
+        List<Material> materials = new List<Material>();
         foreach (Renderer r in renderers){
-            rtas.AddInstance(r);
+            r.GetSharedMaterials(materials);
+            int matCount = Mathf.Max(materials.Count, 1);
+            RayTracingSubMeshFlags[] subMeshFlags = new RayTracingSubMeshFlags[matCount];
+            // Assume all materials are opaque (anyhit shader is disabled) otherwise Material types (opaque, transparent) must be handled here.
+            for (int i = 0; i < matCount; i++) // todo mark as transparent if transparent
+                subMeshFlags[i] = RayTracingSubMeshFlags.Enabled | RayTracingSubMeshFlags.ClosestHitOnly;
+            rtas.AddInstance(r, subMeshFlags);
         }
         // build raytrasing scene
         rtas.Build();
@@ -460,7 +473,7 @@ public class DXRCamera : MonoBehaviour {
 
     private void UpdateSurfelGI() {
         SurfelPathTracing();
-        SurfelLightSampling();
+        if(enableLightSampling) SurfelLightSampling();
     }
 
     private void SurfelPathTracing(){
@@ -484,19 +497,29 @@ public class DXRCamera : MonoBehaviour {
 
     public ComputeShader surfelToAABBListShader;
     public RayTracingShader lightSamplingShader;
+    public float lightSamplingRatio = 1f;
     private void SurfelLightSampling(){
         UpdateSurfelBounds();
-        var shader = lightSamplingShader;
+        // calculate list of emissive triangles
         if(emissiveTriangles == null){
             CollectEmissiveTriangles();
         }
-        // todo calculate list of emissive triangles
+        if(emissiveTriangles.count <= 0){
+            return;// no need to call the shader
+        }
+        var shader = lightSamplingShader;
+        surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", surfelRTAS);
-
-        // todo then use raytracing shader
+        shader.SetBuffer("_Triangles", emissiveTriangles);
         shader.SetShaderPass("DxrPass2");
-        // todo use emissiveTriangles.count
-        shader.Dispatch("RaygenShader", surfels.count, 1, 1, null);
+        // we could change the ratio of this one
+        int raysPerTriangle = Mathf.Max(1, surfels.count / emissiveTriangles.count);
+        // the triangle count may be really low, which would make us send rays nearly linearly: use multiple units per triangle (y spawn axis)
+        shader.SetFloat("_SpawnDensity", surfels.count / (float) (emissiveTriangles.count * raysPerTriangle)); // ~1
+        shader.SetFloat("_SamplingWeight", lightSamplingRatio);// todo we probably should change the number of rays as well, both path tracer and light sampler
+        shader.Dispatch("RaygenShader", emissiveTriangles.count, raysPerTriangle, 1, null);
+        // todo the sky emits light as well, so we probably should let it send rays as well
+        // question: how many rays would we need?
     }
 
     public Shader emissiveDXRShader;
@@ -529,7 +552,6 @@ public class DXRCamera : MonoBehaviour {
                 }
             }
         }
-        totalArea *= 0.5f;
         numTris /= 3;
 
         EmissiveTriangle[] tris = new EmissiveTriangle[numTris];
@@ -564,6 +586,10 @@ public class DXRCamera : MonoBehaviour {
         // save all triangles to compute buffer
         emissiveTriangles = new ComputeBuffer(tris.Length, UnsafeUtility.SizeOf<EmissiveTriangle>());
         emissiveTriangles.SetData(tris);
+
+        totalArea *= 0.5f; // calculate the actual area for correct debugging
+
+        Debug.Log("Collected "+tris.Length+" triangles with a total emission of "+totalArea);
 
     }
 
@@ -688,9 +714,9 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void OnDestroy() {
+        DestroyTargets();
         if(sceneRTAS != null) sceneRTAS.Release();
         if(surfelRTAS != null) surfelRTAS.Release();
-        DestroyTargets();
         if(countBuffer != null) countBuffer.Release();
         countBuffer = null;
         if(cubeMeshVertices != null) cubeMeshVertices.Release();
@@ -704,8 +730,10 @@ public class DXRCamera : MonoBehaviour {
         }
         if(surfels != null){ 
             surfels.Release();
-            surfelBounds.Release();
             surfels = null;
+        }
+        if(surfelBounds != null){
+            surfelBounds.Release();
             surfelBounds = null;
         }
     }

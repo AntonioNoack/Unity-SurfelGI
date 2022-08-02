@@ -53,14 +53,6 @@ void RaygenShader() {
 	_DxrTarget[dispatchIdx] = float4(rayPayload.color, 1);	
 }
 
-// "back up" closest hit shader. it is used when we hit material without raytracing shader pass
-[shader("closesthit")]
-void ClosestHitMain(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-	// simply return pink color to signal error
-	// to do this is never called... why?
-	rayPayload.color = float3(1.0, 0.0, 0.5);
-}
-
 SamplerState _LinearClamp;
 // miss shader, used when we don't hit any geometry
 [shader("miss")]

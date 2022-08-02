@@ -260,45 +260,24 @@
 			float _DetailNormalMapScale;
 
 			float _EnableRayDifferentials;
+			float3 _CameraPos;// todo set
+
+			RaytracingAccelerationStructure _SurfelRTAS;// todo set
+
+			float bdrfDensityB(float dot, float roughness) {// basic bdrf density: how likely a ray it to hit with that normal on that surface roughness
+				// abs(d)*d is used instead of d*d to give backside-rays 0 probability
+				float r2 = max(roughness * roughness, 1e-10f);// max to avoid division by zero
+				return saturate(1.0 + (abs(dot) * dot - 1.0) / r2);
+			}
+
+			float bdrfDensityR(float dot) {// brdf density without roughness: how likely a ray it to hit on that normal
+				return max(abs(dot) * dot, 0.0);
+			}
 
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
 				rayPayload.distance = RayTCurrent();
-
-				int remainingDepth = gMaxDepth - rayPayload.depth;
-				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
-
-					// todo trace towards camera
-					// todo cancel iteration, and return: position + color incl. probability
-					IntersectionVertex vertex;
-					GetCurrentIntersectionVertex(attributeData, vertex);
-					
-					float4x3 objectToWorld = ObjectToWorld4x3();
-					float3 posWS = mul(objectToWorld, float4(vertex.positionOS, 1));
-
-					// only relevant, if we are using no acceleration structure for the surfels
-					// to do calculate UVs -> if we are behind the camera, we don't even need to try, because we cannot save the information
-
-
-					// todo calculate probability, and best multiply it above to waste less rays
-
-
-					// todo if hit, return
-					return;
-				}
-
-				if(remainingDepth <= 1) {
-					return;
-				}
-
-				// todo trace into scene, according to probability distribution at surface
-				
-
-				// stop if we have reached max recursion depth
-				if(rayPayload.depth + 1 == gMaxDepth) {
-					return;
-				}
 
 				// compute vertex data on ray/triangle intersection
 				IntersectionVertex vertex;
@@ -318,13 +297,49 @@
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
 				float3 surfaceWorldNormal = normalize(mul(objectToWorld, objectNormal));
-				
-				// todo respect metallic and glossiness maps
 
+				
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
-				// get intersection world position
 				float3 worldPos = rayOrigin + RayTCurrent() * rayDir;
+				
+				// todo respect metallic and glossiness maps
+				bool isMetallic = _Metallic > nextRand(rayPayload.randomSeed);
+				float roughness = (1.0 - _Glossiness);
+				float3 reflectDir = reflect(rayDir, worldNormal);
+				float3 scatterBaseDir = isMetallic ? reflectDir : worldNormal;
+
+
+
+				// todo make probability depend on BRDF(ray-camera-angle)
+				// get intersection world position
+				float3 cameraDir = normalize(_CameraPos - worldPos);
+				float hittingCameraProbability = lerp(
+					bdrfDensityR(dot(worldNormal, cameraDir)),
+					bdrfDensityB(dot(reflectDir, cameraDir), roughness),
+					_Metallic
+				); // can we mix probabilities? should work fine :)
+
+				int remainingDepth = gMaxDepth - rayPayload.depth;
+				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
+
+					// register result into surfels
+					// result: GI (so without the color of this current material)
+					RayDesc rayDesc;
+					rayDesc.Origin = worldPos;
+					rayDesc.Direction = cameraDir;
+					rayDesc.TMin = 0;
+					rayDesc.TMax = 1e6;// todo decide on good distance
+
+					rayPayload.color *= hittingCameraProbability;
+
+					TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+					return;
+				}
+				
+				// trace into scene, according to probability distribution at surface
+				if(remainingDepth <= 1) return;
 
 				// get random vector
 				float3 randomVector;int i=0;
@@ -333,42 +348,37 @@
 				} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
 
 				// get random scattered ray dir along surface normal
-				float3 scatterRayDir = normalize(worldNormal + randomVector);
-				// perturb reflection direction to get rought metal effect 
-				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
-				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
+				// perturb reflection direction to get rought metal effect
+				float3 scatterRayDir = normalize(scatterBaseDir + (isMetallic ? roughness : 1.0) * randomVector);
 
 				// prevent a lot of light bleeding
-				if(dot(scatterRayDir, surfaceWorldNormal) >= 0.0) {
-					
-					RayDesc rayDesc;
-					rayDesc.Origin = worldPos;
-					rayDesc.Direction = scatterRayDir;
-					rayDesc.TMin = 0;
-					rayDesc.TMax = 1000;
-
-					// Create and init the scattered payload
-					RayPayload scatterRayPayload;
-					scatterRayPayload.color = float3(0.0, 0.0, 0.0);
-					scatterRayPayload.randomSeed = rayPayload.randomSeed;
-					scatterRayPayload.depth = rayPayload.depth + 1;	
-
-					// shoot scattered ray
-					TraceRay(_RaytracingAccelerationStructure,
-						scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
-					
-					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
-					float3 color = color0.rgb * _Color.rgb;
-					rayPayload.color = rayPayload.depth == 0 ? 
-						scatterRayPayload.color :
-						color * scatterRayPayload.color;
-
-					// todo differentials...
-
-				} // else ambient occlusion, directly by the surface itself
-
+				// ambient occlusion, directly by the surface itself
+				if(dot(scatterRayDir, surfaceWorldNormal) < 0.0) return;// todo do we need to register this zero weight (color = 0) into the surfels?
 				
+				RayDesc rayDesc;
+				rayDesc.Origin = worldPos;
+				rayDesc.Direction = scatterRayDir;
+				rayDesc.TMin = 0;
+				rayDesc.TMax = 1000;
+
+				// Create and init the scattered payload
+				RayPayload scatterRayPayload;
+				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
+				scatterRayPayload.randomSeed = rayPayload.randomSeed;
+				scatterRayPayload.depth = rayPayload.depth + 1;
+				scatterRayPayload.withinGlassDepth = rayPayload.withinGlassDepth;
+
+				// shoot scattered ray
+				TraceRay(_RaytracingAccelerationStructure,
+					scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+				
+				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
+				float3 color = color0.rgb * _Color.rgb;
+				rayPayload.color *= color;
+
+				// todo differentials...
+
 			}
 
 			ENDHLSL
