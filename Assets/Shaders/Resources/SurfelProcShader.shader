@@ -76,7 +76,7 @@ Shader "Custom/SurfelProcShader" {
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
                 #if defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position.xyz;
-                o.color = surfel.color;
+                o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
                 o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 #endif
@@ -142,14 +142,13 @@ Shader "Custom/SurfelProcShader" {
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
-                if(_VisualizeSurfels > 0.0) return float4(1,1,1,1)*closeness;
-                // if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
                 return i.color * (closeness / i.color.w);
-                Albedo = float3(closeness,closeness,closeness);
+
+                /*Albedo = float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED
                 Albedo.yz = 0;
                 #endif
-                return float4(Albedo,1.0);
+                return float4(Albedo,1.0);*/
                 
             }
             

@@ -26,7 +26,7 @@ struct Triangle {
 };
 
 // emissive surfaces
-RWStructuredBuffer<Triangle> _Triangles;
+StructuredBuffer<Triangle> _Triangles;
 
 // calculate this:
 // spawn as many light sampling rays as surfel rays, or adjust sampling weight
@@ -49,7 +49,7 @@ void RaygenShader() {
 		Triangle tri = _Triangles[triangleIndex];
 		uint randomSeed = initRand(dispatchIdx.x + dispatchIdx.y << 16, _FrameIndex);
 		// calculate surface area
-		float3 normal = cross(tri.b-tri.a, tri.c-tri.a); // todo check if sign is correct
+		float3 normal = -cross(tri.b-tri.a, tri.c-tri.a); // todo check if sign is correct
 		float surfaceArea = abs(length(normal)) * 0.5;
 		float brightness = dot(tri.color,float3(0.33333333,0.33333333,0.33333333));
 		float spawnedSamplesF = surfaceArea * _SpawnDensity * brightness; // can be proportional to the brightness, but then we'd have to say the color is relative
@@ -89,7 +89,7 @@ void RaygenShader() {
 			rayPayload.depth = 0;
 			rayPayload.weight = 1.0;
 
-			TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+			TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
 			if(rayPayload.weight > 0){
@@ -98,15 +98,23 @@ void RaygenShader() {
 				// result: GI (so without the color of this current material)
 				RayDesc rayDesc;
 				rayDesc.Origin = rayPayload.pos;
-				rayDesc.Direction = rayPayload.dir;
+				rayDesc.Direction = rayPayload.dir;// doesn't really matter, does it?
 				rayDesc.TMin = 0;
+				// todo calculate tmax with distance from camera & estimated surfel size
 				rayDesc.TMax = _MaxDistance;
 
 				LightIntoSurfelPayload payload;
-				payload.color = float4(rayPayload.color * rayPayload.weight, rayPayload.weight);
+				float4 color1 = float4(rayPayload.color * rayPayload.weight, rayPayload.weight);
 				payload.hitIndex = 0;
 				
 				TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, payload);
+
+				payload.hitIndex = min(payload.hitIndex, 16);
+				for(uint i=0;i<payload.hitIndex;i++){
+					uint surfelId = payload.hits[i];
+					_Surfels[surfelId].color += color1;// not atomic, but should be fine as long as the delta is written in a single go
+				}
+
 			}
 			
 		}

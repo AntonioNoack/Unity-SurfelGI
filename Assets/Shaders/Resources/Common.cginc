@@ -34,8 +34,7 @@ struct RayPayload {
 };
 
 struct LightIntoSurfelPayload {
-	float4 color;
-	uint[16] hits;
+	uint hits[16];
 	uint hitIndex;
 };
 

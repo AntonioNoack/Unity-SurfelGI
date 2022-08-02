@@ -85,9 +85,9 @@ Shader "Custom/Surfel2ProcShader" {
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
                 #if defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position.xyz;
-                o.color = surfel.color / surfel.color.w;
-                o.colorDx = surfel.colorDx / surfel.colorDx.w;
-                o.colorDy = surfel.colorDy / surfel.colorDy.w;
+                o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
+                o.colorDx = float4(surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10), 1.0);
+                o.colorDy = float4(surfel.colorDy.rgb / max(surfel.colorDy.w, 1e-10), 1.0);
                 o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 o.surfelId = surfelId;
@@ -118,6 +118,9 @@ Shader "Custom/Surfel2ProcShader" {
                 float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
 
                 f2t result;
+                result.dx = 0;
+                result.dy = 0;
+                result.id = 0;
 
                 if(!_AllowSkySurfels && rawDepth == 0.0) {
                     result.v = float4(1,1,1,1);// GI in the sky is 1
@@ -167,8 +170,6 @@ Shader "Custom/Surfel2ProcShader" {
                     return result;
                 }
 
-                // if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
-                
                 result.v = i.color * closeness;
 
                  // calculate derivatives
@@ -191,11 +192,11 @@ Shader "Custom/Surfel2ProcShader" {
                 result.id = closeness < _IdCutoff ? i.surfelId : 0;
                 return result;
 
-                Albedo = float3(closeness,closeness,closeness);
+                /*Albedo = float3(closeness,closeness,closeness);
                 #ifndef UNITY_INSTANCING_ENABLED
                 Albedo.yz = 0;
                 #endif
-                result.v = float4(Albedo,1.0); return result;
+                result.v = float4(Albedo,1.0); return result;*/
                 
             }
             

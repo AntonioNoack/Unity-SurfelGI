@@ -36,18 +36,44 @@
 			#include "Common.cginc"
 			#include "Surfel.cginc"
 
-			RWStructuredBuffer<Surfel> _Surfels;
+			StructuredBuffer<Surfel> _Surfels;
 
 			[shader("closesthit")]
 			void ClosestHit(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				// the closest surfel is nothing special
+				// the closest surfel is nothing special 
+
+				// rayPayload.hits[min(rayPayload.hitIndex, 15)] = 255;
+
+				/*uint surfelId = PrimitiveIndex();
+				uint length1, stride;
+				_Surfels.GetDimensions(length1, stride);
+				if(surfelId < length1) {
+					Surfel surfel = _Surfels[surfelId];
+					float3 pos = surfel.position.xyz;
+					float size = surfel.position.w;
+
+					// calculate distance
+					float3 rayPos = WorldRayOrigin(), rayDir = WorldRayDirection();
+					float3 pa = pos - rayPos;
+					float3 cl = pa - rayDir * dot(rayDir, pa);
+					float distanceSq = dot(cl, cl);
+
+					// todo calculate alignment
+
+					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
+						// surfel.color += rayPayload.color;
+						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
+						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
+					}
+
+ 				}*/
 			}
 
 			[shader("anyhit")]
 			void AnyHitMain(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 
 				// get surfel id
-				// todo if close enough, add value to surfel
+				// if close enough, add value to surfel
 
 				uint surfelId = PrimitiveIndex();
 				uint length1, stride;
@@ -65,9 +91,10 @@
 
 					// todo calculate alignment
 
-					if(distanceSq < size * size) {
-						surfel.color += rayPayload.color;
-						_Surfels[surfelId] = surfel;
+					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
+						// surfel.color += rayPayload.color;
+						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
+						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
 					}
 
  				}

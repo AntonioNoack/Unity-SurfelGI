@@ -27,6 +27,9 @@ public class DXRCamera : MonoBehaviour {
         public float3 color;
     };
 
+    public bool enablePathTracing = false;
+    public bool enableLightSampling = false;
+
     public float surfelDensity = 2f;
 
     [Range(0.0f, 0.2f)]
@@ -42,8 +45,6 @@ public class DXRCamera : MonoBehaviour {
     private ComputeBuffer surfels;
     private GraphicsBuffer surfelBounds;
     public RayTracingShader surfelTracingShader;
-
-    public bool enableLightSampling = false;
 
     public int maxNumSurfels = 64 * 1024;
 
@@ -474,8 +475,8 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void UpdateSurfelGI() {
-        SurfelPathTracing();
-        SurfelLightSampling();
+        if(enablePathTracing) SurfelPathTracing();
+        if(enableLightSampling) SurfelLightSampling();
     }
 
     private void SurfelPathTracing(){
@@ -509,9 +510,19 @@ public class DXRCamera : MonoBehaviour {
         if(emissiveTriangles.count <= 0){
             return;// no need to call the shader
         }
-        if(!enableLightSampling) return;
+        Vector3 cameraPos = _camera.transform.position;
+        MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
+        foreach (MeshRenderer r in renderers) {
+            Material[] mats = r.sharedMaterials;
+            if(mats != null){
+                foreach(Material m in mats){
+                    m.SetVector("_CameraPos", cameraPos);
+                }
+            }
+        }
         var shader = lightSamplingShader;
         surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
+        shader.SetBuffer("_Surfels", surfels);
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
         shader.SetAccelerationStructure("_SurfelRTAS", surfelRTAS);
         shader.SetBuffer("_Triangles", emissiveTriangles);
@@ -574,6 +585,11 @@ public class DXRCamera : MonoBehaviour {
                     // calculate surface area and count triangles
                     Mesh mesh = filter.sharedMesh;
                     Vector3[] vertices = mesh.vertices;
+                    // convert vertices from local space to global space
+                    var transform = r.transform;
+                    for(int i=0;i<vertices.Length;i++){
+                        vertices[i] = transform.TransformPoint(vertices[i]);
+                    }
                     int[] triangles = mesh.triangles;
                     for(int i=0;i<triangles.Length;){
                         Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
@@ -591,6 +607,7 @@ public class DXRCamera : MonoBehaviour {
 
         // save all triangles to compute buffer
         emissiveTriangles = new ComputeBuffer(tris.Length, UnsafeUtility.SizeOf<EmissiveTriangle>());
+        Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
         emissiveTriangles.SetData(tris);
 
         totalArea *= 0.5f; // calculate the actual area for correct debugging
@@ -660,6 +677,7 @@ public class DXRCamera : MonoBehaviour {
             AccumulatePixelGI(deltaPos);
 
             // display result on screen
+            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
             displayMaterial.SetFloat("_DivideByAlpha", 0f);
             displayMaterial.SetTexture("_SkyBox", skyBox);
             displayMaterial.SetTexture("_Accumulation", accu2);
@@ -698,6 +716,7 @@ public class DXRCamera : MonoBehaviour {
             }
 
             // display result on screen
+            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
             displayMaterial.SetFloat("_DivideByAlpha", 1f);
             displayMaterial.SetTexture("_SkyBox", skyBox);
             displayMaterial.SetTexture("_Accumulation", emissiveTarget);

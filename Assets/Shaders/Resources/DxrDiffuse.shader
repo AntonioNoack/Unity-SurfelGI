@@ -260,7 +260,7 @@
 			float _DetailNormalMapScale;
 
 			float _EnableRayDifferentials;
-			float3 _CameraPos;// todo set
+			float3 _CameraPos;
 
 			float bdrfDensityB(float dot, float roughness) {// basic bdrf density: how likely a ray it to hit with that normal on that surface roughness
 				// abs(d)*d is used instead of d*d to give backside-rays 0 probability
@@ -356,7 +356,7 @@
 				rayDesc.Origin = worldPos;
 				rayDesc.Direction = scatterRayDir;
 				rayDesc.TMin = 0;
-				rayDesc.TMax = 1000;
+				rayDesc.TMax = 1000.0;
 
 				rayPayload.depth++;
 

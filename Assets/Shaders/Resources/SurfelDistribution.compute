@@ -13,7 +13,7 @@
 RWStructuredBuffer<Surfel> Surfels;
 
 // todo theoretically, we need a matrix array, and a ptr to the matrix on every Surfel
-RWStructuredBuffer<float4x4> Transforms;
+// RWStructuredBuffer<float4x4> Transforms;
 
 // GBuffer and depth at camera
 Texture2D<half4>  _CameraGBufferTexture0;
@@ -182,7 +182,7 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
-[numthreads(256,1,1)]
+/*[numthreads(256,1,1)]
 void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
     uint length1 = Surfels.Length;
@@ -222,13 +222,47 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             }
         }
     }
+}*/
+
+
+[numthreads(256,1,1)]
+void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
+    uint index = dispatchIdx.x + _DispatchOffset.x;
+    uint length1 = Surfels.Length;
+    if(index < length1) {
+        Surfel surfel = Surfels[index];
+        float3 surfelPosition = surfel.position.xyz;
+        float3 deltaPos = surfelPosition - _CameraPosition;
+        float  distance = length(deltaPos);
+        float3 worldDir = deltaPos / distance;
+        float3 surfelDir = quatRot(float3(0,1,0), surfel.rotation);
+        float targetSize = calculateSize(distance, dot(worldDir, surfelDir));
+        float surfelSize = surfel.position.w;
+        if(surfelSize > targetSize * 0.707 && surfelSize < targetSize * 1.414) {
+            surfel.position.w = targetSize;
+            float sizeChangeFactor = min(surfelSize, targetSize) / max(surfelSize, targetSize);
+            // if surface is metallic, decrease weight based on angle change and roughness
+            float3 oldRelPos = surfelPosition - _PrevCameraPosition;
+            float3 newRelPos = surfelPosition - _CameraPosition;
+            // could be approximated, since it is an estimate only anyway
+            // acos ~ 1-x^5 around x=1
+            float angleChange = acos(clamp(dot(newRelPos, oldRelPos) / sqrt(dot(newRelPos,newRelPos) * dot(oldRelPos,oldRelPos)), -1, 1));
+            float angleChangeFactor = max(1.0 - 10.0 * angleChange * surfel.data.x, 0.0);
+            surfel.color *= (sizeChangeFactor * angleChangeFactor);
+            Surfels[index] = surfel;
+        } else {
+            Surfels[index] = InitSurfel(fibonacciSphere(index, length1));
+        }
+    }
 }
 
+// todo if the weight is > 1, or the surfel is off-screen (or behind things), we can "free" the surfel as well
 float freeSurfelScore(uint surfelIndex) {
     Surfel surfel = Surfels[surfelIndex];
     float3 worldPos = surfel.position.xyz;
     float3 dir = worldPos - _CameraPosition;
-    return surfel.color.w * max(1.0 - dot(dir, _CameraDirection), 0.0);
+    return /* [0, +Inf], larger is better */ surfel.color.w * 
+        /* [-1,0], better alignment is better */ max(1.0 - dot(dir, _CameraDirection), 0.0);
 }
 
 void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
@@ -288,14 +322,14 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
     for(uint y=y0;y<y1;y++){
         for(uint x=x0;x<x1;x++){
             int3  uvi = int3(x, y, 0);
-            float weight = _Weights.Load(uvi).a;
+            float weight = _Weights.Load(uvi).w;
             float depth = _AllowSkySurfels ? 1.0 : _CameraDepthTexture.Load(uvi).r;
             if(depth > 0.0 && weight < 0.01) {
                 // lowestWeight = weight;
                 // bestX = x;
                 // bestY = y;
                 SpawnSurfel(dispatchIdx, uvi, seed);
-                // todo spawned surfels need to be added into the consideration for next surfels
+                // to do spawned surfels need to be added into the consideration for next surfels
                 return;
             }
         }

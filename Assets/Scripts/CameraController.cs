@@ -10,6 +10,8 @@ public class CameraController : MonoBehaviour {
 
     public const int RIGHT_MOUSE_BUTTON = 1;
 
+    private float prevMaxRot = 0;
+
     void Update() {
         float dt = Time.deltaTime;
         Vector3 acceleration = new Vector3();
@@ -25,6 +27,10 @@ public class CameraController : MonoBehaviour {
         // mouse movement
         if(Input.GetMouseButton(RIGHT_MOUSE_BUTTON)){
             Vector2 mouse = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
+            float maxMagnitude = 7f;
+            if(mouse.sqrMagnitude > maxMagnitude*maxMagnitude){// when moving, then changing check boxes in the UI, then moving again; this value is much too large
+                mouse *= maxMagnitude / mouse.magnitude;
+            }
             rotation += mouse * rotSpeed;
             rotation.y = Mathf.Clamp(rotation.y, -90f, 90f);// clamp up-down rotation
         }
@@ -36,7 +42,7 @@ public class CameraController : MonoBehaviour {
             if(vl > moveSpeed){
                 velocity *= (moveSpeed / vl);
             }
-            Vector3 movement = velocity * dt;
+            Vector3 movement = velocity * dt2;
             // transform movement into global space
             transform.Translate(movement, Space.Self);
         }
