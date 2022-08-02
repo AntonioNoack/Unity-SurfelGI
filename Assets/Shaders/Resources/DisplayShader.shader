@@ -50,6 +50,8 @@
 			float _ShowIllumination;
 			float _VisualizeSurfels;
 
+			float2 _Duv;
+
 			// Unitys predefined GBuffer data
 			sampler2D _CameraGBufferTexture0;
 			sampler2D _CameraGBufferTexture1;
@@ -97,27 +99,30 @@
 				return float4(HDR_to_LDR(c.xyz), c.a);
 			}
 
+			float3 f3(float f){
+				return float3(f,f,f);
+			}
+
 			float4 frag (v2f i) : SV_Target {
 
 				float2 uv = i.uv;
 				float4 ill = tex2Dlod(_Accumulation, float4(uv,0,0));
 
-				float2 duv = float2(ddx(uv.x), ddy(uv.y));
 				float rawDepth = tex2Dlod(_CameraDepthTexture, float4(uv,0,0)).x;
 				if(rawDepth > 0.0 && ill.w == 0.0){
 					// we miss information: try to get it from neighbors
 					[loop]
-					for(int r=1;r<=7;r++){
+					for(int r=1;r<=16;r++){
 						for(int s=-r;s<r;s++){
-							ill += tex2Dlod(_Accumulation, float4(uv + float2(+s,+r) * duv, 0, 0));
-							ill += tex2Dlod(_Accumulation, float4(uv + float2(+r,-s) * duv, 0, 0));
-							ill += tex2Dlod(_Accumulation, float4(uv + float2(-r,+s) * duv, 0, 0));
-							ill += tex2Dlod(_Accumulation, float4(uv + float2(-s,-r) * duv, 0, 0));
+							ill += tex2Dlod(_Accumulation, float4(uv + float2(+s,+r) * _Duv, 0, 0));
+							ill += tex2Dlod(_Accumulation, float4(uv + float2(+r,-s) * _Duv, 0, 0));
+							ill += tex2Dlod(_Accumulation, float4(uv + float2(-r,+s) * _Duv, 0, 0));
+							ill += tex2Dlod(_Accumulation, float4(uv + float2(-s,-r) * _Duv, 0, 0));
 						}
-						if(ill.w > 0.0) break;
+						// if(ill.w > 0.0) break;
 					}
-					if(ill.w > 0.0) ill = float4(0,1,0,0.3);
-					else ill = float4(1,0,1,0.3);
+					if(ill.w > 0.0){ return float4(0,1,0,0.3); } // good, green
+					else return float4(1,0,1,0.3); // could not be fixed, magenta
 				}
 
 				if(rawDepth <= 0.001 && !_AllowSkySurfels) {
@@ -136,7 +141,7 @@
 					break;
 				}*/
 				
-				if(_VisualizeSurfels) return ill;
+				if(_VisualizeSurfels) return float4(f3(ill.w/(1.0+ill.w)), 1.0);
 
 				if(_ShowIllumination) {
 					if(_DivideByAlpha) ill /= ill.w;
@@ -159,7 +164,7 @@
 					float sigma = numSigmas / float(di*di);
 					for(int j=-di;j<=di;j++){
 						for(int i=-di;i<=di;i++){
-							float2 uv2 = uv + float2(i,j) * duv;
+							float2 uv2 = uv + float2(i,j) * _Duv;
 							float3 nor = readSurfaceNormal(uv2);
 							float4 illumination = tex2Dlod(_Accumulation, float4(uv2,0,0));
 							if(_DivideByAlpha && !_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
