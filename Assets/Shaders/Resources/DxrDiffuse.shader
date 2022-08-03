@@ -69,7 +69,7 @@
 			float _EnableRayDifferentials;
 
 			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void DxrDiffuseClosest(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
 				rayPayload.distance = RayTCurrent();
 
@@ -235,7 +235,7 @@
 		// reverse ray tracing: light -> surfels
 		Pass {
 			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass2" }
+			Tags { "LightMode" = "DxrPass" }
 
 			HLSLPROGRAM
 
@@ -273,7 +273,7 @@
 			}
 
 			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void DxrDiffuseClosest2(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
 				rayPayload.distance = RayTCurrent();
 
@@ -355,7 +355,7 @@
 				RayDesc rayDesc;
 				rayDesc.Origin = worldPos;
 				rayDesc.Direction = scatterRayDir;
-				rayDesc.TMin = 0;
+				rayDesc.TMin = 0.01;
 				rayDesc.TMax = 1000.0;
 
 				rayPayload.depth++;

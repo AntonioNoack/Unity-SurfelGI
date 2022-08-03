@@ -16,7 +16,7 @@ int _FrameIndex;
 RWStructuredBuffer<Surfel> _Surfels;
 
 [shader("raygeneration")]
-void RaygenShader() {
+void SurfelPathTracing() {
 	// start one ray per surfel
 
 	// current surfel
@@ -118,7 +118,7 @@ void RaygenShader() {
 TextureCube _SkyBox;
 SamplerState _LinearClamp;
 [shader("miss")]
-void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
+void SurfelPTMiss(inout RayPayload rayPayload : SV_RayPayload) {
 	// todo this looks like SDR... how do we get HDR colors?
 	float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
 	rayPayload.distance = _Far;

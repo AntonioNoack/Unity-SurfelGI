@@ -38,7 +38,7 @@ RaytracingAccelerationStructure _SurfelRTAS;
 float _MaxDistance;
 
 [shader("raygeneration")]
-void RaygenShader() {
+void SurfelLightSampling() {
 
 	// start N rays over all triangles
 	uint3 dispatchIdx = DispatchRaysIndex();
@@ -80,13 +80,13 @@ void RaygenShader() {
 			RayDesc rayDesc;
 			rayDesc.Origin = rayPos;
 			rayDesc.Direction = rayDir;
-			rayDesc.TMin = 0.01;
+			rayDesc.TMin = 0.1;// todo function of distance to camera?
 			rayDesc.TMax = _MaxDistance;
 
 			RayPayload rayPayload;
 			rayPayload.color = color;
 			rayPayload.randomSeed = randomSeed;
-			rayPayload.depth = 0;
+			rayPayload.depth = gMaxDepth - 2;
 			rayPayload.weight = 1.0;
 
 			TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
@@ -107,6 +107,7 @@ void RaygenShader() {
 				float4 color1 = float4(rayPayload.color * rayPayload.weight, rayPayload.weight);
 				payload.hitIndex = 0;
 				
+				// todo visualize surfelRTAS, we cannot trust it
 				TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, payload);
 
 				payload.hitIndex = min(payload.hitIndex, 16);
@@ -122,6 +123,7 @@ void RaygenShader() {
 }
 
 [shader("miss")]
-void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
+void SurfelLSMiss(inout RayPayload rayPayload : SV_RayPayload) {
 	// if a light ray missed, it has no surface contribution, so we do nothing
+	rayPayload.color = 0;
 }

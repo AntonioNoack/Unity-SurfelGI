@@ -14,7 +14,7 @@ int _FrameIndex;
 #pragma max_recursion_depth 8
 
 [shader("raygeneration")]
-void RaygenShader() {
+void PixelGI() {
 	// start one ray per pixel
 
 	// current pixel
@@ -56,7 +56,7 @@ void RaygenShader() {
 SamplerState _LinearClamp;
 // miss shader, used when we don't hit any geometry
 [shader("miss")]
-void MissShader(inout RayPayload rayPayload : SV_RayPayload) {
+void PixelGIMiss(inout RayPayload rayPayload : SV_RayPayload) {
 	// todo this looks like SDR... how do we get HDR colors?
 	float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
 	rayPayload.color = rayPayload.depth == 0 ? float3(1,1,1) : color;

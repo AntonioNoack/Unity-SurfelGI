@@ -1,0 +1,64 @@
+﻿#include "Common.cginc"
+#include "Surfel.cginc"
+
+// texture to store raytracing result
+RWTexture2D<float4> _DxrTarget;
+
+float3 _CameraPosition;
+float4 _CameraRotation;
+float3 _CameraOffset;
+
+#pragma max_recursion_depth 8
+
+[shader("raygeneration")]
+void SurfelAABBDebug() {
+
+	// current pixel
+	uint2 dispatchIdx = DispatchRaysIndex().xy;
+	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+
+	// init ray decriptor
+	RayDesc rayDesc;
+	rayDesc.Origin = _CameraPosition;
+	rayDesc.Direction = rayDir;
+	rayDesc.TMin = 0;
+	rayDesc.TMax = 1000;
+
+	if(false){
+
+		// Create and init the ray payload
+		LightIntoSurfelPayload rayPayload;
+		rayPayload.hitIndex = 1;
+
+		TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+		
+		// store result
+		float c = float(rayPayload.hitIndex)*0.5+0.01;
+		_DxrTarget[dispatchIdx] = float4(c, c, c, 1);
+
+	} else {
+
+		// Create and init the ray payload
+		RayPayload rayPayload;
+		rayPayload.depth = 0;
+		rayPayload.randomSeed = 1;
+		rayPayload.distance = 0;
+
+		TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+		
+		// store result
+		float c = float(rayPayload.distance);
+		_DxrTarget[dispatchIdx] = float4(c, c, c, 1);	
+
+	}
+}
+
+// miss shader, used when we don't hit any geometry
+[shader("miss")]
+void SurfelAABBDebugMiss(inout LightIntoSurfelPayload rayPayload : SV_RayPayload) {
+// void SurfelAABBDebugMiss(inout RayPayload rayPayload : SV_RayPayload) {
+	rayPayload.hitIndex = 0;
+	// rayPayload.distance = 100;
+}

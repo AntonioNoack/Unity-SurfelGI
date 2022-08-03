@@ -1202,7 +1202,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enablePathTracing: 0
-  enableLightSampling: 1
+  enableLightSampling: 0
+  debugSurfelAABBs: 0
   surfelDensity: 3
   sleep: 0.01
   allowSkySurfels: 0
@@ -1212,6 +1213,7 @@ MonoBehaviour:
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
+  surfelAABBDebugShader: {fileID: 4807578003741378534, guid: b42bded55fbd06b43b392bb23c960ad4, type: 3}
   maxNumSurfels: 262144
   rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
   accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
@@ -1232,7 +1234,7 @@ MonoBehaviour:
   surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
   doRT: 0
   useProceduralSurfels: 1
-  updateSurfels: 1
+  updateSurfels: 0
   surfelToAABBListShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
   lightSamplingShader: {fileID: 4807578003741378534, guid: ae5bbf1a3dfeeec49be72039e709fb68, type: 3}
   lightSamplingRatio: 1

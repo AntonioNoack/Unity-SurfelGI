@@ -29,6 +29,7 @@ public class DXRCamera : MonoBehaviour {
 
     public bool enablePathTracing = false;
     public bool enableLightSampling = false;
+    public bool debugSurfelAABBs = true;
 
     public float surfelDensity = 2f;
 
@@ -45,6 +46,7 @@ public class DXRCamera : MonoBehaviour {
     private ComputeBuffer surfels;
     private GraphicsBuffer surfelBounds;
     public RayTracingShader surfelTracingShader;
+    public RayTracingShader surfelAABBDebugShader;
 
     public int maxNumSurfels = 64 * 1024;
 
@@ -110,10 +112,7 @@ public class DXRCamera : MonoBehaviour {
     public bool disableSurfaceUpdates = false;
     public Material surfelBoundsMaterial;
 
-    private void DistributeSurfels() {
-
-        var shader = surfelDistShader;
-        if(shader == null) Debug.Log("Missing surfel shader!");
+    private void EnsureSurfels(){
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
 
             if(surfels != null) surfels.Release();
@@ -126,18 +125,26 @@ public class DXRCamera : MonoBehaviour {
             // include all layers
              settings.layerMask = ~0;
             // enable automatic updates
-            // todo does this work with updates to the surfels?
             settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Automatic;
             // include all renderer types
             settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
             surfelRTAS = new RayTracingAccelerationStructure(settings);
+            /*surfelRTAS.ClearInstances();
             var properties = new MaterialPropertyBlock();
             properties.SetBuffer("_AABBs", surfelBounds);
             properties.SetBuffer("_Surfels", surfels);
-            surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, false, Matrix4x4.identity, surfelBoundsMaterial, true, properties);
-            surfelRTAS.Build();
+            bool dynamic = true;
+            surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, dynamic, Matrix4x4.identity, surfelBoundsMaterial, true, properties);
+            surfelRTAS.Build();*/
             
         }
+    }
+
+    private void DistributeSurfels() {
+
+        var shader = surfelDistShader;
+        if(shader == null) Debug.Log("Missing surfel shader!");
+        EnsureSurfels();
 
         var depthTex = Shader.GetGlobalTexture("_CameraDepthTexture");
         if(depthTex == null){
@@ -364,6 +371,8 @@ public class DXRCamera : MonoBehaviour {
         Material shader = useDerivatives ? surfel2ProcMaterial :
             useProceduralSurfels ? surfelProcMaterial : surfelMaterial;
 
+        EnsureSurfels();
+
         if(!hasPlacedSurfels){
             Debug.Log("Waiting for surfels to be placed");
             return;
@@ -375,7 +384,7 @@ public class DXRCamera : MonoBehaviour {
             return;
         }
 
-        if(cmdBuffer == null) {
+        if(cmdBuffer == null || cubeMeshVertices == null) {
             Debug.Log("Creating new command buffer");
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
@@ -475,8 +484,10 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void UpdateSurfelGI() {
+        EnsureSurfels();
         if(enablePathTracing) SurfelPathTracing();
         if(enableLightSampling) SurfelLightSampling();
+        else if(debugSurfelAABBs) UpdateSurfelBounds();
     }
 
     private void SurfelPathTracing(){
@@ -485,17 +496,16 @@ public class DXRCamera : MonoBehaviour {
         shader.SetInt("_FrameIndex", frameIndex);
         shader.SetVector("_CameraPosition", transform.position);
         shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        float zFactor = giTarget.height / (2.0f * tan);
-        shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
+        shader.SetVector("_CameraOffset", CalcCameraOffset());
         shader.SetTexture("_SkyBox", skyBox);
         shader.SetBuffer("_Surfels", surfels);
         shader.SetFloat("_Far", _camera.farClipPlane);
+        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
         shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         shader.SetBool("_AllowStrayRays", allowStrayRays);
         shader.SetShaderPass("DxrPass");
-        shader.Dispatch("RaygenShader", surfels.count, 1, 1, null);
+        shader.Dispatch("SurfelPathTracing", surfels.count, 1, 1, null);
     }
 
     public ComputeShader surfelToAABBListShader;
@@ -534,7 +544,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_SpawnDensity", surfels.count / (float) (emissiveTriangles.count * raysPerTriangle)); // ~1
         shader.SetFloat("_SamplingWeight", lightSamplingRatio);// todo we probably should change the number of rays as well, both path tracer and light sampler
         
-        shader.Dispatch("RaygenShader", emissiveTriangles.count, raysPerTriangle, 1, null);
+        shader.Dispatch("SurfelLightSampling", emissiveTriangles.count, raysPerTriangle, 1, null);
         // todo the sky emits light as well, so we probably should let it send rays as well
         // question: how many rays would we need?
     }
@@ -617,13 +627,24 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void UpdateSurfelBounds(){
+
         // first update bounds
         var shader = surfelToAABBListShader;
         int kernel = shader.FindKernel("SurfelsToAABBs");
         shader.SetBuffer(kernel, "_Surfels", surfels);
         shader.SetBuffer(kernel, "_AABBs", surfelBounds);
         Dispatch(shader, kernel, surfels.count, 1, 1);
+
+        // todo this doesn't seem to work :/
+        // todo somehow write this data from the GPU side...
+
+        surfelRTAS.ClearInstances();
+        var properties = new MaterialPropertyBlock();
+        properties.SetBuffer("_Surfels", surfels);
+        bool dynamic = true, opaque = false;
+        surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, dynamic, Matrix4x4.identity, surfelBoundsMaterial, opaque, properties);
         surfelRTAS.Build();
+
     }
 
     private void UpdatePixelGI() {
@@ -632,13 +653,11 @@ public class DXRCamera : MonoBehaviour {
         shader.SetInt("_FrameIndex", frameIndex);
         shader.SetVector("_CameraPosition", transform.position);
         shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        float zFactor = giTarget.height / (2.0f * tan);
-        shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
+        shader.SetVector("_CameraOffset", CalcCameraOffset());
         shader.SetTexture("_SkyBox", skyBox);
         shader.SetTexture("_DxrTarget", giTarget);
         shader.SetShaderPass("DxrPass");
-        shader.Dispatch("RaygenShader", giTarget.width, giTarget.height, 1, _camera);
+        shader.Dispatch("PixelGI", giTarget.width, giTarget.height, 1, _camera);
     }
 
     private void AccumulatePixelGI(Vector3 deltaPos) {
@@ -652,6 +671,12 @@ public class DXRCamera : MonoBehaviour {
         shader.SetTexture("prevGBuff2", prevGBuff2);
         shader.SetTexture("prevGBuffD", prevGBuffD);
         Graphics.Blit(giTarget, accu2, shader);
+    }
+
+    private Vector3 CalcCameraOffset(){
+        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        float zFactor = giTarget.height / (2.0f * tan);
+        return new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor);
     }
 
     public bool useDerivatives = false;
@@ -699,6 +724,8 @@ public class DXRCamera : MonoBehaviour {
 
         } else {
         
+            EnsureSurfels();
+
             if(updateSurfels) {
                 // for faster convergence, we can use multiple iterations
                 bool uds = useDerivatives;
@@ -713,6 +740,19 @@ public class DXRCamera : MonoBehaviour {
 
             if(updateSurfels && surfelTracingShader != null) {
                 UpdateSurfelGI();
+            }
+
+            if(debugSurfelAABBs && surfelAABBDebugShader != null && surfelRTAS != null){
+                UpdateSurfelBounds();
+                surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
+                var shader = surfelAABBDebugShader;
+                shader.SetAccelerationStructure("_RaytracingAccelerationStructure", surfelRTAS);
+                shader.SetVector("_CameraPosition", transform.position);
+                shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+                shader.SetVector("_CameraOffset", CalcCameraOffset());
+                shader.SetTexture("_DxrTarget", emissiveTarget);
+                shader.SetShaderPass("DxrPass2");
+                shader.Dispatch("SurfelAABBDebug", emissiveTarget.width, emissiveTarget.height, 1, _camera);
             }
 
             // display result on screen

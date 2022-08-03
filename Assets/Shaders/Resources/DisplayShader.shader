@@ -109,7 +109,7 @@
 				float4 ill = tex2Dlod(_Accumulation, float4(uv,0,0));
 
 				float rawDepth = tex2Dlod(_CameraDepthTexture, float4(uv,0,0)).x;
-				if(rawDepth > 0.0 && ill.w == 0.0){
+				if(_DivideByAlpha && rawDepth > 0.0 && ill.w == 0.0){
 					// we miss information: try to get it from neighbors
 					[loop]
 					for(int r=1;r<=16;r++){
@@ -121,8 +121,9 @@
 						}
 						// if(ill.w > 0.0) break;
 					}
-					if(ill.w > 0.0){ return float4(0,1,0,0.3); } // good, green
-					else return float4(1,0,1,0.3); // could not be fixed, magenta
+					if(ill.w > 0.0) { // good, green
+						// return float4(0,1,0,0.3);
+					} else return float4(1,0,1,0.3); // could not be fixed, magenta
 				}
 
 				if(rawDepth <= 0.001 && !_AllowSkySurfels) {

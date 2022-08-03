@@ -10,8 +10,6 @@ public class CameraController : MonoBehaviour {
 
     public const int RIGHT_MOUSE_BUTTON = 1;
 
-    private float prevMaxRot = 0;
-
     void Update() {
         float dt = Time.deltaTime;
         Vector3 acceleration = new Vector3();

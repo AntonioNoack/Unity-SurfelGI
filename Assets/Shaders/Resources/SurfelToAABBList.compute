@@ -4,7 +4,7 @@
 
 uint3 _DispatchOffset;
 
-RWStructuredBuffer<Surfel> _Surfels;
+StructuredBuffer<Surfel> _Surfels;
 RWStructuredBuffer<AABB> _AABBs;
 
 [numthreads(512,1,1)]

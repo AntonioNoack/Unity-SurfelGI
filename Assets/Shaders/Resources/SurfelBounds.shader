@@ -27,7 +27,7 @@
 		// reverse ray tracing: light -> surfels
 		Pass {
 			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass2" }
+			Tags { "LightMode" = "DxrPass" }
 
 			HLSLPROGRAM
 
@@ -39,12 +39,10 @@
 			StructuredBuffer<Surfel> _Surfels;
 
 			[shader("closesthit")]
-			void ClosestHit(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void SurfelBoundsClosest(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				// the closest surfel is nothing special 
 
-				// rayPayload.hits[min(rayPayload.hitIndex, 15)] = 255;
-
-				/*uint surfelId = PrimitiveIndex();
+				uint surfelId = PrimitiveIndex();
 				uint length1, stride;
 				_Surfels.GetDimensions(length1, stride);
 				if(surfelId < length1) {
@@ -53,24 +51,22 @@
 					float size = surfel.position.w;
 
 					// calculate distance
-					float3 rayPos = WorldRayOrigin(), rayDir = WorldRayDirection();
-					float3 pa = pos - rayPos;
-					float3 cl = pa - rayDir * dot(rayDir, pa);
-					float distanceSq = dot(cl, cl);
+					float3 dp = WorldRayOrigin() - pos;
+					float distanceSq = dot(dp,dp);
 
 					// todo calculate alignment
 
-					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
+					if(/*distanceSq < size * size &&*/ rayPayload.hitIndex < 16) {
 						// surfel.color += rayPayload.color;
 						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
 						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
 					}
+				}
 
- 				}*/
 			}
 
-			[shader("anyhit")]
-			void AnyHitMain(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			/*[shader("anyhit")]
+			void SurfelBoundsAny(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 
 				// get surfel id
 				// if close enough, add value to surfel
@@ -84,23 +80,23 @@
 					float size = surfel.position.w;
 
 					// calculate distance
-					float3 rayPos = WorldRayOrigin(), rayDir = WorldRayDirection();
-					float3 pa = pos - rayPos;
-					float3 cl = pa - rayDir * dot(rayDir, pa);
-					float distanceSq = dot(cl, cl);
+					float3 dp = WorldRayOrigin() - pos;
+					float distanceSq = dot(dp,dp);
 
 					// todo calculate alignment
 
-					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
+					// if(distanceSq < size * size && rayPayload.hitIndex < 16) {
+					if(rayPayload.hitIndex < 16) {
 						// surfel.color += rayPayload.color;
 						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
 						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
 					}
 
  				}
-
+				
 				IgnoreHit(); // we want to hit all surfels :D
-			}
+
+			}*/
 
 			ENDHLSL
 		}
