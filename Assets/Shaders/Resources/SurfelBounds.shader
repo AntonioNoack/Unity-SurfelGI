@@ -27,7 +27,7 @@
 		// reverse ray tracing: light -> surfels
 		Pass {
 			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass" }
+			Tags { "LightMode" = "DxrPass2" }
 
 			HLSLPROGRAM
 
@@ -39,10 +39,10 @@
 			StructuredBuffer<Surfel> _Surfels;
 
 			[shader("closesthit")]
-			void SurfelBoundsClosest(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void SurfelBoundsClosest(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				// the closest surfel is nothing special 
 
-				uint surfelId = PrimitiveIndex();
+				/*uint surfelId = PrimitiveIndex();
 				uint length1, stride;
 				_Surfels.GetDimensions(length1, stride);
 				if(surfelId < length1) {
@@ -56,17 +56,21 @@
 
 					// todo calculate alignment
 
-					if(/*distanceSq < size * size &&*/ rayPayload.hitIndex < 16) {
+					// if(rayPayload.hitIndex < 16) {
+					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
 						// surfel.color += rayPayload.color;
 						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
 						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
 					}
-				}
+				}*/
+
+				rayPayload.hitIndex++;
+				rayPayload.distance = 0.5;
 
 			}
 
 			/*[shader("anyhit")]
-			void SurfelBoundsAny(inout LightIntoSurfelPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+			void SurfelBoundsAny(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 
 				// get surfel id
 				// if close enough, add value to surfel

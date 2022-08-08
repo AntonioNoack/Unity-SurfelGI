@@ -103,16 +103,14 @@ void SurfelLightSampling() {
 				// todo calculate tmax with distance from camera & estimated surfel size
 				rayDesc.TMax = _MaxDistance;
 
-				LightIntoSurfelPayload payload;
 				float4 color1 = float4(rayPayload.color * rayPayload.weight, rayPayload.weight);
-				payload.hitIndex = 0;
+				rayPayload.hitIndex = 0;
 				
-				// todo visualize surfelRTAS, we cannot trust it
-				TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, payload);
+				TraceRay(_SurfelRTAS, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
-				payload.hitIndex = min(payload.hitIndex, 16);
-				for(uint i=0;i<payload.hitIndex;i++){
-					uint surfelId = payload.hits[i];
+				uint l = min(rayPayload.hitIndex, 16);
+				for(uint i=0;i<l;i++){
+					uint surfelId = rayPayload.hits[i];
 					_Surfels[surfelId].color += color1;// not atomic, but should be fine as long as the delta is written in a single go
 				}
 

@@ -18,8 +18,8 @@ public class DXRCamera : MonoBehaviour {
     };
 
     struct AABB {
-        float3 min;
-        float3 max;
+        public float3 min;
+        public float3 max;
     };
 
     struct EmissiveTriangle {
@@ -104,7 +104,7 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
-    private int CeilDiv(int a, int d){
+    public static int CeilDiv(int a, int d){
         return (a + d - 1) / d;
     }
     
@@ -123,9 +123,9 @@ public class DXRCamera : MonoBehaviour {
             surfelBounds = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxNumSurfels, UnsafeUtility.SizeOf<AABB>());
             RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
             // include all layers
-             settings.layerMask = ~0;
+             settings.layerMask = 255;
             // enable automatic updates
-            settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Automatic;
+            settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Manual;
             // include all renderer types
             settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
             surfelRTAS = new RayTracingAccelerationStructure(settings);
@@ -201,7 +201,7 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
-    private void Dispatch(ComputeShader shader, int kernel, int x, int y, int z){
+    public static void Dispatch(ComputeShader shader, int kernel, int x, int y, int z){
         uint gsx, gsy, gsz;
         shader.GetKernelThreadGroupSizes(kernel, out gsx, out gsy, out gsz);
         int sx = CeilDiv(x, (int) gsx);
@@ -626,23 +626,34 @@ public class DXRCamera : MonoBehaviour {
 
     }
 
+
+    private MaterialPropertyBlock properties;
     private void UpdateSurfelBounds(){
 
-        // first update bounds
-        var shader = surfelToAABBListShader;
-        int kernel = shader.FindKernel("SurfelsToAABBs");
-        shader.SetBuffer(kernel, "_Surfels", surfels);
-        shader.SetBuffer(kernel, "_AABBs", surfelBounds);
-        Dispatch(shader, kernel, surfels.count, 1, 1);
-
-        // todo this doesn't seem to work :/
-        // todo somehow write this data from the GPU side...
-
         surfelRTAS.ClearInstances();
-        var properties = new MaterialPropertyBlock();
+
+        // first update bounds
+        //if(true){
+            var shader = surfelToAABBListShader;
+            int kernel = shader.FindKernel("SurfelsToAABBs");
+            shader.SetBuffer(kernel, "_Surfels", surfels);
+            shader.SetBuffer(kernel, "_AABBs", surfelBounds);
+            Dispatch(shader, kernel, surfels.count, 1, 1);
+        /*} else {
+            AABB[] list = new AABB[surfels.count];
+            for(int i=0;i<surfels.count;i++){
+                Vector3 pos = new Vector3(i, 0, 0), halfExtends = new Vector3(1f,1f,1f);
+                list[i].min = pos - halfExtends;
+                list[i].max = pos + halfExtends;
+            }
+            surfelBounds.SetData(list);
+        }*/
+
+        if(properties == null) properties = new MaterialPropertyBlock();
         properties.SetBuffer("_Surfels", surfels);
+        properties.SetBuffer("_AABBs", surfelBounds);
         bool dynamic = true, opaque = false;
-        surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, dynamic, Matrix4x4.identity, surfelBoundsMaterial, opaque, properties);
+        surfelRTAS.AddInstance(surfelBounds, (uint) surfels.count, dynamic, Matrix4x4.identity, surfelBoundsMaterial, opaque, properties);
         surfelRTAS.Build();
 
     }
@@ -726,6 +737,11 @@ public class DXRCamera : MonoBehaviour {
         
             EnsureSurfels();
 
+            var rtpi = GetComponent<RayTracingProceduralIntersection>();
+            if(rtpi != null){
+                rtpi.surfels = surfels;
+            }
+
             if(updateSurfels) {
                 // for faster convergence, we can use multiple iterations
                 bool uds = useDerivatives;
@@ -753,22 +769,23 @@ public class DXRCamera : MonoBehaviour {
                 shader.SetTexture("_DxrTarget", emissiveTarget);
                 shader.SetShaderPass("DxrPass2");
                 shader.Dispatch("SurfelAABBDebug", emissiveTarget.width, emissiveTarget.height, 1, _camera);
+                Graphics.Blit(emissiveTarget, destination);
+            } else {
+                // display result on screen
+                displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
+                displayMaterial.SetFloat("_DivideByAlpha", 1f);
+                displayMaterial.SetTexture("_SkyBox", skyBox);
+                displayMaterial.SetTexture("_Accumulation", emissiveTarget);
+                displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+                displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+                displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+                displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+                displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
+                displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+                float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+                displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+                Graphics.Blit(null, destination, displayMaterial);
             }
-
-            // display result on screen
-            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
-            displayMaterial.SetFloat("_DivideByAlpha", 1f);
-            displayMaterial.SetTexture("_SkyBox", skyBox);
-            displayMaterial.SetTexture("_Accumulation", emissiveTarget);
-            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
-            displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
-            displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
-            displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
-            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
-            Graphics.Blit(null, destination, displayMaterial);
             
             PreservePrevTransform();
             

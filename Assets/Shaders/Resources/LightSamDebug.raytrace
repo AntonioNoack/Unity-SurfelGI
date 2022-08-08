@@ -24,41 +24,27 @@ void SurfelAABBDebug() {
 	rayDesc.TMin = 0;
 	rayDesc.TMax = 1000;
 
-	if(false){
+	// Create and init the ray payload
+	RayPayload rayPayload;
+	rayPayload.hitIndex = 1;
+	rayPayload.distance = 
+		(
+			((dispatchIdx.x & 7) < 4 ? 1 : 0) +
+			((dispatchIdx.y & 7) < 4 ? 1 : 0)
+		) & 1 ? 0.0 : 0.2;
 
-		// Create and init the ray payload
-		LightIntoSurfelPayload rayPayload;
-		rayPayload.hitIndex = 1;
-
-		TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
-		
-		// store result
-		float c = float(rayPayload.hitIndex)*0.5+0.01;
-		_DxrTarget[dispatchIdx] = float4(c, c, c, 1);
-
-	} else {
-
-		// Create and init the ray payload
-		RayPayload rayPayload;
-		rayPayload.depth = 0;
-		rayPayload.randomSeed = 1;
-		rayPayload.distance = 0;
-
-		TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
-		
-		// store result
-		float c = float(rayPayload.distance);
-		_DxrTarget[dispatchIdx] = float4(c, c, c, 1);	
-
-	}
+	TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+		RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+	
+	// store result
+	float c = float(rayPayload.distance);
+	_DxrTarget[dispatchIdx] = float4(c, c, c, 1);	
+	
 }
 
 // miss shader, used when we don't hit any geometry
 [shader("miss")]
-void SurfelAABBDebugMiss(inout LightIntoSurfelPayload rayPayload : SV_RayPayload) {
-// void SurfelAABBDebugMiss(inout RayPayload rayPayload : SV_RayPayload) {
+void SurfelAABBDebugMiss(inout RayPayload rayPayload : SV_RayPayload) {
 	rayPayload.hitIndex = 0;
-	// rayPayload.distance = 100;
+	rayPayload.distance += 0.5;
 }

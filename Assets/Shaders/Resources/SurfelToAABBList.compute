@@ -4,14 +4,24 @@
 
 uint3 _DispatchOffset;
 
-StructuredBuffer<Surfel> _Surfels;
+RWStructuredBuffer<Surfel> _Surfels;
 RWStructuredBuffer<AABB> _AABBs;
+
+bool good(float x){
+    return x > -100.0 && x < 100.0;
+}
 
 [numthreads(512,1,1)]
 void SurfelsToAABBs(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
-    if(index < _Surfels.Length) {
+    if(index < _Surfels.Length && index < _AABBs.Length) {
         float4 pos = _Surfels[index].position;
+        AABB b;
+        b.min = pos.xyz - pos.w;
+        b.max = pos.xyz + pos.w;
+        _AABBs[index] = b;
+    } else {
+        float4 pos = float4(0,0,0,0);
         AABB b;
         b.min = pos.xyz - pos.w;
         b.max = pos.xyz + pos.w;

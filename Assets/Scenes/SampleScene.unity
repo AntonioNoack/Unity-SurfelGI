@@ -1078,6 +1078,7 @@ GameObject:
   - component: {fileID: 963194231}
   - component: {fileID: 963194230}
   - component: {fileID: 963194229}
+  - component: {fileID: 963194232}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1203,13 +1204,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enablePathTracing: 0
   enableLightSampling: 0
-  debugSurfelAABBs: 0
+  debugSurfelAABBs: 1
   surfelDensity: 3
   sleep: 0.01
   allowSkySurfels: 0
   showIllumination: 0
   allowStrayRays: 0
-  visualizeSurfels: 0
+  visualizeSurfels: 1
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
@@ -1234,7 +1235,7 @@ MonoBehaviour:
   surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
   doRT: 0
   useProceduralSurfels: 1
-  updateSurfels: 0
+  updateSurfels: 1
   surfelToAABBListShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
   lightSamplingShader: {fileID: 4807578003741378534, guid: ae5bbf1a3dfeeec49be72039e709fb68, type: 3}
   lightSamplingRatio: 1
@@ -1245,6 +1246,22 @@ MonoBehaviour:
   blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
   addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
+--- !u!114 &963194232
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 259b01b5607f0984f890ad1993a0af0b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rayTracingShader: {fileID: 4807578003741378534, guid: aad1f548de00f064ba82bf34da8da39e, type: 3}
+  proceduralMaterial: {fileID: 2100000, guid: dc1b324d68fa76c44b2e727618736eb2, type: 2}
+  aabbShader: {fileID: 7200000, guid: ba46b27ecb85dfa45a9cf91d2d27df65, type: 3}
+  surfelToAABBShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -31,12 +31,14 @@ struct RayPayload {
 	int withinGlassDepth;
 	float3 pos, dir;
 	float weight;
-};
-
-struct LightIntoSurfelPayload {
 	uint hits[16];
 	uint hitIndex;
 };
+
+/*struct LightIntoSurfelPayload {
+	uint hits[16];
+	uint hitIndex;
+};*/
 
 // Triangle attributes
 struct AttributeData {
