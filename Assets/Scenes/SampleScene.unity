@@ -1139,7 +1139,7 @@ Camera:
   m_TargetDisplay: 0
   m_TargetEye: 3
   m_HDR: 1
-  m_AllowMSAA: 1
+  m_AllowMSAA: 0
   m_AllowDynamicResolution: 0
   m_ForceIntoRT: 0
   m_OcclusionCulling: 1
@@ -1204,18 +1204,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enablePathTracing: 0
   enableLightSampling: 0
-  debugSurfelAABBs: 1
+  debugSurfelAABBs: 0
   surfelDensity: 3
-  sleep: 0.01
+  sleep: 0.02
   allowSkySurfels: 0
   showIllumination: 0
   allowStrayRays: 0
-  visualizeSurfels: 1
+  visualizeSurfels: 0
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
   surfelAABBDebugShader: {fileID: 4807578003741378534, guid: b42bded55fbd06b43b392bb23c960ad4, type: 3}
-  maxNumSurfels: 262144
+  maxNumSurfels: 65536
   rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
   accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}
@@ -1266,6 +1266,7 @@ MonoBehaviour:
   hasSurfels: 0
   hasUpdate: 0
   preferUpdate: 0
+  blit: 0
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1627,7 +1628,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1447377014}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: Scene
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

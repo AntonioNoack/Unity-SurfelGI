@@ -3,7 +3,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Experimental.Rendering;
 using System.Collections.Generic;
 
-[ExecuteInEditMode]
+// [ExecuteInEditMode]
 public class RayTracingProceduralIntersection : MonoBehaviour {
 
     public RayTracingShader rayTracingShader = null;
@@ -125,7 +125,7 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
     public ComputeShader surfelToAABBShader;
 
     // todo let this be defined by DXRCamera
-    public ComputeBuffer surfels;
+    public ComputeBuffer surfels, triangles;
 
     public bool hasSurfels = false, hasUpdate = false;
     public bool preferUpdate = true;
@@ -219,12 +219,23 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         if(cmdBuffer != null) cmdBuffer.SetRayTracingTextureParam(rayTracingShader, Shader.PropertyToID("g_Output"), rayTracingOutput);
         else rayTracingShader.SetTexture("g_Output", rayTracingOutput);
 
+        
+        if(cmdBuffer != null) cmdBuffer.SetRayTracingBufferParam(rayTracingShader, Shader.PropertyToID("g_Surfels"), surfels);
+        else rayTracingShader.SetBuffer("g_Surfels", surfels);
+        
+        if(cmdBuffer != null) cmdBuffer.SetRayTracingBufferParam(rayTracingShader, Shader.PropertyToID("g_Triangles"), triangles);
+        else rayTracingShader.SetBuffer("g_Triangles", triangles);
+
         if(cmdBuffer != null) cmdBuffer.DispatchRays(rayTracingShader, "MainRayGenShader", cameraWidth, cameraHeight, 1);
         else rayTracingShader.Dispatch("MainRayGenShader", (int) cameraWidth, (int) cameraHeight, 1);
 
         if(cmdBuffer != null) Graphics.ExecuteCommandBuffer(cmdBuffer);
         if(cmdBuffer != null) cmdBuffer.Release();
 
-        Graphics.Blit(rayTracingOutput, dest);
+        if(blit) Graphics.Blit(rayTracingOutput, dest);
+        else Graphics.Blit(src, dest);
     }
+
+    public bool blit = false;
+
 }

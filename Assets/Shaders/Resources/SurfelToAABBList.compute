@@ -16,15 +16,16 @@ void SurfelsToAABBs(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
     if(index < _Surfels.Length && index < _AABBs.Length) {
         float4 pos = _Surfels[index].position;
+        float size = pos.w * 0.57735;
         AABB b;
-        b.min = pos.xyz - pos.w;
-        b.max = pos.xyz + pos.w;
+        b.min = pos.xyz - size;
+        b.max = pos.xyz + size;
         _AABBs[index] = b;
     } else {
         float4 pos = float4(0,0,0,0);
         AABB b;
-        b.min = pos.xyz - pos.w;
-        b.max = pos.xyz + pos.w;
+        b.min = pos.xyz;
+        b.max = pos.xyz;
         _AABBs[index] = b;
     }
 }

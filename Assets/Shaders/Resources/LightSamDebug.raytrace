@@ -34,10 +34,10 @@ void SurfelAABBDebug() {
 		) & 1 ? 0.0 : 0.2;
 
 	TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,// RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-		RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+		0xff | RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 	
 	// store result
-	float c = float(rayPayload.distance);
+	float c = rayPayload.distance;
 	_DxrTarget[dispatchIdx] = float4(c, c, c, 1);	
 	
 }

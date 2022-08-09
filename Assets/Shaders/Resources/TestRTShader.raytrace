@@ -1,6 +1,17 @@
 #pragma max_recursion_depth 1
 
-#include "RayPayload.hlsl"
+struct RayPayload1 {
+    float4 color;
+    uint surfelIndex;
+};
+
+struct Triangle {
+    float3 a, b, c;
+    float3 color;
+};
+
+#include "Common.cginc"
+#include "Surfel.cginc"
 
 // Input
 RaytracingAccelerationStructure g_SceneAccelStruct;
@@ -10,14 +21,19 @@ float                           g_Zoom;
 
 // Output
 RWTexture2D<float4>             g_Output;
+RWStructuredBuffer<Surfel>      g_Surfels;
+RWStructuredBuffer<Triangle>    g_Triangles;
 
 [shader("miss")]
-void MainMissShader0(inout RayPayload payload : SV_RayPayload) {
+void MainMissShader0(inout RayPayload1 payload : SV_RayPayload) {
     payload.color = float4(0, 0, 0, 1);
 }
 
 [shader("raygeneration")]
-void MainRayGenShader() { 
+void MainRayGenShader() {
+
+    // todo spawn ray from random triangle position
+
     uint2 LaunchIndex = DispatchRaysIndex().xy;
     uint2 LaunchDim = DispatchRaysDimensions().xy;
 
@@ -38,17 +54,37 @@ void MainRayGenShader() {
     // Rotate the ray from view space to world space.
     float3 rayDirection = normalize(mul((float3x3)g_InvViewMatrix, viewDirection));
 
+	uint numTriangles, stride;
+	g_Triangles.GetDimensions(numTriangles, stride);
+    if(numTriangles > 0) { // this works for now, so I have good hopes to get it working :)
+        int index = LaunchIndex.x + LaunchIndex.y * LaunchDim.x;
+        uint randomSeed = initRand(LaunchIndex.x, LaunchIndex.y);
+        Triangle tri = g_Triangles[index % numTriangles];
+        float u = nextRand(randomSeed), v = nextRand(randomSeed);
+        if(u > v) {
+            u = 1-u;
+            v = 1-v;
+        }
+        rayDirection = normalize(normalize(cross(tri.b-tri.a, tri.c-tri.a)) + float3(nextRand(randomSeed),nextRand(randomSeed),nextRand(randomSeed))*2.0-1.0);
+        rayOrigin = lerp(lerp(tri.a, tri.b, u), tri.c, v) + rayDirection * 0.1;
+    }
+
     RayDesc ray;
     ray.Origin = rayOrigin;
     ray.Direction = rayDirection;
     ray.TMin = 0;
     ray.TMax = 1000;
         
-    RayPayload payload;
+    RayPayload1 payload;
     payload.color = float4(1, 0, 0, 1);
-    
+    payload.surfelIndex = 0;
+
     uint missShaderIndex = 0;
     TraceRay(g_SceneAccelStruct, 0, 0xFF, 0, 1, missShaderIndex, ray, payload);
+
+    if(payload.surfelIndex > 0){
+        g_Surfels[payload.surfelIndex].color += float4(10,1,1,1);// red light for testing
+    }
 
     g_Output[frameCoord] = payload.color;
 }

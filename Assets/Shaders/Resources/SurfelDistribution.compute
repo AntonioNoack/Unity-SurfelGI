@@ -271,7 +271,7 @@ void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
 
     // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
 	
-    uint freeIndex = ((uint) nextRandInt(seed)) % (Surfels.Length - 16);
+    uint freeIndex = ((uint) nextRandInt(seed) * 1505776939) % (Surfels.Length - 16);
 
     uint bestFreeIndex = freeIndex;
     float bestFreeScore = freeSurfelScore(freeIndex);

@@ -234,8 +234,8 @@
 
 		// reverse ray tracing: light -> surfels
 		Pass {
-			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass2" }
+			Name "Test"
+			Tags { "LightMode" = "Test" }
 
 			HLSLPROGRAM
 

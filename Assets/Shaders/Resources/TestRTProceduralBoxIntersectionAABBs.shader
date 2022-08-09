@@ -1,59 +1,53 @@
-Shader "RayTracing/ProceduralBoxIntersectionAABBs"
-{
-    Properties
-    {
-    }
+Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
+    Properties {}
 
-    SubShader
-    {
+    SubShader {
         Tags { "RenderType" = "Opaque" "DisableBatching" = "True"}
         LOD 100
 
-        Pass
-        {
+        Pass {
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
 
             #include "UnityCG.cginc"
 
-            struct appdata
-            {
+            struct appdata {
                 float4 vertex : POSITION;
             };
 
-            struct v2f
-            {
+            struct v2f {
                 float4 vertex : SV_POSITION;
             };
 
-            v2f vert (appdata v)
-            {
+            v2f vert (appdata v) {
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
-            {
+            fixed4 frag (v2f i) : SV_Target {
                 return fixed4(1, 1, 1, 1);
             }
             ENDCG
         }
     }
 
-    SubShader
-    {
-        Pass
-        {
+    SubShader {
+        Pass {
             Name "Test"
-
-            Tags{ "LightMode" = "RayTracing" }
+            Tags { "LightMode" = "RayTracing" }
 
             HLSLPROGRAM
 
-            #include "RayPayload.hlsl"
-            #include "AABB.hlsl"
+            struct RayPayload {
+                float4 color;
+                uint surfelIndex;
+            };
+
+            struct AABB {
+                float3 min, max;
+            };
 
             #pragma raytracing test
 
@@ -62,16 +56,14 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs"
             StructuredBuffer<AABB> g_AABBs;
             StructuredBuffer<float4> g_Colors;
 
-            struct AttributeData
-            {
+            struct AttributeData {
                 float3 normal;
             };
 
 #if RAY_TRACING_PROCEDURAL_GEOMETRY
 
             bool RayBoxIntersectionTest(in float3 rayWorldOrigin, in float3 rayWorldDirection, in float3 boxPosWorld, in float3 boxHalfSize,
-                out float outHitT, out float3 outNormal, out float2 outUVs, out int outFaceIndex)
-            {
+                out float outHitT, out float3 outNormal, out float2 outUVs, out int outFaceIndex) {
                 // convert from world to box space
                 float3 rd = rayWorldDirection;
                 float3 ro = rayWorldOrigin - boxPosWorld;
@@ -88,38 +80,14 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs"
 
                 float tN = max(max(t1.x, t1.y), t1.z);
                 float tF = min(min(t2.x, t2.y), t2.z);
-
-                if (tN > tF || tF < 0.0)
-                    return false;
-
-                // compute normal (in world space), face and UV
-                if (t1.x > t1.y && t1.x > t1.z)
-                {
-                    outNormal = float3(s.x, 0, 0);
-                    outUVs = float2(0.5, 0.5) + (ro.yz + rd.yz * t1.x) / (boxHalfSize.yz * 2);
-                    outFaceIndex = (1 + int(s.x)) / 2;
-                }
-                else if (t1.y > t1.z)
-                {
-                    outNormal = float3(0, s.y, 0);
-                    outUVs = float2(0.5, 0.5) + (ro.zx + rd.zx * t1.y) / (boxHalfSize.zx * 2);
-                    outFaceIndex = (5 + int(s.y)) / 2;
-                }
-                else
-                {
-                    outNormal = float3(0, 0, s.z);
-                    outUVs = float2(0.5, 0.5) + (ro.xy + rd.xy * t1.z) / (boxHalfSize.xy * 2);
-                    outFaceIndex = (9 + int(s.z)) / 2;
-                }
-
                 outHitT = tN;
 
-                return true;
+                return tN <= tF && tF >= 0.0;
+
             }
 
             [shader("intersection")]
-            void BoxIntersectionMain()
-            {
+            void BoxIntersectionMain() {
                 AABB aabb = g_AABBs[PrimitiveIndex()];
 
                 float3 aabbPos = (aabb.min + aabb.max) * 0.5f;
@@ -132,11 +100,9 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs"
 
                 bool isHit = RayBoxIntersectionTest(WorldRayOrigin(), WorldRayDirection(), aabbPos, aabbSize * 0.5, outHitT, outNormal, outUVs, outFaceIndex);
 
-                if (isHit)
-                {
+                if (isHit) {
                     AttributeData attr;
                     attr.normal = outNormal;
-
                     ReportHit(outHitT, 0, attr);
                 }
             }
@@ -144,9 +110,10 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs"
 #endif
 
             [shader("closesthit")]
-            void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes)
-            {
-                payload.color.xyz = g_Colors[PrimitiveIndex()].xyz;
+            void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
+                float c = frac(log2(RayTCurrent()));
+                payload.color.xyz = float3(c,c,c);// g_Colors[PrimitiveIndex()].xyz;
+                payload.surfelIndex = PrimitiveIndex();
             }
 
             ENDHLSL

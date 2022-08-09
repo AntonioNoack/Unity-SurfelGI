@@ -82,7 +82,7 @@ Material:
     - _SplitY: 0.82
     - _SrcBlend: 1
     - _UVSec: 0
-    - _VisualizeSurfels: 1
+    - _VisualizeSurfels: 0
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

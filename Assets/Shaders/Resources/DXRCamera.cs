@@ -116,7 +116,7 @@ public class DXRCamera : MonoBehaviour {
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
 
             if(surfels != null) surfels.Release();
-            surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());
+            surfels = new ComputeBuffer(maxNumSurfels, 8 * 4);// 6 * 4 is the min size
             hasPlacedSurfels = false;
             
             if(surfelBounds != null) surfelBounds.Release();
@@ -536,7 +536,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
         shader.SetAccelerationStructure("_SurfelRTAS", surfelRTAS);
         shader.SetBuffer("_Triangles", emissiveTriangles);
-        shader.SetShaderPass("DxrPass2");
+        shader.SetShaderPass("Test");
         shader.SetFloat("_MaxDistance", 1e6f);
         // we could change the ratio of this one
         int raysPerTriangle = Mathf.Max(1, surfels.count / emissiveTriangles.count);
@@ -729,7 +729,11 @@ public class DXRCamera : MonoBehaviour {
 
             var rtpi = GetComponent<RayTracingProceduralIntersection>();
             if(rtpi != null){
+                if(emissiveTriangles == null){
+                    CollectEmissiveTriangles();
+                }
                 rtpi.surfels = surfels;
+                rtpi.triangles = emissiveTriangles;
             }
 
             if(updateSurfels) {
@@ -751,17 +755,17 @@ public class DXRCamera : MonoBehaviour {
 
             if(debugSurfelAABBs && surfelAABBDebugShader != null && surfelRTAS != null){
                 UpdateSurfelBounds();
-                // we must not override emissiveTarget
+                var tmp = emissiveTarget;
                 surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
                 var shader = surfelAABBDebugShader;
                 shader.SetAccelerationStructure("_RaytracingAccelerationStructure", surfelRTAS);
                 shader.SetVector("_CameraPosition", transform.position);
                 shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
                 shader.SetVector("_CameraOffset", CalcCameraOffset());
-                shader.SetTexture("_DxrTarget", destination);
-                shader.SetShaderPass("DxrPass2");
-                shader.Dispatch("SurfelAABBDebug", destination.width, destination.height, 1, _camera);
-                // Graphics.Blit(emissiveTarget, destination);
+                shader.SetTexture("_DxrTarget", tmp);
+                shader.SetShaderPass("Test");
+                shader.Dispatch("SurfelAABBDebug", tmp.width, tmp.height, 1, _camera);
+                Graphics.Blit(tmp, destination);
             } else {
                 // display result on screen
                 displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));

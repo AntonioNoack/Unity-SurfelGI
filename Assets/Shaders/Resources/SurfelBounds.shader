@@ -1,108 +1,110 @@
 ﻿Shader "RayTracing/SurfelBounds" {
-	Properties { }
-	SubShader {
-		
-		Tags { "RenderType" = "Transparent" }
-		LOD 100
+    Properties {}
 
-		// basic pass for GBuffer
-		CGPROGRAM
-		#pragma surface surf Standard fullforwardshadows
+    SubShader {
+        Tags { "RenderType" = "Opaque" "DisableBatching" = "True"}
+        LOD 100
 
-		UNITY_INSTANCING_BUFFER_START(Props)
-        UNITY_INSTANCING_BUFFER_END(Props)
+        Pass {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
 
-		struct Input {
-			float2 uv_MainTex;
-		};
+            #include "UnityCG.cginc"
 
-		void surf(Input input, inout SurfaceOutputStandard o) {
-			o.Albedo = 1;
-			o.Metallic = 0;
-			o.Smoothness = 0;
-			o.Alpha = 1;
-		}
-		ENDCG
+            struct appdata {
+                float4 vertex : POSITION;
+            };
 
-		// reverse ray tracing: light -> surfels
-		Pass {
-			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass2" }
+            struct v2f {
+                float4 vertex : SV_POSITION;
+            };
 
-			HLSLPROGRAM
+            v2f vert (appdata v) {
+                v2f o;
+                o.vertex = UnityObjectToClipPos(v.vertex);
+                return o;
+            }
 
-			#pragma raytracing test
-			
-			#include "Common.cginc"
-			#include "Surfel.cginc"
+            fixed4 frag (v2f i) : SV_Target {
+                return fixed4(1, 1, 1, 1);
+            }
+            ENDCG
+        }
+    }
 
-			StructuredBuffer<Surfel> _Surfels;
+    SubShader {
+        Pass {
+            Name "Test"
+            Tags { "LightMode" = "RayTracing" }
 
-			[shader("closesthit")]
-			void SurfelBoundsClosest(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
-				// the closest surfel is nothing special 
+            HLSLPROGRAM
 
-				/*uint surfelId = PrimitiveIndex();
-				uint length1, stride;
-				_Surfels.GetDimensions(length1, stride);
-				if(surfelId < length1) {
-					Surfel surfel = _Surfels[surfelId];
-					float3 pos = surfel.position.xyz;
-					float size = surfel.position.w;
+            #include "Common.cginc"
+            #include "Surfel.cginc"
 
-					// calculate distance
-					float3 dp = WorldRayOrigin() - pos;
-					float distanceSq = dot(dp,dp);
+            #pragma raytracing test
 
-					// todo calculate alignment
+            #pragma multi_compile_local __ RAY_TRACING_PROCEDURAL_GEOMETRY
 
-					// if(rayPayload.hitIndex < 16) {
-					if(distanceSq < size * size && rayPayload.hitIndex < 16) {
-						// surfel.color += rayPayload.color;
-						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
-						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
-					}
-				}*/
+            StructuredBuffer<AABB> g_AABBs;
+            StructuredBuffer<float4> g_Colors;
 
-				rayPayload.hitIndex++;
-				rayPayload.distance = 0.5;
+#if RAY_TRACING_PROCEDURAL_GEOMETRY
 
-			}
+            bool RayBoxIntersectionTest(in float3 rayWorldOrigin, in float3 rayWorldDirection, in float3 boxPosWorld, in float3 boxHalfSize,
+                out float outHitT, out float3 outNormal, out float2 outUVs, out int outFaceIndex) {
+                // convert from world to box space
+                float3 rd = rayWorldDirection;
+                float3 ro = rayWorldOrigin - boxPosWorld;
 
-			/*[shader("anyhit")]
-			void SurfelBoundsAny(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+                // ray-box intersection in box space
+                float3 m = 1.0 / rd;
+                float3 s = float3(
+                    (rd.x < 0.0) ? 1.0 : -1.0,
+                    (rd.y < 0.0) ? 1.0 : -1.0,
+                    (rd.z < 0.0) ? 1.0 : -1.0);
 
-				// get surfel id
-				// if close enough, add value to surfel
+                float3 t1 = m * (-ro + s * boxHalfSize);
+                float3 t2 = m * (-ro - s * boxHalfSize);
 
-				uint surfelId = PrimitiveIndex();
-				uint length1, stride;
-				_Surfels.GetDimensions(length1, stride);
-				if(surfelId < length1) {
-					Surfel surfel = _Surfels[surfelId];
-					float3 pos = surfel.position.xyz;
-					float size = surfel.position.w;
+                float tN = max(max(t1.x, t1.y), t1.z);
+                float tF = min(min(t2.x, t2.y), t2.z);
+                outHitT = tN;
 
-					// calculate distance
-					float3 dp = WorldRayOrigin() - pos;
-					float distanceSq = dot(dp,dp);
+                return tN <= tF && tF >= 0.0;
 
-					// todo calculate alignment
+            }
 
-					// if(distanceSq < size * size && rayPayload.hitIndex < 16) {
-					if(rayPayload.hitIndex < 16) {
-						// surfel.color += rayPayload.color;
-						// _Surfels[surfelId] = surfel; // unfortunately not supported :/
-						rayPayload.hits[rayPayload.hitIndex++] = surfelId;
-					}
+            [shader("intersection")]
+            void BoxIntersectionMain() {
+                AABB aabb = g_AABBs[PrimitiveIndex()];
 
- 				}
-				
-				IgnoreHit(); // we want to hit all surfels :D
+                float3 aabbPos = (aabb.min + aabb.max) * 0.5f;
+                float3 aabbSize = aabb.max - aabb.min;
 
-			}*/
+                float outHitT = 0;
+                float3 outNormal = float3(1, 0, 0);
+                float2 outUVs = float2(0, 0);
+                int outFaceIndex = 0;
 
-			ENDHLSL
-		}
-	}
+                bool isHit = RayBoxIntersectionTest(WorldRayOrigin(), WorldRayDirection(), aabbPos, aabbSize * 0.5, outHitT, outNormal, outUVs, outFaceIndex);
+
+                if (isHit) {
+                    AttributeData attr;
+                    ReportHit(outHitT, 0, attr);
+                }
+            }
+
+#endif
+
+            [shader("closesthit")]
+            void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
+                float c = frac(log2(RayTCurrent()));
+                payload.color.xyz = float3(c,c,c);// g_Colors[PrimitiveIndex()].xyz;
+            }
+
+            ENDHLSL
+        }
+    }
 }
