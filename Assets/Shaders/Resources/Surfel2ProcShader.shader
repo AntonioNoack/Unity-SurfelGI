@@ -164,6 +164,8 @@ Shader "Custom/Surfel2ProcShader" {
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
+                if(closeness < 0.0 || i.color.w <= 0.0) discard;
+
                 if(_VisualizeSurfels > 0.0) {
                     result.v = float4(1,1,1,1)*closeness;
                     result.id = closeness < _IdCutoff ? i.surfelId : 0;

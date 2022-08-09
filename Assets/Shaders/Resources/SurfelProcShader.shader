@@ -142,6 +142,8 @@ Shader "Custom/SurfelProcShader" {
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
+                if(closeness < 0.0 || i.color.w <= 0.0) discard;
+
                 return i.color * (closeness / i.color.w);
 
                 /*Albedo = float3(closeness,closeness,closeness);

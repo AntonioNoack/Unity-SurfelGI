@@ -1260,8 +1260,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rayTracingShader: {fileID: 4807578003741378534, guid: aad1f548de00f064ba82bf34da8da39e, type: 3}
   proceduralMaterial: {fileID: 2100000, guid: dc1b324d68fa76c44b2e727618736eb2, type: 2}
+  aabbCount: 10
   aabbShader: {fileID: 7200000, guid: ba46b27ecb85dfa45a9cf91d2d27df65, type: 3}
   surfelToAABBShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
+  hasSurfels: 0
+  hasUpdate: 0
+  preferUpdate: 0
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

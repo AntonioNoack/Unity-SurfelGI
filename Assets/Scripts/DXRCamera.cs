@@ -630,25 +630,15 @@ public class DXRCamera : MonoBehaviour {
     private MaterialPropertyBlock properties;
     private void UpdateSurfelBounds(){
 
-        surfelRTAS.ClearInstances();
-
         // first update bounds
-        //if(true){
-            var shader = surfelToAABBListShader;
-            int kernel = shader.FindKernel("SurfelsToAABBs");
-            shader.SetBuffer(kernel, "_Surfels", surfels);
-            shader.SetBuffer(kernel, "_AABBs", surfelBounds);
-            Dispatch(shader, kernel, surfels.count, 1, 1);
-        /*} else {
-            AABB[] list = new AABB[surfels.count];
-            for(int i=0;i<surfels.count;i++){
-                Vector3 pos = new Vector3(i, 0, 0), halfExtends = new Vector3(1f,1f,1f);
-                list[i].min = pos - halfExtends;
-                list[i].max = pos + halfExtends;
-            }
-            surfelBounds.SetData(list);
-        }*/
+        var shader = surfelToAABBListShader;
+        int kernel = shader.FindKernel("SurfelsToAABBs");
+        shader.SetBuffer(kernel, "_Surfels", surfels);
+        shader.SetBuffer(kernel, "_AABBs", surfelBounds);
+        Dispatch(shader, kernel, surfels.count, 1, 1);
 
+        // then build RTAS
+        surfelRTAS.ClearInstances();
         if(properties == null) properties = new MaterialPropertyBlock();
         properties.SetBuffer("_Surfels", surfels);
         properties.SetBuffer("_AABBs", surfelBounds);
@@ -747,9 +737,10 @@ public class DXRCamera : MonoBehaviour {
                 bool uds = useDerivatives;
                 for(int i=0,l=surfelPlacementIterations;i<l;i++){
                     useDerivatives = uds && i == l-1;
+                    AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
                     DistributeSurfels();
-                    AccumulateSurfelEmissions();
                 }
+                AccumulateSurfelEmissions();
             } else {
                 AccumulateSurfelEmissions();
             }
@@ -760,16 +751,17 @@ public class DXRCamera : MonoBehaviour {
 
             if(debugSurfelAABBs && surfelAABBDebugShader != null && surfelRTAS != null){
                 UpdateSurfelBounds();
+                // we must not override emissiveTarget
                 surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
                 var shader = surfelAABBDebugShader;
                 shader.SetAccelerationStructure("_RaytracingAccelerationStructure", surfelRTAS);
                 shader.SetVector("_CameraPosition", transform.position);
                 shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
                 shader.SetVector("_CameraOffset", CalcCameraOffset());
-                shader.SetTexture("_DxrTarget", emissiveTarget);
+                shader.SetTexture("_DxrTarget", destination);
                 shader.SetShaderPass("DxrPass2");
-                shader.Dispatch("SurfelAABBDebug", emissiveTarget.width, emissiveTarget.height, 1, _camera);
-                Graphics.Blit(emissiveTarget, destination);
+                shader.Dispatch("SurfelAABBDebug", destination.width, destination.height, 1, _camera);
+                // Graphics.Blit(emissiveTarget, destination);
             } else {
                 // display result on screen
                 displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
