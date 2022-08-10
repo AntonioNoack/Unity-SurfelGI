@@ -23,4 +23,9 @@ struct AABB {
     float3 max;
 };
 
+struct Triangle {
+    float3 a, b, c;
+    float3 color;
+};
+
 #endif // SURFEL_CGING

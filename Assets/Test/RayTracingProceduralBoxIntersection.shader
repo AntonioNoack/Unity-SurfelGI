@@ -20,44 +20,36 @@ Shader "RayTracing/883/ProceduralBoxIntersection"
 
             float4 _Color;
 
-            struct appdata
-            {
+            struct appdata {
                 float4 vertex : POSITION;
             };
 
-            struct v2f
-            {
+            struct v2f {
                 float4 vertex : SV_POSITION;
             };
 
-            v2f vert (appdata v)
-            {
+            v2f vert (appdata v) {
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
-            {
-                fixed4 col = _Color;
-
-                return col;
+            fixed4 frag (v2f i) : SV_Target {
+                return _Color;
             }
             ENDCG
         }
     }
 
-    SubShader
-    {
-        Pass
-        {
+    SubShader {
+        Pass {
             Name "Test"
 
             Tags{ "LightMode" = "RayTracing" }
 
             HLSLPROGRAM
 
-            #include "RayPayload.hlsl"
+            #include "../Shader/Resources/Common.cginc"
 
             #pragma raytracing test
 
@@ -65,15 +57,9 @@ Shader "RayTracing/883/ProceduralBoxIntersection"
 
             float4 _Color;
 
-            struct AttributeData
-            {
-                float2 barycentrics;
-            };
-
 #if RAY_TRACING_PROCEDURAL_GEOMETRY
 
-            float RayBoxIntersect(float3 orig, float3 dir, float3 aabbmin, float3 aabbmax)
-            {
+            float RayBoxIntersect(float3 orig, float3 dir, float3 aabbmin, float3 aabbmax) {
                 float3 invDir = 1.0f / dir;
 
                 float t1 = (aabbmin.x - orig.x) * invDir.x;
@@ -93,15 +79,11 @@ Shader "RayTracing/883/ProceduralBoxIntersection"
             }
 
             [shader("intersection")]
-            void BoxIntersectionMain()
-            {
+            void BoxIntersectionMain() {
                 float t = RayBoxIntersect(ObjectRayOrigin(), ObjectRayDirection(), float3(-0.5, -0.5, -0.5), float3(0.5, 0.5, 0.5));
-
-                if (t > 0)
-                {
+                if (t > 0) {
                     AttributeData attr;
                     attr.barycentrics = float2(0, 0);
-
                     ReportHit(t, 0, attr);
                 }
             }
@@ -109,8 +91,7 @@ Shader "RayTracing/883/ProceduralBoxIntersection"
 #endif
 
             [shader("closesthit")]
-            void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes)
-            {
+            void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
                 payload.color = _Color;
             }
 

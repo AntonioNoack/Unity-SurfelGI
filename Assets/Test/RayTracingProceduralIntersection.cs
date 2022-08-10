@@ -3,15 +3,13 @@ using UnityEngine.Rendering;
 using UnityEngine.Experimental.Rendering;
 using System.Collections.Generic;
 
-// [ExecuteInEditMode]
 public class RayTracingProceduralIntersection : MonoBehaviour {
 
     public RayTracingShader rayTracingShader = null;
 
     public Material proceduralMaterial = null;
 
-    private uint cameraWidth = 0;
-    private uint cameraHeight = 0;
+    private uint cameraWidth = 0, cameraHeight = 0;
 
     private RenderTexture rayTracingOutput = null;
 
@@ -147,25 +145,7 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         } else if (raytracingAccelerationStructure == null)
             return;
 
-        CommandBuffer cmdBuffer = null;new CommandBuffer();
-
         raytracingAccelerationStructure.ClearInstances();
-
-        /*List<Material> materials = new List<Material>();
-        MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
-        foreach (MeshRenderer r in renderers) {
-            r.GetSharedMaterials(materials);
-
-            int matCount = Mathf.Max(materials.Count, 1);
-
-            RayTracingSubMeshFlags[] subMeshFlags = new RayTracingSubMeshFlags[matCount];
-
-            // Assume all materials are opaque (anyhit shader is disabled) otherwise Material types (opaque, transparent) must be handled here.
-            for (int i = 0; i < matCount; i++)
-                subMeshFlags[i] = RayTracingSubMeshFlags.Enabled | RayTracingSubMeshFlags.ClosestHitOnly;
-
-            raytracingAccelerationStructure.AddInstance(r, subMeshFlags);
-        }*/
 
         properties.SetBuffer("g_AABBs", aabbList);
         properties.SetBuffer("g_Colors", aabbColors);
@@ -201,36 +181,21 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         // Create a procedural geometry instance based on a AABB list. The GraphicsBuffer contains static data.
         raytracingAccelerationStructure.AddInstance(aabbList, (uint) aabbCount, true, Matrix4x4.identity, proceduralMaterial, false, properties);
 
-        if(cmdBuffer != null) cmdBuffer.BuildRayTracingAccelerationStructure(raytracingAccelerationStructure);
-        else raytracingAccelerationStructure.Build();
+        raytracingAccelerationStructure.Build();
+        rayTracingShader.SetShaderPass("Test");
 
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingShaderPass(rayTracingShader, "Test");
-        else rayTracingShader.SetShaderPass("Test");
+        rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
+        rayTracingShader.SetMatrix("g_InvViewMatrix", Camera.main.cameraToWorldMatrix);
+        rayTracingShader.SetFloat("g_Zoom", Mathf.Tan(Mathf.Deg2Rad * Camera.main.fieldOfView * 0.5f));
+        rayTracingShader.SetFloat("g_Blit", blit ? 1f : 0f);
 
-        // Input
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingAccelerationStructure(rayTracingShader, Shader.PropertyToID("g_SceneAccelStruct"), raytracingAccelerationStructure);
-        else rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingMatrixParam(rayTracingShader, Shader.PropertyToID("g_InvViewMatrix"), Camera.main.cameraToWorldMatrix);
-        else rayTracingShader.SetMatrix("g_InvViewMatrix", Camera.main.cameraToWorldMatrix);
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingFloatParam(rayTracingShader, Shader.PropertyToID("g_Zoom"), Mathf.Tan(Mathf.Deg2Rad * Camera.main.fieldOfView * 0.5f));
-        else rayTracingShader.SetFloat("g_Zoom", Mathf.Tan(Mathf.Deg2Rad * Camera.main.fieldOfView * 0.5f));
+        rayTracingShader.SetBuffer("g_Surfels", surfels);
+        rayTracingShader.SetBuffer("g_Triangles", triangles);
 
-        // Output
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingTextureParam(rayTracingShader, Shader.PropertyToID("g_Output"), rayTracingOutput);
-        else rayTracingShader.SetTexture("g_Output", rayTracingOutput);
+        // output
+        rayTracingShader.SetTexture("g_Output", rayTracingOutput);
 
-        
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingBufferParam(rayTracingShader, Shader.PropertyToID("g_Surfels"), surfels);
-        else rayTracingShader.SetBuffer("g_Surfels", surfels);
-        
-        if(cmdBuffer != null) cmdBuffer.SetRayTracingBufferParam(rayTracingShader, Shader.PropertyToID("g_Triangles"), triangles);
-        else rayTracingShader.SetBuffer("g_Triangles", triangles);
-
-        if(cmdBuffer != null) cmdBuffer.DispatchRays(rayTracingShader, "MainRayGenShader", cameraWidth, cameraHeight, 1);
-        else rayTracingShader.Dispatch("MainRayGenShader", (int) cameraWidth, (int) cameraHeight, 1);
-
-        if(cmdBuffer != null) Graphics.ExecuteCommandBuffer(cmdBuffer);
-        if(cmdBuffer != null) cmdBuffer.Release();
+        rayTracingShader.Dispatch("MainRayGenShader", (int) cameraWidth, (int) cameraHeight, 1);
 
         if(blit) Graphics.Blit(rayTracingOutput, dest);
         else Graphics.Blit(src, dest);

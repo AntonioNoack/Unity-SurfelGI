@@ -33,17 +33,14 @@ struct RayPayload {
 	float weight;
 	uint hits[16];
 	uint hitIndex;
+	uint surfelIndex;
 };
-
-/*struct LightIntoSurfelPayload {
-	uint hits[16];
-	uint hitIndex;
-};*/
 
 // Triangle attributes
 struct AttributeData {
 	// Barycentric value of the intersection
 	float2 barycentrics;
+	float3 normal;
 };
 
 // many thanks to CustomPhase on Reddit for suggesting this to me:

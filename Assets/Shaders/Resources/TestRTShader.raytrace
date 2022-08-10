@@ -1,23 +1,14 @@
 #pragma max_recursion_depth 1
 
-struct RayPayload1 {
-    float4 color;
-    uint surfelIndex;
-};
-
-struct Triangle {
-    float3 a, b, c;
-    float3 color;
-};
-
 #include "Common.cginc"
 #include "Surfel.cginc"
 
 // Input
-RaytracingAccelerationStructure g_SceneAccelStruct;
+RaytracingAccelerationStructure g_SceneAccelStruct, rtas2;
 float4x4                        g_InvViewMatrix;
 float4x4                        g_ViewMatrix;
 float                           g_Zoom;
+float                           g_Blit;
 
 // Output
 RWTexture2D<float4>             g_Output;
@@ -25,8 +16,8 @@ RWStructuredBuffer<Surfel>      g_Surfels;
 RWStructuredBuffer<Triangle>    g_Triangles;
 
 [shader("miss")]
-void MainMissShader0(inout RayPayload1 payload : SV_RayPayload) {
-    payload.color = float4(0, 0, 0, 1);
+void MainMissShader0(inout RayPayload payload : SV_RayPayload) {
+    payload.color = float3(0, 0, 0);
 }
 
 [shader("raygeneration")]
@@ -56,7 +47,7 @@ void MainRayGenShader() {
 
 	uint numTriangles, stride;
 	g_Triangles.GetDimensions(numTriangles, stride);
-    if(numTriangles > 0) { // this works for now, so I have good hopes to get it working :)
+    if(numTriangles > 0 && !g_Blit) { // this works for now, so I have good hopes to get it working :)
         int index = LaunchIndex.x + LaunchIndex.y * LaunchDim.x;
         uint randomSeed = initRand(LaunchIndex.x, LaunchIndex.y);
         Triangle tri = g_Triangles[index % numTriangles];
@@ -75,8 +66,8 @@ void MainRayGenShader() {
     ray.TMin = 0;
     ray.TMax = 1000;
         
-    RayPayload1 payload;
-    payload.color = float4(1, 0, 0, 1);
+    RayPayload payload;
+    payload.color = float3(1, 0, 0);
     payload.surfelIndex = 0;
 
     uint missShaderIndex = 0;
@@ -86,5 +77,5 @@ void MainRayGenShader() {
         g_Surfels[payload.surfelIndex].color += float4(10,1,1,1);// red light for testing
     }
 
-    g_Output[frameCoord] = payload.color;
+    if(g_Blit) g_Output[frameCoord] = float4(payload.color, 1);
 }

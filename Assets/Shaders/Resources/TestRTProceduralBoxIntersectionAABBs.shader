@@ -40,14 +40,7 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
 
             HLSLPROGRAM
 
-            struct RayPayload {
-                float4 color;
-                uint surfelIndex;
-            };
-
-            struct AABB {
-                float3 min, max;
-            };
+            #include "Common.cginc"
 
             #pragma raytracing test
 
@@ -55,10 +48,6 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
 
             StructuredBuffer<AABB> g_AABBs;
             StructuredBuffer<float4> g_Colors;
-
-            struct AttributeData {
-                float3 normal;
-            };
 
 #if RAY_TRACING_PROCEDURAL_GEOMETRY
 
