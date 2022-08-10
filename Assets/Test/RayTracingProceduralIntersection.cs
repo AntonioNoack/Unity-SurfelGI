@@ -13,7 +13,7 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
 
     private RenderTexture rayTracingOutput = null;
 
-    private RayTracingAccelerationStructure raytracingAccelerationStructure = null;
+    public RayTracingAccelerationStructure raytracingAccelerationStructure = null, rtas2 = null;
 
     private MaterialPropertyBlock properties = null;
 
@@ -184,7 +184,19 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         raytracingAccelerationStructure.Build();
         rayTracingShader.SetShaderPass("Test");
 
-        rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
+        int id1 = Shader.PropertyToID("g_SceneAccelStruct");
+        int id2 = Shader.PropertyToID("g_SceneAccelStruct2");
+
+        Debug.Log("Id1/2: "+id1+"/"+id2);
+
+        if(swap){
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", rtas2);
+        } else {
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", rtas2);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
+        }
+
         rayTracingShader.SetMatrix("g_InvViewMatrix", Camera.main.cameraToWorldMatrix);
         rayTracingShader.SetFloat("g_Zoom", Mathf.Tan(Mathf.Deg2Rad * Camera.main.fieldOfView * 0.5f));
         rayTracingShader.SetFloat("g_Blit", blit ? 1f : 0f);
@@ -202,5 +214,6 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
     }
 
     public bool blit = false;
+    public bool swap = false;
 
 }

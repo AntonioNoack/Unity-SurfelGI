@@ -734,6 +734,7 @@ public class DXRCamera : MonoBehaviour {
                 }
                 rtpi.surfels = surfels;
                 rtpi.triangles = emissiveTriangles;
+                rtpi.rtas2 = sceneRTAS;
             }
 
             if(updateSurfels) {
