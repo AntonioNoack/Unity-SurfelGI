@@ -33,7 +33,7 @@ struct RayPayload {
 	float weight;
 	uint hits[16];
 	uint hitIndex;
-	uint surfelIndex;
+	int surfelId; // -1 = nothing
 };
 
 // Triangle attributes

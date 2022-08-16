@@ -62,13 +62,11 @@ Shader "Custom/SurfelProcShader" {
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 #if defined(SHADER_API_D3D11)
                     int surfelId = instanceId + _InstanceIDOffset;
-                    Surfel surfel;
+                    Surfel surfel = (Surfel) 0;
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId];
                         localPos = quatRot(localPos * float3(1.0,1.0,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
                         if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
-                    } else {
-                        localPos = 0; // remove cube visually
                     }
                 #endif
                 o.vertex = UnityObjectToClipPos(localPos);
@@ -117,12 +115,6 @@ Shader "Custom/SurfelProcShader" {
                 float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
                 float3 Albedo;
-                // Albedo = color;
-                // Albedo = normal*.5+.5;
-                // Albedo = normalize(surfaceLocalPosition)*.5+.5;
-                // Albedo = lookDir;
-                // Albedo = frac(log2(depth));
-                // return float4(frac(surfaceWorldPosition),1);
                 float closeness;
                 float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
                 if(rawDepth == 0.0 && dist > 3.0) {// sky
@@ -130,7 +122,6 @@ Shader "Custom/SurfelProcShader" {
                     // disc like closeness
                     dist = length(i.localPos.xz);
                     closeness = max(1.0/(1.0+10.0*dist)-0.16667, 0.0);
-                    // return float4(closeness,closeness,closeness,1);
                     
                 } else {
                     closeness = /*0.001 + 
@@ -142,16 +133,8 @@ Shader "Custom/SurfelProcShader" {
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
-                if(closeness < 0.0 || i.color.w <= 0.0) discard;
-
+                if(!(closeness > 0.0 && closeness <= 1.0 && i.color.w > 0.0)) discard;
                 return i.color * (closeness / i.color.w);
-
-                /*Albedo = float3(closeness,closeness,closeness);
-                #ifndef UNITY_INSTANCING_ENABLED
-                Albedo.yz = 0;
-                #endif
-                return float4(Albedo,1.0);*/
-                
             }
             
             ENDCG

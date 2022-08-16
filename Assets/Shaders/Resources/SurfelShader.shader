@@ -68,18 +68,11 @@ Shader "Custom/SurfelShader" {
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
                     int surfelId = unity_InstanceID + _InstanceIDOffset;
-                    Surfel surfel;
+                    Surfel surfel = (Surfel) 0;
                     if(surfelId < _SurfelCount) {
-                        // Surfel surfel = _Surfels[min(unity_InstanceID, _Surfels.Length)]; // doesn't work
                         surfel = _Surfels[surfelId]; // does work, but only for DrawMeshInstanced
-                        // InitIndirectDrawArgs(0); "unexpected identifier 'ByteAddressBuffer'"
-                        // uint cmdID = GetCommandID(0);
-                        // uint instanceID = GetIndirectInstanceID(svInstanceID);
-                        // Surfel surfel = _Surfels[min(instanceID, 255)]; 
                         v.vertex.xyz = quatRot(v.vertex.xyz * float3(1.0,0.2,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
                         if(!_VisualizeSurfels && surfel.color.w < 0.0001) v.vertex = 0; // invalid surfel / surfel without known color
-                    } else {
-                        v.vertex = 0; // remove cube visually
                     }
                 #endif
                 o.vertex = UnityObjectToClipPos(v.vertex);

@@ -23,8 +23,9 @@ public class DXRCamera : MonoBehaviour {
     };
 
     struct EmissiveTriangle {
-        public float3 posA, posB, posC;
-        public float3 color;
+        public float ax,ay,az,bx,by,bz,cx,cy,cz;
+        public float r,g,b;
+        public float accuIndex, pad0, pad1, pad2;
     };
 
     public bool enablePathTracing = false;
@@ -116,7 +117,7 @@ public class DXRCamera : MonoBehaviour {
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
 
             if(surfels != null) surfels.Release();
-            surfels = new ComputeBuffer(maxNumSurfels, 8 * 4);// 6 * 4 is the min size
+            surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());// 6 * 4 floats is the min size
             hasPlacedSurfels = false;
             
             if(surfelBounds != null) surfelBounds.Release();
@@ -129,14 +130,6 @@ public class DXRCamera : MonoBehaviour {
             // include all renderer types
             settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
             surfelRTAS = new RayTracingAccelerationStructure(settings);
-            /*surfelRTAS.ClearInstances();
-            var properties = new MaterialPropertyBlock();
-            properties.SetBuffer("_AABBs", surfelBounds);
-            properties.SetBuffer("_Surfels", surfels);
-            bool dynamic = true;
-            surfelRTAS.AddInstance(surfelBounds, (uint) maxNumSurfels, dynamic, Matrix4x4.identity, surfelBoundsMaterial, true, properties);
-            surfelRTAS.Build();*/
-            
         }
     }
 
@@ -392,7 +385,7 @@ public class DXRCamera : MonoBehaviour {
             float3[] vertices = new float3[36];
             Vector3[] srcPositions = cubeMesh.vertices;
             int[] srcTriangles = cubeMesh.triangles;
-            Debug.Log("vertices(24): "+srcPositions.Length+", triangles(36): "+srcTriangles.Length);
+            // Debug.Log("vertices(24): "+srcPositions.Length+", triangles(36): "+srcTriangles.Length);
             for(int i=0,l=Mathf.Min(srcTriangles.Length,vertices.Length);i<l;i++){
                 vertices[i] = srcPositions[srcTriangles[i]];
             }
@@ -430,7 +423,7 @@ public class DXRCamera : MonoBehaviour {
         // we apply this flipping by standard;
         for(int i=1;i<16;i+=4) matrix[i] = -matrix[i];
         shader.SetMatrix("_CustomMVP", matrix);
-        shader.SetVector("_CameraPos", _camera.transform.position);
+        Shader.SetGlobalVector("_CameraPos", _camera.transform.position);
 
         cmdBuffer.ClearRenderTarget(true, true, Color.clear, 1f);// depth, color, color-value, depth-value (default is 1)
 
@@ -446,7 +439,7 @@ public class DXRCamera : MonoBehaviour {
         int pass = -1; // shader.FindPass(""); // which shader pass, or -1 for all
         if(useProceduralSurfels){
             cmdBuffer.SetGlobalFloat("_InstanceIDOffset", 0);
-            cmdBuffer.DrawProcedural(instData[0], shader, pass, MeshTopology.Triangles, cubeMeshVertices.count, numInstances);
+            cmdBuffer.DrawProcedural(Matrix4x4.identity, shader, pass, MeshTopology.Triangles, cubeMeshVertices.count, numInstances);
         } else {
             int offset = 0;
             while(numInstances > 0){
@@ -521,15 +514,7 @@ public class DXRCamera : MonoBehaviour {
             return;// no need to call the shader
         }
         Vector3 cameraPos = _camera.transform.position;
-        MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
-        foreach (MeshRenderer r in renderers) {
-            Material[] mats = r.sharedMaterials;
-            if(mats != null){
-                foreach(Material m in mats){
-                    m.SetVector("_CameraPos", cameraPos);
-                }
-            }
-        }
+        Shader.SetGlobalVector("_CameraPos", cameraPos);
         var shader = lightSamplingShader;
         surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
         shader.SetBuffer("_Surfels", surfels);
@@ -583,6 +568,7 @@ public class DXRCamera : MonoBehaviour {
 
         EmissiveTriangle[] tris = new EmissiveTriangle[numTris];
         numTris = 0;
+        float accuArea = 0f;
         foreach (MeshRenderer r in renderers) {
             var mat = r.sharedMaterial;
             bool isEmissive = mat != null && mat.shader == emissiveDXRShader;
@@ -605,10 +591,22 @@ public class DXRCamera : MonoBehaviour {
                         Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
                         float area = Vector3.Cross(b-a,c-a).magnitude;
                         EmissiveTriangle tri;
-                        tri.posA = a;
-                        tri.posB = b;
-                        tri.posC = c;
-                        tri.color = color3 * (area / totalArea);
+                        tri.ax = a.x;
+                        tri.ay = a.y;
+                        tri.az = a.z;
+                        tri.bx = b.x;
+                        tri.by = b.y;
+                        tri.bz = b.z;
+                        tri.cx = c.x;
+                        tri.cy = c.y;
+                        tri.cz = c.z;
+                        var color2 = color3 * (area / totalArea);// normalized by brightness
+                        tri.r = color2.x;
+                        tri.g = color2.y;
+                        tri.b = color2.z;
+                        accuArea += area * brightness;
+                        tri.accuIndex = accuArea / totalArea;
+                        tri.pad0 = tri.pad1 = tri.pad2 = 0;
                         tris[numTris++] = tri;
                     }
                 }
@@ -616,7 +614,7 @@ public class DXRCamera : MonoBehaviour {
         }
 
         // save all triangles to compute buffer
-        emissiveTriangles = new ComputeBuffer(tris.Length, UnsafeUtility.SizeOf<EmissiveTriangle>());
+        emissiveTriangles = new ComputeBuffer(tris.Length, 2 * UnsafeUtility.SizeOf<EmissiveTriangle>());
         Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
         emissiveTriangles.SetData(tris);
 
@@ -734,7 +732,17 @@ public class DXRCamera : MonoBehaviour {
                 }
                 rtpi.surfels = surfels;
                 rtpi.triangles = emissiveTriangles;
-                rtpi.rtas2 = sceneRTAS;
+                rtpi.sceneRTAS = sceneRTAS;
+            }
+
+            var rtpi2 = GetComponent<RTPI2>();
+            if(rtpi2 != null){
+                if(emissiveTriangles == null){
+                    CollectEmissiveTriangles();
+                }
+                rtpi2.surfels = surfels;
+                rtpi2.triangles = emissiveTriangles;
+                rtpi2.sceneRTAS = sceneRTAS;
             }
 
             if(updateSurfels) {
@@ -752,6 +760,10 @@ public class DXRCamera : MonoBehaviour {
 
             if(updateSurfels && surfelTracingShader != null) {
                 UpdateSurfelGI();
+            }
+
+            if(rtpi2 != null && rtpi2.enabled){
+                rtpi2.RenderImage();
             }
 
             if(debugSurfelAABBs && surfelAABBDebugShader != null && surfelRTAS != null){

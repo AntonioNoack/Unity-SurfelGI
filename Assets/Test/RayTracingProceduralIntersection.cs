@@ -13,7 +13,7 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
 
     private RenderTexture rayTracingOutput = null;
 
-    public RayTracingAccelerationStructure raytracingAccelerationStructure = null, rtas2 = null;
+    public RayTracingAccelerationStructure surfelRTAS = null, sceneRTAS = null;
 
     private MaterialPropertyBlock properties = null;
 
@@ -28,20 +28,20 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
     }
 
     private void CreateRaytracingAccelerationStructure() {
-        if (raytracingAccelerationStructure == null) {
+        if (surfelRTAS == null) {
             RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
             settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
             settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Manual;
             settings.layerMask = 255;
 
-            raytracingAccelerationStructure = new RayTracingAccelerationStructure(settings);
+            surfelRTAS = new RayTracingAccelerationStructure(settings);
         }
     }
 
     private void ReleaseResources() {
-        if (raytracingAccelerationStructure != null) {
-            raytracingAccelerationStructure.Release();
-            raytracingAccelerationStructure = null;
+        if (surfelRTAS != null) {
+            surfelRTAS.Release();
+            surfelRTAS = null;
         }
 
         if (rayTracingOutput) {
@@ -122,7 +122,6 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
     public ComputeShader aabbShader;
     public ComputeShader surfelToAABBShader;
 
-    // todo let this be defined by DXRCamera
     public ComputeBuffer surfels, triangles;
 
     public bool hasSurfels = false, hasUpdate = false;
@@ -142,10 +141,10 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
             Debug.Log("Please set a Material for procedural AABBs (check Main Camera).");
             Graphics.Blit(src, dest);
             return;
-        } else if (raytracingAccelerationStructure == null)
+        } else if (surfelRTAS == null)
             return;
 
-        raytracingAccelerationStructure.ClearInstances();
+        surfelRTAS.ClearInstances();
 
         properties.SetBuffer("g_AABBs", aabbList);
         properties.SetBuffer("g_Colors", aabbColors);
@@ -179,9 +178,9 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         time += Time.deltaTime;
 
         // Create a procedural geometry instance based on a AABB list. The GraphicsBuffer contains static data.
-        raytracingAccelerationStructure.AddInstance(aabbList, (uint) aabbCount, true, Matrix4x4.identity, proceduralMaterial, false, properties);
+        surfelRTAS.AddInstance(aabbList, (uint) aabbCount, true, Matrix4x4.identity, proceduralMaterial, false, properties);
 
-        raytracingAccelerationStructure.Build();
+        surfelRTAS.Build();
         rayTracingShader.SetShaderPass("Test");
 
         int id1 = Shader.PropertyToID("g_SceneAccelStruct");
@@ -190,11 +189,11 @@ public class RayTracingProceduralIntersection : MonoBehaviour {
         Debug.Log("Id1/2: "+id1+"/"+id2);
 
         if(swap){
-            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
-            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", rtas2);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", surfelRTAS);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", sceneRTAS);
         } else {
-            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", rtas2);
-            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", raytracingAccelerationStructure);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct2", sceneRTAS);
+            rayTracingShader.SetAccelerationStructure("g_SceneAccelStruct", surfelRTAS);
         }
 
         rayTracingShader.SetMatrix("g_InvViewMatrix", Camera.main.cameraToWorldMatrix);

@@ -71,14 +71,12 @@ Shader "Custom/Surfel2ProcShader" {
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 #if defined(SHADER_API_D3D11)
                     int surfelId = instanceId + _InstanceIDOffset;
-                    Surfel surfel;
+                    Surfel surfel = (Surfel) 0;
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId];
-                        localPos = quatRot(localPos * float3(1.0,1.0,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
-                        if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
-                    } else {
-                        localPos = 0; // remove cube visually
                     }
+                    localPos = quatRot(localPos * float3(1.0,1.0,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
+                    if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
                 #endif
                 o.vertex = UnityObjectToClipPos(localPos);
                 o.screenPos = ComputeScreenPos(o.vertex);
@@ -88,7 +86,7 @@ Shader "Custom/Surfel2ProcShader" {
                 o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
                 o.colorDx = float4(surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10), 1.0);
                 o.colorDy = float4(surfel.colorDy.rgb / max(surfel.colorDy.w, 1e-10), 1.0);
-                o.invSize = 1.0 / surfel.position.w;
+                o.invSize = 1.0 / max(surfel.position.w, 1e-15);
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 o.surfelId = surfelId;
                 #endif
@@ -109,6 +107,7 @@ Shader "Custom/Surfel2ProcShader" {
             };
 
             f2t frag (v2f i) : SV_Target {
+
                 float2 uv = i.screenPos.xy / i.screenPos.w;
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
                 half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
@@ -118,12 +117,13 @@ Shader "Custom/Surfel2ProcShader" {
                 float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
 
                 f2t result;
+                result.v = 0;
                 result.dx = 0;
                 result.dy = 0;
                 result.id = 0;
 
                 if(!_AllowSkySurfels && rawDepth == 0.0) {
-                    result.v = float4(1,1,1,1);// GI in the sky is 1
+                    // GI in the sky is 1
                     return result;
                 }
 
@@ -137,17 +137,10 @@ Shader "Custom/Surfel2ProcShader" {
                 // calculate surface world position from depth x direction
                 float3 lookDir0 = float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0);
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
-                // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
                 float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
                 float3 Albedo;
-                // Albedo = color;
-                // Albedo = normal*.5+.5;
-                // Albedo = normalize(surfaceLocalPosition)*.5+.5;
-                // Albedo = lookDir;
-                // Albedo = frac(log2(depth));
-                // return float4(frac(surfaceWorldPosition),1);
                 float closeness, geoCloseness;
                 float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
                 if(rawDepth == 0.0 && dist > 3.0) {
@@ -155,7 +148,6 @@ Shader "Custom/Surfel2ProcShader" {
                     // disc like closeness
                     dist = dot(i.localPos.xz,i.localPos.xz);
                     closeness = max(1.0/(1.0+20.0*dist)-0.16667, 0.0);
-                    // return float4(closeness,closeness,closeness,1);
                     
                 } else {
                     closeness = /*0.001 + 
@@ -164,13 +156,7 @@ Shader "Custom/Surfel2ProcShader" {
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
 
-                if(closeness < 0.0 || i.color.w <= 0.0) discard;
-
-                if(_VisualizeSurfels > 0.0) {
-                    result.v = float4(1,1,1,1)*closeness;
-                    result.id = closeness < _IdCutoff ? i.surfelId : 0;
-                    return result;
-                }
+                if(!(closeness > 0.0 && closeness <= 1.0 && i.color.w > 0.0)) discard;
 
                 result.v = i.color * closeness;
 

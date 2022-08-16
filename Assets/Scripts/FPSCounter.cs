@@ -17,7 +17,11 @@ public class FPSCounter : MonoBehaviour {
 
     private void OnGUI() {
         int fps = Mathf.RoundToInt(10f / smoothFrameTime);
-        GUILayout.Label((fps/10) + "." + (fps%10) + " fps");
+        if(SystemInfo.supportsRayTracing){
+            GUILayout.Label((fps/10) + "." + (fps%10) + " fps");
+        } else {
+            GUILayout.Label("RayTracing is not supported, Surfel GI won't work!!!");
+        }
     }
 
 }

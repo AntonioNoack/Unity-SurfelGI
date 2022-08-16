@@ -1,17 +1,13 @@
-Shader "RayTracing/883/ProceduralBoxIntersection"
-{
-    Properties
-    {
+Shader "RayTracing/883/ProceduralBoxIntersection" {
+    Properties {
         _Color("Main Color", Color) = (1, 1, 1, 1)
     }
 
-    SubShader
-    {
+    SubShader {
         Tags { "RenderType" = "Opaque" "DisableBatching" = "True"}
         LOD 100
 
-        Pass
-        {
+        Pass {
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -45,11 +41,11 @@ Shader "RayTracing/883/ProceduralBoxIntersection"
         Pass {
             Name "Test"
 
-            Tags{ "LightMode" = "RayTracing" }
+            Tags { "LightMode" = "RayTracing" }
 
             HLSLPROGRAM
 
-            #include "../Shader/Resources/Common.cginc"
+            #include "../Shaders/Resources/Common.cginc"
 
             #pragma raytracing test
 

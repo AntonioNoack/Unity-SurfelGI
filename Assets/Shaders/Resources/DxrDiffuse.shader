@@ -8,6 +8,7 @@
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
 		_BumpMap("Normal Map", 2D) = "bump" {}
+		_EnableLSRT("Enable LSRT", Range(0, 1)) = 0.0
 	}
 	SubShader {
 		
@@ -262,6 +263,8 @@
 			float _EnableRayDifferentials;
 			float3 _CameraPos;
 
+			float _EnableLSRT;
+
 			float bdrfDensityB(float dot, float roughness) {// basic bdrf density: how likely a ray it to hit with that normal on that surface roughness
 				// abs(d)*d is used instead of d*d to give backside-rays 0 probability
 				float r2 = max(roughness * roughness, 1e-10f);// max to avoid division by zero
@@ -317,15 +320,16 @@
 				); // can we mix probabilities? should work fine :)
 
 				int remainingDepth = gMaxDepth - rayPayload.depth;
-				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
-
+				// todo something after this is crashing... what is it?
+				if(_EnableLSRT < 0.5 || remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
 					// we cannot trace rays on different RTAS here, because we cannot set it :/
 					// save all info into rayPayload, and read it from original sender
+
+					// todo also trace a ray towards the sky to sample its emission?
 
 					rayPayload.weight *= hittingCameraProbability;
 					rayPayload.pos = worldPos;
 					rayPayload.dir = cameraDir;
-
 					return;
 				}
 				
@@ -359,15 +363,14 @@
 				rayDesc.TMax = 1000.0;
 
 				rayPayload.depth++;
-
-				// shoot scattered ray
-				TraceRay(_RaytracingAccelerationStructure,
-					rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 				
 				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
 				float3 color = color0.rgb * _Color.rgb;
 				rayPayload.color *= color;
+
+				// shoot scattered ray
+				// rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
 				// todo differentials...
 

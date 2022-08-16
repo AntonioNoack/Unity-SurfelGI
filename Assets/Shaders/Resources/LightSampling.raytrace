@@ -18,12 +18,12 @@ RWStructuredBuffer<Surfel> _Surfels;
 // triangles could be inside meshes, and the scene could be described using meshes
 // on the other hand, we'd need binary search to find the correct mesh index,
 // and there shouldn't be THAT many emissive triangles anyway
-struct Triangle {
-	float3 a, b, c;
-	float3 color;
+//struct Triangle {
+//	float3 a, b, c;
+//	float3 color;
 	// to do could have uv and texture for emissive maps
 	// if we have emissive maps, we need to accumulate all emissive pixels on all triangles, so just skip that
-};
+//};
 
 // emissive surfaces
 StructuredBuffer<Triangle> _Triangles;
@@ -49,11 +49,12 @@ void SurfelLightSampling() {
 		Triangle tri = _Triangles[triangleIndex];
 		uint randomSeed = initRand(dispatchIdx.x + dispatchIdx.y << 16, _FrameIndex);
 		// calculate surface area
-		float3 normal = -cross(tri.b-tri.a, tri.c-tri.a); // todo check if sign is correct
+    	float3 triA = float3(tri.ax,tri.ay,tri.az), triB = float3(tri.bx,tri.by,tri.bz), triC = float3(tri.cx,tri.cy,tri.cz);
+		float3 normal = -cross(triB-triA, triC-triA); // todo check if sign is correct
 		float surfaceArea = abs(length(normal)) * 0.5;
-		float brightness = dot(tri.color,float3(0.33333333,0.33333333,0.33333333));
+		float brightness = (tri.r+tri.g+tri.b)/3.0;
 		float spawnedSamplesF = surfaceArea * _SpawnDensity * brightness; // can be proportional to the brightness, but then we'd have to say the color is relative
-		float3 color = tri.color * (_SamplingWeight / brightness);
+		float3 color = float3(tri.r,tri.g,tri.b) * (_SamplingWeight / brightness);
 		int spawnedSamples = (int) (spawnedSamplesF + nextRand(randomSeed));// random rounding
 		normal = normalize(normal);
 		for(int i=0;i<spawnedSamples;i++){
@@ -64,8 +65,7 @@ void SurfelLightSampling() {
 				u = 1-u;
 				v = 1-v;
 			}
-			float3 base = lerp(tri.a, tri.b, u);
-			float3 rayPos = lerp(base, tri.c, v*v); // v needs to be squared to equal density
+			float3 rayPos = lerp(lerp(triA, triB, u), triC, v*v); // v needs to be squared to equal density
 			
 			// decide ray direction
 			

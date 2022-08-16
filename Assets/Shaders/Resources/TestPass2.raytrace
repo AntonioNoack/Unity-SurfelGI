@@ -1,0 +1,51 @@
+#pragma max_recursion_depth 1
+
+#include "Common.cginc"
+#include "Surfel.cginc"
+
+uint _FrameIndex;
+
+// Output
+RWStructuredBuffer<Surfel>      g_Surfels;
+RWStructuredBuffer<Triangle>    g_Triangles;
+RWStructuredBuffer<LightSample> g_Samples;
+
+[shader("miss")]
+void MainMissShader1(inout RayPayload payload : SV_RayPayload) {
+    payload.surfelId = 0;
+}
+
+[shader("raygeneration")]
+void TestPass2() {
+    
+    LightSample input = g_Samples[DispatchRaysIndex().x];
+    // check, if the input hit a surface
+    if(dot(input.surfaceDir,input.surfaceDir) < 0.01) return;
+
+    RayDesc ray;
+    ray.Origin = input.surfacePos;
+    ray.Direction = input.surfaceDir;
+    ray.TMin = 0;
+    ray.TMax = 1000.0; // todo distance by approximate surfel size at this distance from the camera
+    
+    // send ray into surfel-scene, and hope it hits some
+    RayPayload payload = (RayPayload) 0;
+    payload.weight = input.weight;
+    payload.pos = input.surfacePos;
+    payload.dir = input.surfaceDir;
+
+    TraceRay(_RaytracingAccelerationStructure, 0, 0xFF, 0, 1, 0, ray, payload);
+
+    int surfelId = payload.surfelId;
+    if(surfelId < 0) return;// invalid index -> we found no surfel at all
+
+    uint surfelCount, stride;
+    g_Surfels.GetDimensions(surfelCount, stride);
+    if(surfelId < surfelCount) {
+        // todo this would need to be atomic...
+        g_Surfels[surfelId].color += float4(input.color * payload.weight, 0.0);
+    }
+
+    // todo in a compute shader afterwards, increase all surfel weights, because all surfels had the chance to receive light
+
+}

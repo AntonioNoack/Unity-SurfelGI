@@ -41,13 +41,14 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
             HLSLPROGRAM
 
             #include "Common.cginc"
+            #include "Surfel.cginc"
 
             #pragma raytracing test
 
             #pragma multi_compile_local __ RAY_TRACING_PROCEDURAL_GEOMETRY
 
             StructuredBuffer<AABB> g_AABBs;
-            StructuredBuffer<float4> g_Colors;
+            StructuredBuffer<Surfel> g_Surfels;
 
 #if RAY_TRACING_PROCEDURAL_GEOMETRY
 
@@ -77,22 +78,20 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
 
             [shader("intersection")]
             void BoxIntersectionMain() {
-                AABB aabb = g_AABBs[PrimitiveIndex()];
+                Surfel surfel = g_Surfels[PrimitiveIndex()];
 
-                float3 aabbPos = (aabb.min + aabb.max) * 0.5f;
-                float3 aabbSize = aabb.max - aabb.min;
+                float3 pos = surfel.position.xyz;
+                float size = surfel.position.w;
+                float3 dir = quatRot(float3(0,1,0), surfel.rotation);
+                float t = dot(WorldRayDirection(), (pos - WorldRayOrigin()));
 
-                float outHitT = 0;
-                float3 outNormal = float3(1, 0, 0);
-                float2 outUVs = float2(0, 0);
-                int outFaceIndex = 0;
-
-                bool isHit = RayBoxIntersectionTest(WorldRayOrigin(), WorldRayDirection(), aabbPos, aabbSize * 0.5, outHitT, outNormal, outUVs, outFaceIndex);
-
-                if (isHit) {
-                    AttributeData attr;
-                    attr.normal = outNormal;
-                    ReportHit(outHitT, 0, attr);
+                // only hit, if surfel is close enough
+                float3 hitPosition = WorldRayOrigin() + t * WorldRayDirection();
+                float3 delta = hitPosition - pos;
+                float distSq = dot(delta,delta);
+                if (t > 0.0 && distSq < size * size && dot(dir, WorldRayDirection()) < 0.0) {
+                    AttributeData attr = (AttributeData) 0;
+                    ReportHit(t, 0, attr);
                 }
             }
 
@@ -100,9 +99,8 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
 
             [shader("closesthit")]
             void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
-                float c = frac(log2(RayTCurrent()));
-                payload.color.xyz = float3(c,c,c);// g_Colors[PrimitiveIndex()].xyz;
-                payload.surfelIndex = PrimitiveIndex();
+                // todo modulate weight by direction-alignment (?)
+                payload.surfelId = PrimitiveIndex();
             }
 
             ENDHLSL

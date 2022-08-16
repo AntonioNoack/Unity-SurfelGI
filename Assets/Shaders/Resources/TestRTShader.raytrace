@@ -56,8 +56,9 @@ void MainRayGenShader() {
             u = 1-u;
             v = 1-v;
         }
-        rayDirection = normalize(normalize(cross(tri.b-tri.a, tri.c-tri.a)) + float3(nextRand(randomSeed),nextRand(randomSeed),nextRand(randomSeed))*2.0-1.0);
-        rayOrigin = lerp(lerp(tri.a, tri.b, u), tri.c, v) + rayDirection * 0.1;
+        float3 triA = float3(tri.ax,tri.ay,tri.az), triB = float3(tri.bx,tri.by,tri.bz), triC = float3(tri.cx,tri.cy,tri.cz);
+        rayDirection = normalize(normalize(cross(triB-triA, triC-triA)) + float3(nextRand(randomSeed),nextRand(randomSeed),nextRand(randomSeed))*2.0-1.0);
+        rayOrigin = lerp(lerp(triA, triB, u), triC, v) + rayDirection * 0.1;
     }
 
     RayDesc ray;
@@ -66,15 +67,14 @@ void MainRayGenShader() {
     ray.TMin = 0;
     ray.TMax = 1000;
         
-    RayPayload payload;
+    RayPayload payload = (RayPayload) 0;
     payload.color = float3(1, 0, 0);
-    payload.surfelIndex = 0;
 
     uint missShaderIndex = 0;
     TraceRay(g_SceneAccelStruct, 0, 0xFF, 0, 1, missShaderIndex, ray, payload);
 
-    if(payload.surfelIndex > 0){
-        g_Surfels[payload.surfelIndex].color += float4(10,1,1,1);// red light for testing
+    if(payload.surfelId > 0){
+        g_Surfels[payload.surfelId].color += float4(10,1,1,1);// red light for testing
     }
 
     if(g_Blit) g_Output[frameCoord] = float4(payload.color, 1);

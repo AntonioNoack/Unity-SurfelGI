@@ -1,0 +1,47 @@
+#pragma max_recursion_depth 1
+
+#include "Common.cginc"
+#include "Surfel.cginc"
+
+uint _FrameIndex;
+
+RWStructuredBuffer<Triangle>    g_Triangles;
+RWStructuredBuffer<LightSample> g_Samples;
+
+[shader("miss")]
+void MainMissShader0(inout RayPayload payload : SV_RayPayload) {
+    payload.color = float3(0, 0, 0);
+}
+
+[shader("raygeneration")]
+void TestPass1() {
+
+#include "SampleTri.cginc"
+
+// trace ray into scene, and collect probabilty (weight) + color + where we landed
+
+    RayDesc ray;
+    ray.Origin = rayOrigin;
+    ray.Direction = rayDirection;
+    ray.TMin = 0.01;
+    ray.TMax = 1000;
+        
+    RayPayload payload = (RayPayload) 0;
+    payload.color = float3(tri.r,tri.g,tri.b);
+    payload.weight = 1;
+    payload.pos = ray.Origin;
+    payload.dir = ray.Direction;
+
+// for testing, we could skip this step, and just use start pos/dir
+    TraceRay(_RaytracingAccelerationStructure, 0, 0xFF, 0, 1, 0, ray, payload);
+
+// then save our findings into the temporary array for the second part
+
+    LightSample result;
+    result.color = payload.color;
+    result.weight = payload.weight;
+    result.surfacePos = payload.pos;
+    result.surfaceDir = payload.dir;
+    g_Samples[index] = result;
+    
+}

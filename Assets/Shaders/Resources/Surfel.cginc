@@ -9,7 +9,7 @@ float3 quatRotInv(float3 v, float4 q) {
 	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
 }
 
-struct Surfel {
+struct Surfel {// 6 * 4 floats
     float4 position;
     float4 rotation;
     float4 color;
@@ -18,14 +18,24 @@ struct Surfel {
     float4 data; // angle-dependence
 };
 
-struct AABB {
+struct AABB {// handled on GPU only -> layout doesn't matter
     float3 min;
     float3 max;
 };
 
-struct Triangle {
-    float3 a, b, c;
+struct Triangle {// 16 floats
+    float ax,ay,az;
+    float bx,by,bz;
+    float cx,cy,cz;
+    float r,g,b;
+    float accuIndex;
+    float pad0, pad1, pad2;
+};
+
+struct LightSample {// 3+3+3+1 = 10 floats
     float3 color;
+    float3 surfacePos, surfaceDir;
+    float weight; // = probability
 };
 
 #endif // SURFEL_CGING
