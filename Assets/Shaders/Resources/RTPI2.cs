@@ -35,6 +35,9 @@ public class RTPI2 : MonoBehaviour {
 
     }
 
+    public float lightSampleStrength = 1f;
+    public float lightAccuArea = 1f;
+
     private void CreateResources() {
 
         if (surfelRTAS == null) {
@@ -62,7 +65,6 @@ public class RTPI2 : MonoBehaviour {
         ReleaseResources();
     }
 
-    private float time = 0;
     private int frameIndex = 0;
     public ComputeShader aabbShader;
     public ComputeShader surfelToAABBShader;
@@ -95,8 +97,6 @@ public class RTPI2 : MonoBehaviour {
             DXRCamera.Dispatch(shader, 0, Mathf.Min(aabbList.count, surfels.count), 1, 1);
         }
         
-        time += Time.deltaTime;
-
         properties.SetBuffer("g_AABBs", aabbList);
         properties.SetBuffer("g_Surfels", surfels);
 
@@ -131,6 +131,7 @@ public class RTPI2 : MonoBehaviour {
             shader.SetBuffer("g_Samples", samples);
             shader.SetBuffer("g_Triangles", triangles);
             shader.SetInt("_FrameIndex", frameIndex);
+            shader.SetFloat("_LightAccuArea", lightAccuArea);
             if(pass1) shader.Dispatch("TestPass1", surfels.count, 1, 1);
 
             shader = rayTracingShader2;
@@ -140,6 +141,7 @@ public class RTPI2 : MonoBehaviour {
             shader.SetBuffer("g_Samples", samples);
             shader.SetBuffer("g_Triangles", triangles);
             shader.SetInt("_FrameIndex", frameIndex);
+            shader.SetFloat("_Strength", lightSampleStrength);
             if(pass2) shader.Dispatch("TestPass2", surfels.count, 1, 1);
         }
 

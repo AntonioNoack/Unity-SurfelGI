@@ -2,7 +2,7 @@
    
     uint index = DispatchRaysIndex().x;
     uint randomSeed = initRand(index ^ 0xffff, _FrameIndex);
-	float relativeIndex = (DispatchRaysIndex().x + nextRand(randomSeed)) / DispatchRaysDimensions().x;
+	float relativeIndex = (DispatchRaysIndex().x + nextRand(randomSeed)) * _LightAccuArea / DispatchRaysDimensions().x;
 
 	// ------------------------------------------------------------- //
 	// binary search for correct triangle by size and emissive power //

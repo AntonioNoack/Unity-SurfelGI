@@ -100,7 +100,11 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
             [shader("closesthit")]
             void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
                 // todo modulate weight by direction-alignment (?)
+                Surfel surfel = g_Surfels[PrimitiveIndex()];
                 payload.surfelId = PrimitiveIndex();
+                float radius = surfel.position.w;
+                float area = PI * radius * radius;
+                payload.weight /= area;// large surfels are impacted less by photons
             }
 
             ENDHLSL

@@ -4,6 +4,7 @@
 #include "Surfel.cginc"
 
 uint _FrameIndex;
+float _LightAccuArea;
 
 RWStructuredBuffer<Triangle>    g_Triangles;
 RWStructuredBuffer<LightSample> g_Samples;

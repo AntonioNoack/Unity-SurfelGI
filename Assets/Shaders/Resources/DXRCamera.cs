@@ -353,6 +353,7 @@ public class DXRCamera : MonoBehaviour {
     private ComputeBuffer cubeMeshVertices;
 
     public bool useProceduralSurfels = false;
+    private float lightSampleStrength = 1f, lightAccuArea = 1f;
 
     void AccumulateSurfelEmissions() {
 
@@ -541,7 +542,7 @@ public class DXRCamera : MonoBehaviour {
         MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
 
         int numTris = 0;
-        float totalArea = 0f;
+        float totalEmission = 0f;
         foreach (MeshRenderer r in renderers) {
             var mat = r.sharedMaterial;
             bool isEmissive = mat != null && mat.shader == emissiveDXRShader;
@@ -559,7 +560,7 @@ public class DXRCamera : MonoBehaviour {
                         Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
                         meshArea += Vector3.Cross(b-a,c-a).magnitude;
                     }
-                    totalArea += meshArea * brightness;
+                    totalEmission += meshArea * brightness;
                     numTris += triangles.Length;
                 }
             }
@@ -600,12 +601,13 @@ public class DXRCamera : MonoBehaviour {
                         tri.cx = c.x;
                         tri.cy = c.y;
                         tri.cz = c.z;
-                        var color2 = color3 * (area / totalArea);// normalized by brightness
+                        float samplingDensity = brightness;// todo also base on distance to camera
+                        var color2 = color3 / samplingDensity;
                         tri.r = color2.x;
                         tri.g = color2.y;
                         tri.b = color2.z;
-                        accuArea += area * brightness;
-                        tri.accuIndex = accuArea / totalArea;
+                        accuArea += area * samplingDensity;
+                        tri.accuIndex = accuArea;
                         tri.pad0 = tri.pad1 = tri.pad2 = 0;
                         tris[numTris++] = tri;
                     }
@@ -613,14 +615,17 @@ public class DXRCamera : MonoBehaviour {
             }
         }
 
+        lightAccuArea = accuArea;
+        lightSampleStrength = totalEmission * 0.5f;
+
         // save all triangles to compute buffer
         emissiveTriangles = new ComputeBuffer(tris.Length, 2 * UnsafeUtility.SizeOf<EmissiveTriangle>());
         Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
         emissiveTriangles.SetData(tris);
 
-        totalArea *= 0.5f; // calculate the actual area for correct debugging
+        totalEmission *= 0.5f; // calculate the actual area for correct debugging
 
-        Debug.Log("Collected "+tris.Length+" triangles with a total emission of "+totalArea);
+        Debug.Log("Collected "+tris.Length+" triangles with a total emission of "+totalEmission);
 
     }
 
@@ -743,6 +748,8 @@ public class DXRCamera : MonoBehaviour {
                 rtpi2.surfels = surfels;
                 rtpi2.triangles = emissiveTriangles;
                 rtpi2.sceneRTAS = sceneRTAS;
+                rtpi2.lightAccuArea = lightAccuArea;
+                rtpi2.lightSampleStrength = lightSampleStrength / surfels.count;
             }
 
             if(updateSurfels) {

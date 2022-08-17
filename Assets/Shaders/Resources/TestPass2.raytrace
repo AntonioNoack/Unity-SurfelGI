@@ -10,6 +10,8 @@ RWStructuredBuffer<Surfel>      g_Surfels;
 RWStructuredBuffer<Triangle>    g_Triangles;
 RWStructuredBuffer<LightSample> g_Samples;
 
+float _Strength;
+
 [shader("miss")]
 void MainMissShader1(inout RayPayload payload : SV_RayPayload) {
     payload.surfelId = 0;
@@ -42,10 +44,8 @@ void TestPass2() {
     uint surfelCount, stride;
     g_Surfels.GetDimensions(surfelCount, stride);
     if(surfelId < surfelCount) {
-        // todo this would need to be atomic...
-        g_Surfels[surfelId].color += float4(input.color * payload.weight, 0.0);
+        // todo this would need to be atomic
+        g_Surfels[surfelId].color += float4(input.color * (payload.weight * _Strength), 0.0);
     }
-
-    // todo in a compute shader afterwards, increase all surfel weights, because all surfels had the chance to receive light
 
 }
