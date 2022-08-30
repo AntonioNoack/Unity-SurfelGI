@@ -1,4 +1,4 @@
-#pragma max_recursion_depth 1
+#pragma max_recursion_depth 24
 
 #include "Common.cginc"
 #include "Surfel.cginc"

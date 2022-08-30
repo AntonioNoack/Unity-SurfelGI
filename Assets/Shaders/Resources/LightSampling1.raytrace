@@ -1,4 +1,6 @@
-#pragma max_recursion_depth 1
+#pragma max_recursion_depth 31 // system maximum according to Unity, isn't mentioned on the docs tho
+// https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
+// must not be surpassed, or Unity will crash (why? 😟)
 
 #include "Common.cginc"
 #include "Surfel.cginc"
@@ -19,25 +21,23 @@ void TestPass1() {
 
 #include "SampleTri.cginc"
 
-// trace ray into scene, and collect probabilty (weight) + color + where we landed
-
+    // trace ray into scene, and collect probabilty (weight) + color + where we landed
     RayDesc ray;
     ray.Origin = rayOrigin;
     ray.Direction = rayDirection;
     ray.TMin = 0.01;
     ray.TMax = 1000;
-        
+    
     RayPayload payload = (RayPayload) 0;
     payload.color = float3(tri.r,tri.g,tri.b);
     payload.weight = 1;
     payload.pos = ray.Origin;
     payload.dir = ray.Direction;
+    payload.depth = 0;
 
-// for testing, we could skip this step, and just use start pos/dir
     TraceRay(_RaytracingAccelerationStructure, 0, 0xFF, 0, 1, 0, ray, payload);
 
-// then save our findings into the temporary array for the second part
-
+    // then save our findings into the temporary array for the second part
     LightSample result;
     result.color = payload.color;
     result.weight = payload.weight;

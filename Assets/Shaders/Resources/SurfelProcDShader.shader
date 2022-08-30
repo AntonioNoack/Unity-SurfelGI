@@ -93,6 +93,7 @@ Shader "Custom/Surfel2ProcShader" {
                 o.worldPos = mul(unity_ObjectToWorld, localPos).xyz;
                 o.localPos = localPos;
                 return o;
+
             }
 
 			#include "UnityCG.cginc"
@@ -100,13 +101,13 @@ Shader "Custom/Surfel2ProcShader" {
 			#include "UnityStandardUtils.cginc"
 
             struct f2t {
-                float4 v : SV_TARGET0;
+                float4 v : SV_TARGET;
                 float4 dx : SV_TARGET1;
                 float4 dy : SV_TARGET2;
-                int id : SV_TARGET3;
+                // int id : SV_TARGET3; // breaks rendering without warnings 😵
             };
 
-            f2t frag (v2f i) : SV_Target {
+            f2t frag (v2f i) {
 
                 float2 uv = i.screenPos.xy / i.screenPos.w;
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
@@ -117,10 +118,10 @@ Shader "Custom/Surfel2ProcShader" {
                 float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
 
                 f2t result;
-                result.v = 0;
+                result.v = 1;
                 result.dx = 0;
                 result.dy = 0;
-                result.id = 0;
+                // result.id = 1;
 
                 if(!_AllowSkySurfels && rawDepth == 0.0) {
                     // GI in the sky is 1
@@ -150,8 +151,7 @@ Shader "Custom/Surfel2ProcShader" {
                     closeness = max(1.0/(1.0+20.0*dist)-0.16667, 0.0);
                     
                 } else {
-                    closeness = /*0.001 + 
-                        0.999 * */
+                    closeness = // 0.001 + 0.999 * 
                         saturate(1.0/(1.0+20.0*dist)-0.1667) *
                         saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 }
@@ -167,7 +167,7 @@ Shader "Custom/Surfel2ProcShader" {
                 // pixel space -> surfel space; and then inverse that matrix
                 float2 dLdx = ddx(surfaceLocalPosition.xz);// can become huge, if dot(viewDir,surfaceNormal) ~ 0
                 float2 dLdy = ddy(surfaceLocalPosition.xz);
-                float invDet = 1.0 / (dLdx.x*dLdy.y - dLdx.y*dLdy.x);// todo can become NaN
+                float invDet = 1.0 / (dLdx.x*dLdy.y - dLdx.y*dLdy.x);// todo can become Infinity
 
                 float2 dxdL = invDet * float2(+dLdy.y, -dLdx.y);
                 float2 dydL = invDet * float2(-dLdy.x, +dLdx.x);
@@ -177,14 +177,14 @@ Shader "Custom/Surfel2ProcShader" {
                 float4 colorDy = dydL.x * i.colorDx + dydL.y * i.colorDy;
                 result.dx = closeness * colorDx + i.color * ddx(closeness); // ddx_fine is not available
                 result.dy = closeness * colorDy + i.color * ddy(closeness);
-                result.id = closeness < _IdCutoff ? i.surfelId : 0;
+                // result.id = closeness < _IdCutoff ? i.surfelId : 0;
                 return result;
 
-                /*Albedo = float3(closeness,closeness,closeness);
-                #ifndef UNITY_INSTANCING_ENABLED
-                Albedo.yz = 0;
-                #endif
-                result.v = float4(Albedo,1.0); return result;*/
+                //Albedo = float3(closeness,closeness,closeness);
+                //#ifndef UNITY_INSTANCING_ENABLED
+                //Albedo.yz = 0;
+                //#endif
+                //result.v = float4(Albedo,1.0); return result;
                 
             }
             

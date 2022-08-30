@@ -22,15 +22,8 @@ public class DXRCamera : MonoBehaviour {
         public float3 max;
     };
 
-    struct EmissiveTriangle {
-        public float ax,ay,az,bx,by,bz,cx,cy,cz;
-        public float r,g,b;
-        public float accuIndex, pad0, pad1, pad2;
-    };
-
     public bool enablePathTracing = false;
     public bool enableLightSampling = false;
-    public bool debugSurfelAABBs = true;
 
     public float surfelDensity = 2f;
 
@@ -47,7 +40,6 @@ public class DXRCamera : MonoBehaviour {
     private ComputeBuffer surfels;
     private GraphicsBuffer surfelBounds;
     public RayTracingShader surfelTracingShader;
-    public RayTracingShader surfelAABBDebugShader;
 
     public int maxNumSurfels = 64 * 1024;
 
@@ -84,6 +76,23 @@ public class DXRCamera : MonoBehaviour {
     private Cubemap skyBox;
     public Camera skyBoxCamera;
     public bool needsSkyBoxUpdate = false;
+    
+    public bool resetSurfels = true;
+    public bool disableSurfaceUpdates = false;
+    public Material surfelBoundsMaterial;
+
+    public Mesh cubeMesh;
+    public Material surfelMaterial, surfelProcMaterial, surfel2ProcMaterial;
+    public bool doRT = false;
+
+    private CommandBuffer cmdBuffer = null;
+
+    private ComputeBuffer countBuffer;
+
+    private ComputeBuffer cubeMeshVertices;
+
+    public bool useProceduralSurfels = false;
+    private float lightSampleStrength = 1f, lightAccuArea = 1f;
 
     private void Start() {
 
@@ -108,10 +117,6 @@ public class DXRCamera : MonoBehaviour {
     public static int CeilDiv(int a, int d){
         return (a + d - 1) / d;
     }
-    
-    public bool resetSurfels = true;
-    public bool disableSurfaceUpdates = false;
-    public Material surfelBoundsMaterial;
 
     private void EnsureSurfels(){
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
@@ -342,19 +347,6 @@ public class DXRCamera : MonoBehaviour {
         else Debug.Log("Missing skybox camera");
     }
 
-    public Mesh cubeMesh;
-    public Material surfelMaterial, surfelProcMaterial, surfel2ProcMaterial;
-    public bool doRT = false;
-
-    private CommandBuffer cmdBuffer = null;
-
-    private ComputeBuffer countBuffer;
-
-    private ComputeBuffer cubeMeshVertices;
-
-    public bool useProceduralSurfels = false;
-    private float lightSampleStrength = 1f, lightAccuArea = 1f;
-
     void AccumulateSurfelEmissions() {
 
         bool useProceduralSurfels = this.useProceduralSurfels;
@@ -477,13 +469,6 @@ public class DXRCamera : MonoBehaviour {
         prevCameraRotation = QuatToVec(transform.rotation);
     }
 
-    private void UpdateSurfelGI() {
-        EnsureSurfels();
-        if(enablePathTracing) SurfelPathTracing();
-        if(enableLightSampling) SurfelLightSampling();
-        else if(debugSurfelAABBs) UpdateSurfelBounds();
-    }
-
     private void SurfelPathTracing(){
         var shader = surfelTracingShader;
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
@@ -502,154 +487,7 @@ public class DXRCamera : MonoBehaviour {
         shader.Dispatch("SurfelPathTracing", surfels.count, 1, 1, null);
     }
 
-    public ComputeShader surfelToAABBListShader;
-    public RayTracingShader lightSamplingShader;
     public float lightSamplingRatio = 1f;
-    private void SurfelLightSampling(){
-        UpdateSurfelBounds();
-        // calculate list of emissive triangles
-        if(emissiveTriangles == null){
-            CollectEmissiveTriangles();
-        }
-        if(emissiveTriangles.count <= 0){
-            return;// no need to call the shader
-        }
-        Vector3 cameraPos = _camera.transform.position;
-        Shader.SetGlobalVector("_CameraPos", cameraPos);
-        var shader = lightSamplingShader;
-        surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
-        shader.SetBuffer("_Surfels", surfels);
-        shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
-        shader.SetAccelerationStructure("_SurfelRTAS", surfelRTAS);
-        shader.SetBuffer("_Triangles", emissiveTriangles);
-        shader.SetShaderPass("Test");
-        shader.SetFloat("_MaxDistance", 1e6f);
-        // we could change the ratio of this one
-        int raysPerTriangle = Mathf.Max(1, surfels.count / emissiveTriangles.count);
-        // the triangle count may be really low, which would make us send rays nearly linearly: use multiple units per triangle (y spawn axis)
-        shader.SetFloat("_SpawnDensity", surfels.count / (float) (emissiveTriangles.count * raysPerTriangle)); // ~1
-        shader.SetFloat("_SamplingWeight", lightSamplingRatio);// todo we probably should change the number of rays as well, both path tracer and light sampler
-        
-        shader.Dispatch("SurfelLightSampling", emissiveTriangles.count, raysPerTriangle, 1, null);
-        // todo the sky emits light as well, so we probably should let it send rays as well
-        // question: how many rays would we need?
-    }
-
-    public Shader emissiveDXRShader;
-    private ComputeBuffer emissiveTriangles;
-    private void CollectEmissiveTriangles(){
-
-        MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
-
-        int numTris = 0;
-        float totalEmission = 0f;
-        foreach (MeshRenderer r in renderers) {
-            var mat = r.sharedMaterial;
-            bool isEmissive = mat != null && mat.shader == emissiveDXRShader;
-            if(isEmissive) {
-                MeshFilter filter = r.GetComponent<MeshFilter>();
-                Color color = mat.GetColor("_Color");
-                float brightness = (color.r + color.g + color.b) / 3f;
-                if(filter != null && brightness > 0){
-                    // calculate surface area and count triangles
-                    float meshArea = 0f;
-                    Mesh mesh = filter.sharedMesh;
-                    Vector3[] vertices = mesh.vertices;
-                    int[] triangles = mesh.triangles;
-                    for(int i=0;i<triangles.Length;){
-                        Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
-                        meshArea += Vector3.Cross(b-a,c-a).magnitude;
-                    }
-                    totalEmission += meshArea * brightness;
-                    numTris += triangles.Length;
-                }
-            }
-        }
-        numTris /= 3;
-
-        EmissiveTriangle[] tris = new EmissiveTriangle[numTris];
-        numTris = 0;
-        float accuArea = 0f;
-        foreach (MeshRenderer r in renderers) {
-            var mat = r.sharedMaterial;
-            bool isEmissive = mat != null && mat.shader == emissiveDXRShader;
-            if(isEmissive) {
-                MeshFilter filter = r.GetComponent<MeshFilter>();
-                Color color = mat.GetColor("_Color");
-                float brightness = (color.r + color.g + color.b) / 3f;
-                Vector3 color3 = new Vector3(color.r, color.g, color.b);
-                if(filter != null && brightness > 0){
-                    // calculate surface area and count triangles
-                    Mesh mesh = filter.sharedMesh;
-                    Vector3[] vertices = mesh.vertices;
-                    // convert vertices from local space to global space
-                    var transform = r.transform;
-                    for(int i=0;i<vertices.Length;i++){
-                        vertices[i] = transform.TransformPoint(vertices[i]);
-                    }
-                    int[] triangles = mesh.triangles;
-                    for(int i=0;i<triangles.Length;){
-                        Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
-                        float area = Vector3.Cross(b-a,c-a).magnitude;
-                        EmissiveTriangle tri;
-                        tri.ax = a.x;
-                        tri.ay = a.y;
-                        tri.az = a.z;
-                        tri.bx = b.x;
-                        tri.by = b.y;
-                        tri.bz = b.z;
-                        tri.cx = c.x;
-                        tri.cy = c.y;
-                        tri.cz = c.z;
-                        float samplingDensity = brightness;// todo also base on distance to camera
-                        var color2 = color3 / samplingDensity;
-                        tri.r = color2.x;
-                        tri.g = color2.y;
-                        tri.b = color2.z;
-                        accuArea += area * samplingDensity;
-                        tri.accuIndex = accuArea;
-                        tri.pad0 = tri.pad1 = tri.pad2 = 0;
-                        tris[numTris++] = tri;
-                    }
-                }
-            }
-        }
-
-        lightAccuArea = accuArea;
-        lightSampleStrength = totalEmission * 0.5f;
-
-        // save all triangles to compute buffer
-        emissiveTriangles = new ComputeBuffer(tris.Length, 2 * UnsafeUtility.SizeOf<EmissiveTriangle>());
-        Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
-        emissiveTriangles.SetData(tris);
-
-        totalEmission *= 0.5f; // calculate the actual area for correct debugging
-
-        Debug.Log("Collected "+tris.Length+" triangles with a total emission of "+totalEmission);
-
-    }
-
-
-    private MaterialPropertyBlock properties;
-    private void UpdateSurfelBounds(){
-
-        // first update bounds
-        var shader = surfelToAABBListShader;
-        int kernel = shader.FindKernel("SurfelsToAABBs");
-        shader.SetBuffer(kernel, "_Surfels", surfels);
-        shader.SetBuffer(kernel, "_AABBs", surfelBounds);
-        Dispatch(shader, kernel, surfels.count, 1, 1);
-
-        // then build RTAS
-        surfelRTAS.ClearInstances();
-        if(properties == null) properties = new MaterialPropertyBlock();
-        properties.SetBuffer("_Surfels", surfels);
-        properties.SetBuffer("_AABBs", surfelBounds);
-        bool dynamic = true, opaque = false;
-        surfelRTAS.AddInstance(surfelBounds, (uint) surfels.count, dynamic, Matrix4x4.identity, surfelBoundsMaterial, opaque, properties);
-        surfelRTAS.Build();
-
-    }
 
     private void UpdatePixelGI() {
         var shader = rayTracingShader;
@@ -694,6 +532,9 @@ public class DXRCamera : MonoBehaviour {
         }
 
         var transform = _camera.transform;
+
+        Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
+
         // Debug.Log("on-rimage: "+_camera.worldToCameraMatrix);
         if(doRT) {
 
@@ -714,6 +555,7 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
             displayMaterial.SetVector("_CameraPosition", pos);
             displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+            displayMaterial.SetFloat("_Derivatives", 0f);
             float zFactor2 = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
             displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * _camera.pixelWidth) / _camera.pixelHeight, zFactor2));
             Graphics.Blit(accu2, destination, displayMaterial);
@@ -730,30 +572,16 @@ public class DXRCamera : MonoBehaviour {
         
             EnsureSurfels();
 
-            var rtpi = GetComponent<RayTracingProceduralIntersection>();
-            if(rtpi != null){
-                if(emissiveTriangles == null){
-                    CollectEmissiveTriangles();
-                }
-                rtpi.surfels = surfels;
-                rtpi.triangles = emissiveTriangles;
-                rtpi.sceneRTAS = sceneRTAS;
-            }
-
-            var rtpi2 = GetComponent<RTPI2>();
-            if(rtpi2 != null){
-                if(emissiveTriangles == null){
-                    CollectEmissiveTriangles();
-                }
-                rtpi2.surfels = surfels;
-                rtpi2.triangles = emissiveTriangles;
-                rtpi2.sceneRTAS = sceneRTAS;
-                rtpi2.lightAccuArea = lightAccuArea;
-                rtpi2.lightSampleStrength = lightSampleStrength / surfels.count;
+            var lightSampling = GetComponent<LightSampling>();
+            if(lightSampling != null){
+                lightSampling.surfels = surfels;
+                lightSampling.sceneRTAS = sceneRTAS;
+                lightSampling.lightAccuArea = lightAccuArea;
+                lightSampling.lightSampleStrength = lightSampleStrength / surfels.count;
             }
 
             if(updateSurfels) {
-                // for faster convergence, we can use multiple iterations
+                // for faster surfel-coverage, we can use multiple iterations
                 bool uds = useDerivatives;
                 for(int i=0,l=surfelPlacementIterations;i<l;i++){
                     useDerivatives = uds && i == l-1;
@@ -766,42 +594,32 @@ public class DXRCamera : MonoBehaviour {
             }
 
             if(updateSurfels && surfelTracingShader != null) {
-                UpdateSurfelGI();
+                EnsureSurfels();
+                if(enablePathTracing) SurfelPathTracing();
             }
 
-            if(rtpi2 != null && rtpi2.enabled){
-                rtpi2.RenderImage();
+            if(lightSampling != null && enableLightSampling){
+                lightSampling.RenderImage(_camera);
             }
 
-            if(debugSurfelAABBs && surfelAABBDebugShader != null && surfelRTAS != null){
-                UpdateSurfelBounds();
-                var tmp = emissiveTarget;
-                surfelBoundsMaterial.SetBuffer("_Surfels", surfels);
-                var shader = surfelAABBDebugShader;
-                shader.SetAccelerationStructure("_RaytracingAccelerationStructure", surfelRTAS);
-                shader.SetVector("_CameraPosition", transform.position);
-                shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-                shader.SetVector("_CameraOffset", CalcCameraOffset());
-                shader.SetTexture("_DxrTarget", tmp);
-                shader.SetShaderPass("Test");
-                shader.Dispatch("SurfelAABBDebug", tmp.width, tmp.height, 1, _camera);
-                Graphics.Blit(tmp, destination);
-            } else {
-                // display result on screen
-                displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
-                displayMaterial.SetFloat("_DivideByAlpha", 1f);
-                displayMaterial.SetTexture("_SkyBox", skyBox);
-                displayMaterial.SetTexture("_Accumulation", emissiveTarget);
-                displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-                displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
-                displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
-                displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
-                displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
-                displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-                float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-                displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
-                Graphics.Blit(null, destination, displayMaterial);
-            }
+            // display result on screen
+            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
+            displayMaterial.SetFloat("_DivideByAlpha", 1f);
+            displayMaterial.SetTexture("_SkyBox", skyBox);
+            displayMaterial.SetTexture("_Accumulation", emissiveTarget);
+            displayMaterial.SetTexture("_AccumulationDx", emissiveDxTarget);
+            displayMaterial.SetTexture("_AccumulationDy", emissiveDyTarget);
+            displayMaterial.SetTexture("_AccumulationId", emissiveIdTarget);
+            displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
+            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+            displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
+            displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+            displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
+            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+            Graphics.Blit(null, destination, displayMaterial);
             
             PreservePrevTransform();
             
@@ -834,130 +652,6 @@ public class DXRCamera : MonoBehaviour {
             surfelBounds.Release();
             surfelBounds = null;
         }
-    }
-
-    /**
-     * Poisson Image Reconstruction
-     */
-    
-    private void blur(RenderTexture src, RenderTexture tmp, RenderTexture dst){
-        blurX(src, tmp);
-        blurY(tmp, dst);
-    }
-
-    private void kernel(RenderTexture src, RenderTexture dst, int dx, int dy, Material material) {
-        material.SetVector("_DeltaUV", new Vector2(dx / (src.width-1), dy / (src.height-1)));
-        Graphics.Blit(src, dst, material);
-    }
-
-    private void blurX(RenderTexture src, RenderTexture dst) {
-        kernel(src, dst, 1, 0, unsignedBlurMaterial);
-    }
-
-    private void blurY(RenderTexture src, RenderTexture dst) {
-        kernel(src, dst, 0, 1, unsignedBlurMaterial);
-    }
-
-    private void blurXSigned(RenderTexture src, RenderTexture dst) {
-        kernel(src, dst, 1, 0, signedBlurMaterial);
-    }
-
-    private void blurYSigned(RenderTexture src, RenderTexture dst) {
-        kernel(src, dst, 0, 1, signedBlurMaterial);
-    }
-
-    private void poissonIterate(RenderTexture src, RenderTexture dst, RenderTexture dx, RenderTexture dy, RenderTexture blurred) {
-        var shader = poissonMaterial;
-        float dxf = 1f/(src.width-1), dyf = 1f/(src.height-1);
-        shader.SetVector("_Dx1", new Vector2(1*dxf, 0f));
-        shader.SetVector("_Dx2", new Vector2(2*dxf, 0f));
-        shader.SetVector("_Dy1", new Vector2(0f, 1*dyf));
-        shader.SetVector("_Dy2", new Vector2(0f, 2*dyf));
-        shader.SetTexture("_Src", src);
-        shader.SetTexture("_Dx", dx);
-        shader.SetTexture("_Dy", dy);
-        shader.SetTexture("_Blurred", blurred);
-        Graphics.Blit(null, dst, shader);
-    }
-
-    private void add(RenderTexture a, RenderTexture b, RenderTexture c, RenderTexture dst) {
-        var shader = addMaterial;
-        shader.SetTexture("_TexA", a);
-        shader.SetTexture("_TexB", b);
-        shader.SetTexture("_TexC", c);
-        Graphics.Blit(null, dst, shader);
-    }
-
-    public int poissonBlurRadius = 25;
-    private int numPoissonIterations = 10;
-    private RenderTexture blurred, bdx, bdy, res0;
-    public Shader blurShader;
-    private float[] unsignedBlurMask, signedBlurMask;
-    public Material poissonMaterial, addMaterial;
-    private Material signedBlurMaterial, unsignedBlurMaterial;
-    private float gaussianWeight(int i, float n, float sigma){ // gaussian bell curve with standard deviation <sigma> from -<n> to <n>
-        float x = i * sigma / (n-1);
-        return Mathf.Exp(-x*x);
-    }
-    private RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
-
-        if(signedBlurMaterial == null){
-            if(blurShader == null){
-                Debug.Log("Blur Shader is missing!");
-                return src;
-            }
-            signedBlurMaterial = new Material(blurShader);
-            unsignedBlurMaterial = new Material(blurShader);
-        }
-
-        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1){
-            // create blur masks
-            float sigma = 2.5f;
-            unsignedBlurMask = new float[poissonBlurRadius * 2 + 1];
-            signedBlurMask = new float[poissonBlurRadius * 2 + 1];
-            float weightSum = 0f;
-            int n = Mathf.Max(poissonBlurRadius, 1);
-            for(int i=0;i<=poissonBlurRadius;i++){
-                weightSum += gaussianWeight(i, n, sigma);
-            }
-            float weightScale = 1f / weightSum;
-            for(int i=0;i<=poissonBlurRadius;i++){
-                float weight = weightScale * gaussianWeight(i, n, sigma);
-                int j = i + poissonBlurRadius;
-                unsignedBlurMask[i] = unsignedBlurMask[j] = weight;
-                signedBlurMask[i] = -weight;
-                signedBlurMask[j] = +weight;
-            }
-            signedBlurMask[poissonBlurRadius] = 0; // blur mask must be symmetric
-            signedBlurMaterial.SetInt("_N", poissonBlurRadius);
-            signedBlurMaterial.SetFloatArray("_Weights", signedBlurMask);
-            unsignedBlurMaterial.SetInt("_N", poissonBlurRadius);
-            unsignedBlurMaterial.SetFloatArray("_Weights", unsignedBlurMask);
-        }
-
-        if(addMaterial == null){
-            Debug.Log("AddMaterial is missing!");
-            return src;
-        } else if(poissonMaterial == null){
-            Debug.Log("PoissonMaterial is missing!");
-            return src;
-        }
-
-        RenderTexture tmp = bdx;
-        blur(src, tmp, blurred);
-        blurXSigned(dx, bdx);
-        blurYSigned(dy, bdy);
-        add(blurred, bdx, bdy, res0);
-        RenderTexture res1 = bdx;
-        for(int i=0;i<numPoissonIterations;i++){
-
-            poissonIterate(res0, res1, dx, dy, blurred);
-
-             tmp = res0;
-            res0 = res1;
-            res1 = tmp;
-        }
-        return res0;
     }
 
 }

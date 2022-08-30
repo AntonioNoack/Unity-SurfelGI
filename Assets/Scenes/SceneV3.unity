@@ -558,6 +558,51 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 350236601}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &363519758
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 363519760}
+  - component: {fileID: 363519759}
+  m_Layer: 0
+  m_Name: GameObject
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &363519759
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 363519758}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5dabbbfb28d824c4ca6ed9ae4129376f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Configuration: {fileID: 11400000, guid: 610a07acd1a279d4986a5c5ddbae99f2, type: 2}
+--- !u!4 &363519760
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 363519758}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.37013245, y: 0.9745297, z: 4.2870526}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 5
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &701850449
 GameObject:
   m_ObjectHideFlags: 0
@@ -974,6 +1019,7 @@ GameObject:
   - component: {fileID: 963194230}
   - component: {fileID: 963194229}
   - component: {fileID: 963194232}
+  - component: {fileID: 963194233}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1082,7 +1128,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   velocity: {x: 0, y: 0, z: 0}
   rotation: {x: 0, y: 0}
-  moveSpeed: 10
+  moveSpeed: 5
   rotSpeed: 10
   friction: 5
 --- !u!114 &963194231
@@ -1098,8 +1144,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enablePathTracing: 0
-  enableLightSampling: 0
-  debugSurfelAABBs: 0
+  enableLightSampling: 1
   surfelDensity: 3
   sleep: 0.02
   allowSkySurfels: 0
@@ -1109,7 +1154,6 @@ MonoBehaviour:
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
-  surfelAABBDebugShader: {fileID: 4807578003741378534, guid: b42bded55fbd06b43b392bb23c960ad4, type: 3}
   maxNumSurfels: 65536
   rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
   accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
@@ -1131,16 +1175,9 @@ MonoBehaviour:
   doRT: 0
   useProceduralSurfels: 1
   updateSurfels: 1
-  surfelToAABBListShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
-  lightSamplingShader: {fileID: 4807578003741378534, guid: ae5bbf1a3dfeeec49be72039e709fb68, type: 3}
   lightSamplingRatio: 1
-  emissiveDXRShader: {fileID: 4800000, guid: 9351333cd660a494b93f77e999496617, type: 3}
   useDerivatives: 0
   surfelPlacementIterations: 1
-  poissonBlurRadius: 25
-  blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
-  poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
-  addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
 --- !u!114 &963194232
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1153,17 +1190,35 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 71af5abc6496abb47bf981dc496439c6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  aabbShader: {fileID: 7200000, guid: ba46b27ecb85dfa45a9cf91d2d27df65, type: 3}
+  surfelToAABBShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
   rayTracingShader1: {fileID: 4807578003741378534, guid: 31ea2b2f2c89fb74f8bceb5bd9863db9, type: 3}
   rayTracingShader2: {fileID: 4807578003741378534, guid: 7da3521c728b3fc44a0d9babc44e11b2, type: 3}
   testPass3Shader: {fileID: 7200000, guid: e05aa79778d44224d80bd701962c5b93, type: 3}
   proceduralMaterial: {fileID: 2100000, guid: dc1b324d68fa76c44b2e727618736eb2, type: 2}
   lightSampleStrength: 1
   lightAccuArea: 1
-  aabbShader: {fileID: 7200000, guid: ba46b27ecb85dfa45a9cf91d2d27df65, type: 3}
-  surfelToAABBShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
-  pass1: 1
-  pass2: 1
-  pass3: 1
+  skyMesh: {fileID: 289301614986012343, guid: 266b757fbd03d414a8122a12804154e2, type: 3}
+  emissiveDXRShader: {fileID: 4800000, guid: 9351333cd660a494b93f77e999496617, type: 3}
+  sunDir: {x: 0, y: 0, z: 0}
+  skySunRatio: {x: 0, y: 0}
+  invSunSize: 20
+--- !u!114 &963194233
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b5b8d3c603a5a6c4eaa7d8a3ed703ead, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  poissonBlurRadius: 25
+  blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
+  poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
+  addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

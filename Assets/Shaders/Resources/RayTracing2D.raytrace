@@ -11,7 +11,9 @@ float3 _CameraOffset;
 
 int _FrameIndex;
 
-#pragma max_recursion_depth 8
+#pragma max_recursion_depth 31 // system maximum according to Unity, isn't mentioned on the docs tho
+// https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
+// must not be surpassed, or Unity will crash (why? 😟)
 
 [shader("raygeneration")]
 void PixelGI() {

@@ -65,7 +65,7 @@
 				rayPayload.distance = RayTCurrent();
 				
 				// stop if we have reached max recursion depth
-				if(rayPayload.depth + 1 == gMaxDepth) {
+				if(rayPayload.depth + 1 >= gMaxDepth) {
 					return;
 				}
 

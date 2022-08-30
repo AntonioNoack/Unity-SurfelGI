@@ -7,6 +7,7 @@
 		_ShowIllumination("Show GI", Float) = 0.0
 		_AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
 		_VisualizeSurfels("Visualize Surfels", Float) = 0.0
+		_Derivatives("Use Derivatives", Float) = 0.0
 	}
 	SubShader {
 		// No culling or depth
@@ -49,6 +50,7 @@
 			float _DivideByAlpha;
 			float _ShowIllumination;
 			float _VisualizeSurfels;
+			float _Derivatives;
 
 			float2 _Duv;
 
@@ -130,19 +132,17 @@
 					ill = 1;
 				}
 
-				/*switch(3){
-				case 0:
-					ill = abs(tex2D(_AccuDx, uv));
-					break;
-				case 1:
-					ill = abs(tex2D(_AccuDy, uv));
-					break;
-				case 2:
-					ill = tex2D(_AccuId, uv).x > 0 ? float4(1,1,1,1) : float4(0,0,0,1);
-					break;
-				}*/
-				
-				if(_VisualizeSurfels) return float4(f3(ill.w/(1.0+ill.w)), 1.0);
+				// show derivatives for debugging
+				if(_Derivatives){
+					if(uv.x < 0.333){
+						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
+					} else if(uv.x > 0.667){
+						ill = tex2Dlod(_AccuDy, float4(uv,0,0));
+					}
+				}
+
+				if(_VisualizeSurfels)
+					return float4(f3(ill.w/(1.0+ill.w)), 1.0);
 
 				if(_ShowIllumination) {
 					if(_DivideByAlpha) ill /= ill.w;

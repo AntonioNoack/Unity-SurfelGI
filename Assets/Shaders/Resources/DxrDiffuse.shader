@@ -75,7 +75,7 @@
 				rayPayload.distance = RayTCurrent();
 
 				// stop if we have reached max recursion depth
-				if(rayPayload.depth + 1 == gMaxDepth) {
+				if(rayPayload.depth + 1 >= gMaxDepth) {
 					return;
 				}
 
@@ -171,12 +171,13 @@
 						/**
 						 * trace differential ray 1
 						 */
-						rayDesc.Origin = ray1Pos;
+						RayDesc rayDesc1;
+						rayDesc1.Origin = ray1Pos;
 						float3 deltaPos1 = nextSurfacePos - ray1Pos;
 						float deltaLen1 = length(deltaPos1);
-						rayDesc.Direction = deltaPos1 / deltaLen1;
-						rayDesc.TMin = 0;
-						rayDesc.TMax = deltaLen1 * 1.01;
+						rayDesc1.Direction = deltaPos1 / deltaLen1;
+						rayDesc1.TMin = 0;
+						rayDesc1.TMax = deltaLen1 * 1.01;
 
 						RayPayload scatterRayPayload1;
 						scatterRayPayload1.color = float3(0.0, 0.0, 0.0);
@@ -184,9 +185,10 @@
 						scatterRayPayload1.depth = 0x1000;
 						scatterRayPayload1.withinGlassDepth = rayPayload.withinGlassDepth;
 
+						// todo this crashes the engine
 						TraceRay(_RaytracingAccelerationStructure,
 							scatterRayPayload1.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload1);
+							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc1, scatterRayPayload1);
 
 						/**
 						 * trace differential ray 2
@@ -320,8 +322,7 @@
 				); // can we mix probabilities? should work fine :)
 
 				int remainingDepth = gMaxDepth - rayPayload.depth;
-				// todo something after this is crashing... what is it?
-				if(_EnableLSRT < 0.5 || remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
+				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
 					// we cannot trace rays on different RTAS here, because we cannot set it :/
 					// save all info into rayPayload, and read it from original sender
 
