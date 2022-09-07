@@ -2,7 +2,7 @@
 // https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
 // must not be surpassed, or Unity will crash (why? 😟)
 
-#include "Common.cginc"
+#include "RTLib.cginc"
 #include "Surfel.cginc"
 
 uint _FrameIndex;
@@ -12,7 +12,7 @@ RWStructuredBuffer<Triangle>    g_Triangles;
 RWStructuredBuffer<LightSample> g_Samples;
 
 [shader("miss")]
-void MainMissShader0(inout RayPayload payload : SV_RayPayload) {
+void LS1MissShader(inout RayPayload payload : SV_RayPayload) {
     payload.color = float3(0, 0, 0);
 }
 

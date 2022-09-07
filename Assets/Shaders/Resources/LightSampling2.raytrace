@@ -1,6 +1,6 @@
 #pragma max_recursion_depth 24
 
-#include "Common.cginc"
+#include "RTLib.cginc"
 #include "Surfel.cginc"
 
 uint _FrameIndex;
@@ -13,14 +13,15 @@ RWStructuredBuffer<LightSample> g_Samples;
 float _Strength;
 
 [shader("miss")]
-void MainMissShader1(inout RayPayload payload : SV_RayPayload) {
+void LS2MissShader(inout RayPayload payload : SV_RayPayload) {
     payload.surfelId = 0;
 }
 
 [shader("raygeneration")]
 void TestPass2() {
     
-    LightSample input = g_Samples[DispatchRaysIndex().x];
+    uint index = DispatchRaysIndex().x;
+    LightSample input = g_Samples[index];
     // check, if the input hit a surface
     if(dot(input.surfaceDir,input.surfaceDir) < 0.01) return;
 
@@ -35,7 +36,9 @@ void TestPass2() {
     payload.weight = input.weight;
     payload.pos = input.surfacePos;
     payload.dir = input.surfaceDir;
+    payload.surfelId = -1;
 
+    // todo why is this no longer working?
     TraceRay(_RaytracingAccelerationStructure, 0, 0xFF, 0, 1, 0, ray, payload);
 
     int surfelId = payload.surfelId;
@@ -45,7 +48,9 @@ void TestPass2() {
     g_Surfels.GetDimensions(surfelCount, stride);
     if(surfelId < surfelCount) {
         // todo this would need to be atomic
-        g_Surfels[surfelId].color += float4(input.color * (payload.weight * _Strength), 0.0);
+        float weight = payload.weight * _Strength;
+        // todo compute and assign derivatives as well
+        g_Surfels[surfelId].color += float4(input.color * weight, 0.0);
     }
 
 }

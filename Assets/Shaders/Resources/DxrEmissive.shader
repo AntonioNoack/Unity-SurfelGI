@@ -34,7 +34,7 @@
 
 			#pragma raytracing test
 					   
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			float4 _Color;
 
@@ -57,7 +57,7 @@
 
 			#pragma raytracing test
 					   
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	

@@ -35,7 +35,7 @@
 
 			#pragma raytracing test
 					   
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			int _StartDepth;
 

@@ -17,6 +17,7 @@ public class LightSampling : MonoBehaviour {
 
     public Material proceduralMaterial;
 
+    [System.NonSerialized]
     public RayTracingAccelerationStructure surfelRTAS, sceneRTAS;
 
     public float lightSampleStrength = 1f;
@@ -25,6 +26,9 @@ public class LightSampling : MonoBehaviour {
     private MaterialPropertyBlock properties;
     private GraphicsBuffer aabbList;
     private ComputeBuffer samples;
+
+    [System.NonSerialized]
+    public Cubemap skyBox;
 
     public struct AABB {
         public float3 min;
@@ -63,11 +67,17 @@ public class LightSampling : MonoBehaviour {
     public Shader emissiveDXRShader;
     private ComputeBuffer emissiveTriangles;
 
-    public Vector3 sunDir;
-    public Vector2 skySunRatio;// todo calculate or guess how emissive the sun is, and how emissive the sky is overall
+    public Vector3 sunDir = new Vector3(0f, 1f, 0f);
+    public Vector2 skySunRatio = new Vector2(0.5f, 0.5f);// todo calculate or guess how emissive the sun is, and how emissive the sky is overall
     public float invSunSize = 20f;
 
+    public bool enableSky = false;
+
     public bool normalizeWeights = false;
+
+    public ComputeShader skyToTris;
+
+    public float skySize = 1000f;
 
     private float SkySampleDensity(Vector3 v){
         // must be identical to SkyToTris.compute
@@ -93,7 +103,9 @@ public class LightSampling : MonoBehaviour {
         Vector3[] vertices = mesh.vertices;
         // convert vertices from local space to global space
         if(transform != null) for(int i=0;i<vertices.Length;i++){
+            // Vector3 src = vertices[i];
             vertices[i] = transform.MultiplyPoint3x4(vertices[i]);
+            // Debug.Log(src+" x "+transform+" -> "+vertices[i]);
         }
         return vertices;
     }
@@ -105,6 +117,7 @@ public class LightSampling : MonoBehaviour {
             Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
             meshArea += Vector3.Cross(b-a,c-a).magnitude;
         }
+        Debug.Log("Emission += "+meshArea+" * "+brightness);
         totalEmission += meshArea * brightness;
         numTris += triangles.Length;
     }
@@ -128,8 +141,9 @@ public class LightSampling : MonoBehaviour {
         }
     }
 
-    private void AddSunMesh2(Mesh mesh, Vector3[] vertices, Vector3 color, float brightness, EmissiveTriangle[] tris, ref int numTris, ref float accuArea){
+    private void AddSkyMesh2(Mesh mesh, Vector3[] vertices, Vector3 color, float brightness, EmissiveTriangle[] tris, ref int numTris, ref float accuArea){
         int[] triangles = mesh.triangles;
+        float densitySum = 0f;
         for(int i=0;i<triangles.Length;){
             Vector3 a = vertices[triangles[i++]], b = vertices[triangles[i++]], c = vertices[triangles[i++]];
             float area = Vector3.Cross(b-a,c-a).magnitude;
@@ -138,6 +152,7 @@ public class LightSampling : MonoBehaviour {
             tri.bx = b.x;tri.by = b.y;tri.bz = b.z;
             tri.cx = c.x;tri.cy = c.y;tri.cz = c.z;
             float samplingDensity = SkySampleDensity(new Vector3(a.x+b.x+c.x, a.y+b.y+c.y, a.z+b.z+c.z));
+            densitySum += samplingDensity;
             var color2 = color / samplingDensity;
             tri.r = color2.x;tri.g = color2.y;tri.b = color2.z;
             accuArea += area * samplingDensity;
@@ -145,8 +160,10 @@ public class LightSampling : MonoBehaviour {
             tri.pad0 = tri.pad1 = tri.pad2 = 0;
             tris[numTris++] = tri;
         }
+        // Debug.Log("Density-Sum: "+densitySum+" over "+triangles.Length+" sky tris");
     }
 
+    private Vector3 camPosition;
     private void CollectEmissiveTriangles(Camera camera){
 
         MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
@@ -159,17 +176,21 @@ public class LightSampling : MonoBehaviour {
             return;
         }
 
+        if(enableSky){
+            sunDir = RenderSettings.sun.transform.forward;// should be correct :)
+        }
+
         int numTris = 0;
         float totalEmission = 0f;
 
         // move sky mesh
         // guessed sky color; only amplitude matters here
-        Vector3 skyColor = new Vector3(1f,1f,1f);
-        float skySize = 1000f;
-        Matrix4x4 skyTransform = Matrix4x4.Translate(camera.transform.position) * Matrix4x4.Scale(new Vector3(skySize,skySize,skySize));
+        Vector3 skyColor = 10f * new Vector3(1f,1f,1f);
+        float skyScale = skySize * 100f;// *100, because the base scale in Unity for imports seems to be 100... (surely because of fbx)
+        Matrix4x4 skyTransform = Matrix4x4.Translate(camera.transform.position) * Matrix4x4.Scale(new Vector3(skyScale,skyScale,skyScale));
         float skyBrightness = (skyColor.x + skyColor.y + skyColor.z) / 3f;
-        Vector3[] skyVertices = GetVertices(skyMesh, skyTransform);
-        AddMesh1(skyMesh, skyVertices, skyBrightness, ref totalEmission, ref numTris);
+        Vector3[] skyVertices = enableSky ? GetVertices(skyMesh, skyTransform) : null;
+        if(enableSky) AddMesh1(skyMesh, skyVertices, skyBrightness, ref totalEmission, ref numTris);
 
         // for updating the sky
         int numSkyTris = numTris;
@@ -196,9 +217,7 @@ public class LightSampling : MonoBehaviour {
         float accuArea = 0f;
 
         // use sampling distribution for triangle importance guesses
-        AddSunMesh2(skyMesh, skyVertices, skyColor, skyBrightness, tris, ref numTris, ref accuArea);
-
-        // todo execute sky-update shader
+        if(enableSky) AddSkyMesh2(skyMesh, skyVertices, skyColor, skyBrightness, tris, ref numTris, ref accuArea);
 
         foreach (MeshRenderer r in renderers) {
             var mat = r.sharedMaterial;
@@ -220,10 +239,26 @@ public class LightSampling : MonoBehaviour {
         lightAccuArea = accuArea;
         lightSampleStrength = totalEmission * 0.5f;
 
-        // save all triangles to compute buffer
-        emissiveTriangles = new ComputeBuffer(tris.Length, 2 * UnsafeUtility.SizeOf<EmissiveTriangle>());
+        if(emissiveTriangles == null || emissiveTriangles.count != tris.Length){
+            if(emissiveTriangles != null) emissiveTriangles.Release();
+            emissiveTriangles = new ComputeBuffer(tris.Length, UnsafeUtility.SizeOf<EmissiveTriangle>());
+        }
+
         Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
+        // save all triangles to compute buffer
         emissiveTriangles.SetData(tris);
+
+        if(enableSky){
+            var shader = skyToTris;
+            int kernel = 0;
+            shader.SetVector("_SkySunRatio", skySunRatio);
+            shader.SetVector("_SunDir", sunDir);
+            shader.SetInt("_NumTris", numTris);
+            shader.SetFloat("_InvSunSize", invSunSize);
+            shader.SetBuffer(kernel, "_Triangles", emissiveTriangles);
+            shader.SetTexture(kernel, "_SkyBox", skyBox);
+            DXRCamera.Dispatch(shader, kernel, numTris, 1, 1);
+        }
 
         totalEmission *= 0.5f; // calculate the actual area for correct debugging
 
@@ -260,6 +295,9 @@ public class LightSampling : MonoBehaviour {
 
     public void RenderImage(Camera camera) {
 
+        skySize = Mathf.Max(1e-7f, skySize);
+        camPosition = camera.transform.position;
+
         CreateResources();
 
         if (!SystemInfo.supportsRayTracing) {
@@ -275,7 +313,7 @@ public class LightSampling : MonoBehaviour {
             return;
 
         // todo we also need to update them, if the sky density changes drastically, e.g. when the sun is moving
-        if(emissiveTriangles == null) {
+        if(emissiveTriangles == null || true) {
             CollectEmissiveTriangles(camera);
         }
 
@@ -342,6 +380,48 @@ public class LightSampling : MonoBehaviour {
             DXRCamera.Dispatch(shader, kernel, surfels.count, 1, 1);
         }
 
+    }
+
+    void OnDrawGizmosSelected() {
+        skySize = Mathf.Max(1e-7f, skySize);
+        if(enableSky){
+            DrawWireSphere(camPosition, skySize, new Color(0.8f, 0.87f, 1f, 1f), 0f);
+        }
+    }
+
+    // https://www.reddit.com/r/Unity3D/comments/mkxe7m/a_way_to_visualize_wire_spheres_in_debug/
+    public static void DrawWireSphere(Vector3 center, float radius, Color color, float duration, int quality = 3) {
+        quality = Mathf.Clamp(quality, 1, 10);
+
+        int segments = quality << 2;
+        int subdivisions = quality << 3;
+        int halfSegments = segments >> 1;
+        float strideAngle = 360F / subdivisions;
+        float segmentStride = 180F / segments;
+
+        Vector3 first;
+        Vector3 next;
+        for (int i = 0; i < segments; i++) {
+            first = (Vector3.forward * radius);
+            first = Quaternion.AngleAxis(segmentStride * (i - halfSegments), Vector3.right) * first;
+            for (int j = 0; j < subdivisions; j++) {
+                next = Quaternion.AngleAxis(strideAngle, Vector3.up) * first;
+                UnityEngine.Debug.DrawLine(first + center, next + center, color, duration);
+                first = next;
+            }
+        }
+
+        Vector3 axis;
+        for (int i = 0; i < segments; i++) {
+            first = (Vector3.forward * radius);
+            first = Quaternion.AngleAxis(segmentStride * (i - halfSegments), Vector3.up) * first;
+            axis = Quaternion.AngleAxis(90F, Vector3.up) * first;
+            for (int j = 0; j < subdivisions; j++) {
+                next = Quaternion.AngleAxis(strideAngle, axis) * first;
+                UnityEngine.Debug.DrawLine(first + center, next + center, color, duration);
+                first = next;
+            }
+        }
     }
 
 }

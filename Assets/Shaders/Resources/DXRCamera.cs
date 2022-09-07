@@ -57,7 +57,7 @@ public class DXRCamera : MonoBehaviour {
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
 
     // summed global illumination
-    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget, emissiveIdTarget;
+    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget;
 
     // scene structure for raytracing
     private RayTracingAccelerationStructure sceneRTAS, surfelRTAS;
@@ -266,9 +266,6 @@ public class DXRCamera : MonoBehaviour {
         emissiveDyTarget = new RenderTexture(emissiveTarget);
         emissiveDxTarget.Create();
         emissiveDyTarget.Create();
-        emissiveIdTarget = new RenderTexture(width, height, 0, RenderTextureFormat.RInt, RenderTextureReadWrite.Default);
-        emissiveIdTarget.enableRandomWrite = true;
-        emissiveIdTarget.Create();
 
         prevGBuff1.enableRandomWrite = true;
         prevGBuff2.enableRandomWrite = true;
@@ -298,10 +295,9 @@ public class DXRCamera : MonoBehaviour {
         emissiveTarget.Release();
         emissiveDxTarget.Release();
         emissiveDyTarget.Release();
-        emissiveIdTarget.Release();
         giTarget = accu1 = accu2 = null;
         prevGBuff0 = prevGBuff1 = prevGBuff2 = prevGBuffD = null;
-        emissiveTarget = emissiveDxTarget = emissiveDyTarget = emissiveIdTarget = null;
+        emissiveTarget = emissiveDxTarget = emissiveDyTarget = null;
         // skyBox.Release(); // not supported??? 
     }
 
@@ -398,11 +394,12 @@ public class DXRCamera : MonoBehaviour {
 
         cmdBuffer.Clear(); // clear all commands
         if(useDerivatives){
-            RenderTargetIdentifier[] targets = new RenderTargetIdentifier[4];
-            targets[0] = emissiveTarget.colorBuffer;
-            targets[1] = emissiveDxTarget.colorBuffer;
-            targets[2] = emissiveDyTarget.colorBuffer;
-            targets[3] = emissiveIdTarget.colorBuffer;
+            cmdBuffer.SetRenderTarget(emissiveTarget);
+            RenderTargetIdentifier[] targets = {
+                emissiveTarget.colorBuffer,
+                emissiveDxTarget.colorBuffer,
+                emissiveDyTarget.colorBuffer
+            };
             cmdBuffer.SetRenderTarget(targets, emissiveTarget.depthBuffer);
         } else {
             cmdBuffer.SetRenderTarget(emissiveTarget);
@@ -444,6 +441,8 @@ public class DXRCamera : MonoBehaviour {
         }
         
         Graphics.ExecuteCommandBuffer(cmdBuffer);
+        // cmdBuffer.Release();
+        // cmdBuffer = null;
 
     }
 
@@ -572,22 +571,15 @@ public class DXRCamera : MonoBehaviour {
         
             EnsureSurfels();
 
-            var lightSampling = GetComponent<LightSampling>();
-            if(lightSampling != null){
-                lightSampling.surfels = surfels;
-                lightSampling.sceneRTAS = sceneRTAS;
-                lightSampling.lightAccuArea = lightAccuArea;
-                lightSampling.lightSampleStrength = lightSampleStrength / surfels.count;
-            }
-
             if(updateSurfels) {
                 // for faster surfel-coverage, we can use multiple iterations
                 bool uds = useDerivatives;
                 for(int i=0,l=surfelPlacementIterations;i<l;i++){
-                    useDerivatives = uds && i == l-1;
+                    useDerivatives = false;
                     AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
                     DistributeSurfels();
                 }
+                useDerivatives = uds;
                 AccumulateSurfelEmissions();
             } else {
                 AccumulateSurfelEmissions();
@@ -598,7 +590,13 @@ public class DXRCamera : MonoBehaviour {
                 if(enablePathTracing) SurfelPathTracing();
             }
 
+            var lightSampling = GetComponent<LightSampling>();
             if(lightSampling != null && enableLightSampling){
+                lightSampling.surfels = surfels;
+                lightSampling.sceneRTAS = sceneRTAS;
+                lightSampling.lightAccuArea = lightAccuArea;
+                lightSampling.lightSampleStrength = lightSampleStrength / surfels.count;
+                lightSampling.skyBox = skyBox;
                 lightSampling.RenderImage(_camera);
             }
 
@@ -607,9 +605,8 @@ public class DXRCamera : MonoBehaviour {
             displayMaterial.SetFloat("_DivideByAlpha", 1f);
             displayMaterial.SetTexture("_SkyBox", skyBox);
             displayMaterial.SetTexture("_Accumulation", emissiveTarget);
-            displayMaterial.SetTexture("_AccumulationDx", emissiveDxTarget);
-            displayMaterial.SetTexture("_AccumulationDy", emissiveDyTarget);
-            displayMaterial.SetTexture("_AccumulationId", emissiveIdTarget);
+            displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
+            displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
             displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
             displayMaterial.SetFloat("_Far", _camera.farClipPlane);
             displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);

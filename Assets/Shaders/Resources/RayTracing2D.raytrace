@@ -1,4 +1,4 @@
-﻿#include "Common.cginc"
+﻿#include "RTLib.cginc"
 #include "Surfel.cginc"
 
 // texture to store raytracing result

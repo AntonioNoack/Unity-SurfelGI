@@ -1,4 +1,4 @@
-Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
+Shader "RayTracing/LightSampleAABBs" {
     Properties {}
 
     SubShader {
@@ -40,41 +40,14 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
 
             HLSLPROGRAM
 
-            #include "Common.cginc"
+            #include "RTLib.cginc"
             #include "Surfel.cginc"
 
             #pragma raytracing test
 
             #pragma multi_compile_local __ RAY_TRACING_PROCEDURAL_GEOMETRY
 
-            StructuredBuffer<AABB> g_AABBs;
             StructuredBuffer<Surfel> g_Surfels;
-
-#if RAY_TRACING_PROCEDURAL_GEOMETRY
-
-            bool RayBoxIntersectionTest(in float3 rayWorldOrigin, in float3 rayWorldDirection, in float3 boxPosWorld, in float3 boxHalfSize,
-                out float outHitT, out float3 outNormal, out float2 outUVs, out int outFaceIndex) {
-                // convert from world to box space
-                float3 rd = rayWorldDirection;
-                float3 ro = rayWorldOrigin - boxPosWorld;
-
-                // ray-box intersection in box space
-                float3 m = 1.0 / rd;
-                float3 s = float3(
-                    (rd.x < 0.0) ? 1.0 : -1.0,
-                    (rd.y < 0.0) ? 1.0 : -1.0,
-                    (rd.z < 0.0) ? 1.0 : -1.0);
-
-                float3 t1 = m * (-ro + s * boxHalfSize);
-                float3 t2 = m * (-ro - s * boxHalfSize);
-
-                float tN = max(max(t1.x, t1.y), t1.z);
-                float tF = min(min(t2.x, t2.y), t2.z);
-                outHitT = tN;
-
-                return tN <= tF && tF >= 0.0;
-
-            }
 
             [shader("intersection")]
             void BoxIntersectionMain() {
@@ -95,8 +68,6 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
                 }
             }
 
-#endif
-
             [shader("closesthit")]
             void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
                 // todo modulate weight by direction-alignment (?)
@@ -104,7 +75,8 @@ Shader "RayTracing/ProceduralBoxIntersectionAABBs" {
                 payload.surfelId = PrimitiveIndex();
                 float radius = surfel.position.w;
                 float area = PI * radius * radius;
-                payload.weight /= area;// large surfels are impacted less by photons
+                // todo reenable?
+                // payload.weight /= area;// large surfels are impacted less by photons
             }
 
             ENDHLSL

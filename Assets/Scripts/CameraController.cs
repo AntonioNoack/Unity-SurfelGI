@@ -43,6 +43,8 @@ public class CameraController : MonoBehaviour {
             Vector3 movement = velocity * dt2;
             // transform movement into global space
             transform.Translate(movement, Space.Self);
+        } else if(vl < 1e-6f * moveSpeed){
+            velocity = new Vector3(0,0,0);
         }
         if(Input.GetKeyDown(KeyCode.Escape)) {// for builds
             Application.Quit();

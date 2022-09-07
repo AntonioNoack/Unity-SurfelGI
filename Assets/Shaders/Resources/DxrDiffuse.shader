@@ -48,7 +48,7 @@
 
 			#pragma raytracing test
 					   
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			// the naming comes from Unitys default shader
 
@@ -129,7 +129,7 @@
 
 					// Create and init the scattered payload
 					RayPayload scatterRayPayload;
-					scatterRayPayload.color = float3(0.0, 0.0, 0.0);
+					scatterRayPayload.color = 0;
 					scatterRayPayload.randomSeed = rayPayload.randomSeed;
 					scatterRayPayload.depth = rayPayload.depth + 1;	
 
@@ -137,6 +137,8 @@
 					TraceRay(_RaytracingAccelerationStructure,
 						scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
+
+					rayPayload.randomSeed = scatterRayPayload.randomSeed;
 					
 					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
 					float3 color = color0.rgb * _Color.rgb;
@@ -154,15 +156,16 @@
 						// todo calculate actual gradient values
 
 						float baseAngle = TAU * nextRand(rayPayload.randomSeed);
-						float2 baseSinCos = float2(sin(baseAngle), cos(baseAngle));
-						float4 surfelRotation = float4(0,0,0,1);// todo get this value
-						float surfelSize = 1.0;// todo get this value
-						float distance = surfelSize * lerp(0.01, 1.0, nextRand(rayPayload.randomSeed));
+						float cosa = cos(baseAngle), sina = sin(baseAngle);
+						float4 surfelRotation = rayPayload.surfelRotation;
+						float surfelSize = rayPayload.surfelSize;
+						float distance = lerp(0.1, 1.0, nextRand(rayPayload.randomSeed));
 
-						float3 baseX = quatRot(float3(1,0,0), surfelRotation);
-						float3 baseZ = quatRot(float3(0,0,1), surfelRotation);
-						float3 ray1Pos = worldPos + baseSinCos.x * baseX + baseSinCos.y * baseZ;
-						float3 ray2Pos = worldPos + baseSinCos.y * baseX - baseSinCos.x * baseZ;
+						float wb = distance * surfelSize;
+						float3 baseX = wb * quatRot(float3(1,0,0), surfelRotation);
+						float3 baseZ = wb * quatRot(float3(0,0,1), surfelRotation);
+						float3 ray1Pos = worldPos + baseX * cosa - baseZ * sina;
+						float3 ray2Pos = worldPos + baseX * sina + baseZ * cosa;
 
 						
 						// todo only check for surface properties and visibility at that location,
@@ -180,12 +183,11 @@
 						rayDesc1.TMax = deltaLen1 * 1.01;
 
 						RayPayload scatterRayPayload1;
-						scatterRayPayload1.color = float3(0.0, 0.0, 0.0);
+						scatterRayPayload1.color = 0;
 						scatterRayPayload1.randomSeed = rayPayload.randomSeed;
-						scatterRayPayload1.depth = 0x1000;
+						scatterRayPayload1.depth = 1;
 						scatterRayPayload1.withinGlassDepth = rayPayload.withinGlassDepth;
 
-						// todo this crashes the engine
 						TraceRay(_RaytracingAccelerationStructure,
 							scatterRayPayload1.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc1, scatterRayPayload1);
@@ -203,27 +205,28 @@
 						RayPayload scatterRayPayload2;
 						scatterRayPayload2.color = float3(0.0, 0.0, 0.0);
 						scatterRayPayload2.randomSeed = rayPayload.randomSeed;
-						scatterRayPayload2.depth = 0x1000;
+						scatterRayPayload2.depth = 1;
 						scatterRayPayload2.withinGlassDepth = rayPayload.withinGlassDepth;
 
 						TraceRay(_RaytracingAccelerationStructure, 
 							scatterRayPayload2.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload2);
 
-						// todo check if those rays have hit the target
-
-						// todo trace two rays to find these
-						float4 value1 = 0;
-						float4 value2 = 0;
+						float3 value1 = scatterRayPayload1.color;
+						float3 value2 = scatterRayPayload2.color;
 
 						// should be correct
 						float3 value0 = scatterRayPayload.color;
 
-						float3 gradient1 = (value1 - value0) / distance;// store it relative to surfel size?
+						float3 gradient1 = (value1 - value0) / distance;// store it relative to surfel size? yes
 						float3 gradient2 = (value2 - value0) / distance;
 
-						float3 gradientDX = baseSinCos.x; // todo reverse rotation
-						float3 gradientDY = baseSinCos.y;
+						 // reverse rotation
+						float3 gradientDX = gradient1 * cosa + gradient2 * sina;
+						float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
+
+						rayPayload.colorDx = float4(gradientDX, 1.0);
+						rayPayload.colorDz = float4(gradientDZ, 1.0);
 
 					}
 					
@@ -244,7 +247,7 @@
 
 			#pragma raytracing test
 			
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			// the naming comes from Unitys default shader
 
@@ -322,6 +325,7 @@
 				); // can we mix probabilities? should work fine :)
 
 				int remainingDepth = gMaxDepth - rayPayload.depth;
+				// todo remove true
 				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
 					// we cannot trace rays on different RTAS here, because we cannot set it :/
 					// save all info into rayPayload, and read it from original sender

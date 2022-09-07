@@ -47,10 +47,10 @@
 
 			float2 _CameraScale;
 			float4 _CameraRotation;
-			float _DivideByAlpha;
 			float _ShowIllumination;
 			float _VisualizeSurfels;
 			float _Derivatives;
+			float _DivideByAlpha;
 
 			float2 _Duv;
 
@@ -63,7 +63,7 @@
 			// sampler2D_half _CameraMotionVectorsTexture;
 
 			sampler2D _Accumulation;
-			sampler2D _AccuDx, _AccuDy, _AccuId;
+			sampler2D _AccuDx, _AccuDy;
 
 			float3 quatRot(float3 v, float4 q){
 				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -111,7 +111,7 @@
 				float4 ill = tex2Dlod(_Accumulation, float4(uv,0,0));
 
 				float rawDepth = tex2Dlod(_CameraDepthTexture, float4(uv,0,0)).x;
-				if(_DivideByAlpha && rawDepth > 0.0 && ill.w == 0.0){
+				if(rawDepth > 0.0 && ill.w == 0.0){
 					// we miss information: try to get it from neighbors
 					[loop]
 					for(int r=1;r<=16;r++){
@@ -136,8 +136,10 @@
 				if(_Derivatives){
 					if(uv.x < 0.333){
 						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
+						ill.xyz += ill.w * 0.5;
 					} else if(uv.x > 0.667){
 						ill = tex2Dlod(_AccuDy, float4(uv,0,0));
+						ill.xyz += ill.w * 0.5;
 					}
 				}
 
@@ -145,7 +147,7 @@
 					return float4(f3(ill.w/(1.0+ill.w)), 1.0);
 
 				if(_ShowIllumination) {
-					if(_DivideByAlpha) ill /= ill.w;
+					ill /= ill.w;
 					return float4(HDR_to_LDR(ill.xyz), 1.0);
 				}
 
@@ -168,14 +170,9 @@
 							float2 uv2 = uv + float2(i,j) * _Duv;
 							float3 nor = readSurfaceNormal(uv2);
 							float4 illumination = tex2Dlod(_Accumulation, float4(uv2,0,0));
-							if(_DivideByAlpha && !_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
-							// return float4(illumination, 1.0);
+							if(!_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
 							float weight = i == 0 && j == 0 ? 1.0 : exp(-sigma*float(i*i+j*j)) * max(0.0, dot(nor,normal) - 0.8);
-							if(_DivideByAlpha) {
-								sum += float4(illumination.xyz * (weight / illumination.w), weight);
-							} else {
-								sum += float4(illumination.xyz, 1) * weight;
-							}
+							sum += float4(illumination.xyz * (weight / illumination.w), weight);
 						}
 					}
 				} else sum = ill;

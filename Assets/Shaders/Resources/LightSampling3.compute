@@ -1,7 +1,6 @@
 
 #pragma kernel AddLightSampleWeights
 
-#include "Random.cginc"
 #include "Surfel.cginc"
 
 RWStructuredBuffer<Surfel> g_Surfels;
@@ -15,9 +14,10 @@ void AddLightSampleWeights(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint length = g_Surfels.Length;
     if(index < length) {
         Surfel surfel = g_Surfels[index];
-        surfel.color.w   += _DeltaWeight;
-        surfel.colorDx.w += _DeltaWeight;
-        surfel.colorDy.w += _DeltaWeight;
+        surfel.color.w += _DeltaWeight;
+        // as long as we don't compute the derivatives, don't increase their weight
+        // surfel.colorDx.w += _DeltaWeight;
+        // surfel.colorDz.w += _DeltaWeight;
         g_Surfels[index] = surfel;
     }
 }

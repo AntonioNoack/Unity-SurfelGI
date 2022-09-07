@@ -40,7 +40,7 @@
 
             HLSLPROGRAM
 
-            #include "Common.cginc"
+            #include "RTLib.cginc"
             #include "Surfel.cginc"
 
             #pragma raytracing test

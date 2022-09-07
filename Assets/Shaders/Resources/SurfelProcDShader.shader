@@ -9,12 +9,11 @@ Shader "Custom/Surfel2ProcShader" {
         ZTest Always
         ZWrite Off
         Blend One One
-        // todo this can be removed if we don't need light->surfel tracing / multiple importance sampling; idk about this yet
-        // the id layer is rendering the surfel ID, which must not be mixed
-        BlendOp 3 Max
+        // BlendOp Max
         Cull Front
 
         Pass {
+			Name "EmissivePass"
 
             CGPROGRAM
 
@@ -36,8 +35,9 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 localPos : TEXCOORD6;
                 float4 color: TEXCOORD7;
                 float4 colorDx: TEXCOORD8;
-                float4 colorDy: TEXCOORD9;
+                float4 colorDz: TEXCOORD9;
                 int surfelId: TEXCOORD10;
+                float4 surfelRot: TEXCOORD11;
             };
       
             sampler2D _CameraGBufferTexture0;
@@ -75,7 +75,7 @@ Shader "Custom/Surfel2ProcShader" {
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId];
                     }
-                    localPos = quatRot(localPos * float3(1.0,1.0,1.0), surfel.rotation) * surfel.position.w + surfel.position.xyz;
+                    localPos = quatRot(localPos, surfel.rotation) * surfel.position.w + surfel.position.xyz;
                     if(!_VisualizeSurfels && surfel.color.w < 0.0001) localPos = 0; // invalid surfel / surfel without known color
                 #endif
                 o.vertex = UnityObjectToClipPos(localPos);
@@ -85,9 +85,10 @@ Shader "Custom/Surfel2ProcShader" {
                 o.surfelWorldPos += surfel.position.xyz;
                 o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
                 o.colorDx = float4(surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10), 1.0);
-                o.colorDy = float4(surfel.colorDy.rgb / max(surfel.colorDy.w, 1e-10), 1.0);
+                o.colorDz = float4(surfel.colorDz.rgb / max(surfel.colorDz.w, 1e-10), 1.0);
                 o.invSize = 1.0 / max(surfel.position.w, 1e-15);
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
+                o.surfelRot = surfel.rotation;
                 o.surfelId = surfelId;
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, localPos).xyz;
@@ -121,7 +122,6 @@ Shader "Custom/Surfel2ProcShader" {
                 result.v = 1;
                 result.dx = 0;
                 result.dy = 0;
-                // result.id = 1;
 
                 if(!_AllowSkySurfels && rawDepth == 0.0) {
                     // GI in the sky is 1
@@ -138,45 +138,30 @@ Shader "Custom/Surfel2ProcShader" {
                 // calculate surface world position from depth x direction
                 float3 lookDir0 = float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0);
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
-                float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
+                float3 worldPos = _WorldSpaceCameraPos + depth * lookDir;
+                float3 localPos = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
 
                 float3 Albedo;
                 float closeness, geoCloseness;
-                float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
-                if(rawDepth == 0.0 && dist > 3.0) {
-
-                    // disc like closeness
-                    dist = dot(i.localPos.xz,i.localPos.xz);
-                    closeness = max(1.0/(1.0+20.0*dist)-0.16667, 0.0);
-                    
-                } else {
-                    closeness = // 0.001 + 0.999 * 
-                        saturate(1.0/(1.0+20.0*dist)-0.1667) *
-                        saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
-                }
-
+                float dist = dot(localPos, localPos);
+                
+                closeness = // 0.001 + 0.999 * 
+                    saturate(1.0/(1.0+20.0*dist)-0.1667) *
+                    saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
+                
                 if(!(closeness > 0.0 && closeness <= 1.0 && i.color.w > 0.0)) discard;
 
                 result.v = i.color * closeness;
 
-                 // calculate derivatives
+                float4 estColor = i.color + localPos.x * i.colorDx + localPos.z * i.colorDz;
+                float4 colorDx = ddx(estColor);
+                float4 colorDy = ddy(estColor);
 
-                // use dFdx/y(color) from surfel data
-                // for that, transform surfel.colorDx from surfel space into pixel space
-                // pixel space -> surfel space; and then inverse that matrix
-                float2 dLdx = ddx(surfaceLocalPosition.xz);// can become huge, if dot(viewDir,surfaceNormal) ~ 0
-                float2 dLdy = ddy(surfaceLocalPosition.xz);
-                float invDet = 1.0 / (dLdx.x*dLdy.y - dLdx.y*dLdy.x);// todo can become Infinity
+                result.v = closeness * i.color;//estColor;
+                result.dx = closeness * colorDx;
+                result.dy = closeness * colorDy;
 
-                float2 dxdL = invDet * float2(+dLdy.y, -dLdx.y);
-                float2 dydL = invDet * float2(-dLdy.x, +dLdx.x);
-
-                // todo check that this is correct (could be transposed)
-                float4 colorDx = dxdL.x * i.colorDx + dxdL.y * i.colorDy;
-                float4 colorDy = dydL.x * i.colorDx + dydL.y * i.colorDy;
-                result.dx = closeness * colorDx + i.color * ddx(closeness); // ddx_fine is not available
-                result.dy = closeness * colorDy + i.color * ddy(closeness);
+                // result.dx = float4(localPos.xz*.5+.5,0,1); // surface test
                 // result.id = closeness < _IdCutoff ? i.surfelId : 0;
                 return result;
 

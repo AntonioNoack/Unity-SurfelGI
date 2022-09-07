@@ -46,7 +46,7 @@
 
 			#pragma raytracing test
 					   
-			#include "Common.cginc"
+			#include "RTLib.cginc"
 
 			float4 _Color;
 			float _Metallic, _Glossiness;

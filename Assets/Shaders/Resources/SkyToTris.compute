@@ -10,10 +10,6 @@ RWStructuredBuffer<Triangle> _Triangles;
 uint _NumTris;
 float _InvSunSize;
 
-// todo update the sky color on the sky mesh
-// todo use the cubemap
-// todo keep the weights (?)
-
 float2 _SkySunRatio;
 float3 _SunDir;
 

@@ -10,12 +10,12 @@ float3 quatRotInv(float3 v, float4 q) {
 }
 
 struct Surfel {// 6 * 4 floats
-    float4 position;
-    float4 rotation;
-    float4 color;
-    float4 colorDx;
-    float4 colorDy;
-    float4 data; // angle-dependence
+    float4 position; // world position (local to world)
+    float4 rotation; // local to world rotation quaternion
+    float4 color; // color
+    float4 colorDx; // color gradient by local coordinates; x axis
+    float4 colorDz; // color gradient by local coordinates; z axis
+    float4 data; // angle-dependence, and maybe more data in the future
 };
 
 struct AABB {// handled on GPU only -> layout doesn't matter

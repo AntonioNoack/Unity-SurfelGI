@@ -1,4 +1,4 @@
-﻿#include "Common.cginc"
+﻿#include "RTLib.cginc"
 #include "Surfel.cginc"
 
 float3 _CameraPosition;
@@ -71,12 +71,16 @@ void SurfelPathTracing() {
 
 				int remainingTries = max(1, 8 - (int) surfel.color.w);
 
-				float3 surfelBaseX = quatRot(float3(1,0,0), surfel.rotation);
-				float3 surfelBaseZ = quatRot(float3(0,0,1), surfel.rotation);
+				// float3 surfelBaseX = quatRot(float3(1,0,0), surfel.rotation);
+				// float3 surfelBaseZ = quatRot(float3(0,0,1), surfel.rotation);
 
 				// Create and init the ray payload
-				RayPayload rayPayload;
+				RayPayload rayPayload = (RayPayload) 0;
 				rayPayload.randomSeed = seed;
+				rayPayload.colorDx = 0;
+				rayPayload.colorDz = 0;
+				rayPayload.surfelRotation = surfel.rotation;
+				rayPayload.surfelSize = surfelSize;
 
 				bool hasChanged = false;
 				for(int i=0;i<remainingTries;i++){
@@ -100,9 +104,11 @@ void SurfelPathTracing() {
 						RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
 					// if we land outside the expected region, reject the sample
-					if(_AllowStrayRays || (rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
+					if((rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)){
 						// rayPayload.color = frac(rayPayload.distance + 0.5);
 						surfel.color += float4(rayPayload.color, 1.0);
+						surfel.colorDx += rayPayload.colorDx;
+						surfel.colorDz += rayPayload.colorDz;
 						// float maxWeight = 256.0;
 						// if(surfel.color.w > maxWeight) surfel.color *= maxWeight / surfel.color.w;
 						hasChanged = true;

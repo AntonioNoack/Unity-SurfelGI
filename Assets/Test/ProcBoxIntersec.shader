@@ -45,7 +45,7 @@ Shader "RayTracing/883/ProceduralBoxIntersection" {
 
             HLSLPROGRAM
 
-            #include "../Shaders/Resources/Common.cginc"
+            #include "../Shaders/Resources/RTLib.cginc"
 
             #pragma raytracing test
 

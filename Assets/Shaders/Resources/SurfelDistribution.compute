@@ -107,7 +107,7 @@ Surfel InitSkySurfel(float3 worldDir) {
     }
     surfel.color = 1;// sky has GI = 1
     surfel.colorDx = 0;
-    surfel.colorDy = 0;
+    surfel.colorDz = 0;
     surfel.data = 0;
     return surfel;
 }
@@ -141,7 +141,7 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
     // surfel.color = float4(uv,frac(depth),1);
     surfel.color = float4(color * START_WEIGHT, START_WEIGHT);
     surfel.colorDx = 0;
-    surfel.colorDy = 0;
+    surfel.colorDz = 0;
     surfel.data = float4(CalcAngleDepedence(specular, smoothness),0,0,0);// angle-dependance and unused x3
     // float dt = max(-dot(worldDir, surfaceDir), 0.1);
     // surfel.color = float4(dt,dt,dt,1);
@@ -248,7 +248,10 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             // acos ~ 1-x^5 around x=1
             float angleChange = acos(clamp(dot(newRelPos, oldRelPos) / sqrt(dot(newRelPos,newRelPos) * dot(oldRelPos,oldRelPos)), -1, 1));
             float angleChangeFactor = max(1.0 - 10.0 * angleChange * surfel.data.x, 0.0);
-            surfel.color *= (sizeChangeFactor * angleChangeFactor);
+            float factor = sizeChangeFactor * angleChangeFactor;
+            surfel.color *= factor;
+            surfel.colorDx *= factor;
+            surfel.colorDz *= factor;
             Surfels[index] = surfel;
         } else {
             Surfels[index] = InitSurfel(fibonacciSphere(index, length1));

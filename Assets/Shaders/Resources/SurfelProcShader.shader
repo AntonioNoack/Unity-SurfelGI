@@ -12,6 +12,7 @@ Shader "Custom/SurfelProcShader" {
         Cull Front
 
         Pass {
+			Name "EmissivePass"
 
             CGPROGRAM
 
