@@ -18,7 +18,7 @@
 		};
         
 		void surf(Input IN, inout SurfaceOutputStandard o) {
-			o.Albedo = float3(1.0,1.0,1.0);
+			o.Albedo = float3(1,1,1);
 			o.Metallic = 0.0;
 			o.Smoothness = 0.0;
 			o.Alpha = 1.0;
@@ -42,8 +42,9 @@
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	
 				// emissive material, simply return emission color
 				rayPayload.distance = RayTCurrent();
-				rayPayload.color = _Color.xyz;		
-			}			
+				rayPayload.color *= _Color.xyz;
+				rayPayload.dir = 0;
+			}
 
 			ENDHLSL
 		}
