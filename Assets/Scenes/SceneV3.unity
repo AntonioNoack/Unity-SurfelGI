@@ -1204,7 +1204,7 @@ MonoBehaviour:
   surfelMaterial: {fileID: 2100000, guid: 831a6575fc018dc4d90096379790bda2, type: 2}
   surfelProcMaterial: {fileID: 2100000, guid: fac0ec78882c92c44819b0eec43fb38c, type: 2}
   surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
-  perPixelRT: 1
+  perPixelRT: 0
   useProceduralSurfels: 1
   updateSurfels: 1
   lightSamplingRatio: 1

@@ -12,8 +12,8 @@ RWStructuredBuffer<Triangle>    g_Triangles;
 RWStructuredBuffer<LightSample> g_Samples;
 
 [shader("miss")]
-void LS1MissShader(inout RayPayload payload : SV_RayPayload) {
-    payload.color = float3(0, 0, 0);
+void LS1MissShader(inout RayPayload rayPayload : SV_RayPayload) {
+    rayPayload.color = float3(0, 0, 0);
 }
 
 [shader("raygeneration")]
@@ -21,28 +21,46 @@ void TestPass1() {
 
 #include "SampleTri.cginc"
 
-    // trace ray into scene, and collect probabilty (weight) + color + where we landed
-    RayDesc ray;
-    ray.Origin = rayOrigin;
-    ray.Direction = rayDirection;
-    ray.TMin = 0.01;
-    ray.TMax = 1000;
+    // trace rayDesc into scene, and collect probabilty (weight) + color + where we landed
+    RayDesc rayDesc;
+    rayDesc.Origin = rayOrigin;
+    rayDesc.Direction = rayDirection;
+    rayDesc.TMin = 0.01;
+    rayDesc.TMax = 1000;
     
-    RayPayload payload = (RayPayload) 0;
-    payload.color = float3(tri.r,tri.g,tri.b);
-    payload.weight = 1;
-    payload.pos = ray.Origin;
-    payload.dir = ray.Direction;
-    payload.depth = 0;
+    RayPayload rayPayload = (RayPayload) 0;
+    rayPayload.color = float3(tri.r,tri.g,tri.b);
+    rayPayload.weight = 1;
+    rayPayload.pos = rayDesc.Origin;
+    rayPayload.dir = rayDesc.Direction;
+    rayPayload.withinGlassDepth = 0;
+    
+    int raysPerSample = 5;
+    bool foundLight = true;
+    for(int i=0;i<raysPerSample;i++){
+        
+        rayPayload.depth = i;
 
-    TraceRay(_RaytracingAccelerationStructure, 0, 0xFF, 0, 1, 0, ray, payload);
+        TraceRay(_RaytracingAccelerationStructure,
+				rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+        if(dot2(rayPayload.color) == 0.0 || dot2(rayPayload.dir) == 0.0){
+            foundLight = false;
+            break;
+        } else {
+            rayDesc.Origin = rayPayload.pos;
+            rayDesc.Direction = rayPayload.dir;
+        }
+
+    }
 
     // then save our findings into the temporary array for the second part
     LightSample result;
-    result.color = payload.color;
-    result.weight = payload.weight;
-    result.surfacePos = payload.pos;
-    result.surfaceDir = payload.dir;
+    result.color = foundLight ? rayPayload.color : float3(0,0,0);
+    result.weight = rayPayload.weight;
+    result.surfacePos = rayPayload.pos;
+    result.surfaceDir = rayPayload.dir2;// todo we need a secondary property for this
     g_Samples[index] = result;
     
 }

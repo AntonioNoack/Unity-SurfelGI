@@ -33,8 +33,6 @@ struct RayPayload {
 	int withinGlassDepth;
 	float3 pos, dir;
 	float weight;
-	uint hits[16];
-	uint hitIndex;
 	float4 surfelRotation;
 	float surfelSize;
 	int surfelId; // -1 = nothing

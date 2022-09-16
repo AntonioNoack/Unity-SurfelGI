@@ -39,9 +39,9 @@ void PixelGI() {
 	rayPayload.withinGlassDepth = 0;
 
 	float3 color = 0;
-	int spp = _SPP; // samples per pixel per frame
-	int rps = _RPS; // rays per sample
-	for(int j=0;j<spp;j++){
+	int samplesPerPixel = _SPP; // per frame
+	int raysPerSample = _RPS;
+	for(int j=0;j<samplesPerPixel;j++){
 
 		// init ray decriptor
 		rayDesc.Origin = _CameraPosition;
@@ -51,10 +51,10 @@ void PixelGI() {
 		rayPayload.color = float3(1,1,1);
 
 		bool foundLight = false;
-		for(int i=0;i<rps;i++) {
+		for(int i=0;i<raysPerSample;i++) {
 
 			rayDesc.TMin = 0.001;
-			rayDesc.TMax = 100;
+			rayDesc.TMax = 1000;
 			rayPayload.depth = i;
 
 			// shoot primary ray
@@ -85,7 +85,7 @@ void PixelGI() {
 	}
 
 	// store result
-	_DxrTarget[dispatchIdx] = float4(color, spp);	
+	_DxrTarget[dispatchIdx] = float4(color, samplesPerPixel);	
 }
 
 SamplerState _LinearClamp;
