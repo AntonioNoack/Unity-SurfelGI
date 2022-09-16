@@ -142,30 +142,34 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 localPos = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
 
                 float3 Albedo;
-                float closeness, geoCloseness;
+                float weight;
                 float dist = dot(localPos, localPos);
                 
-                closeness = // 0.001 + 0.999 * 
+                weight = // 0.001 + 0.999 * 
                     saturate(1.0/(1.0+20.0*dist)-0.1667) *
                     saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
                 
-                if(!(closeness > 0.0 && closeness <= 1.0 && i.color.w > 0.0)) discard;
+                // if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
 
-                result.v = i.color * closeness;
+                result.v = i.color * weight;
 
-                float4 estColor = i.color + localPos.x * i.colorDx + localPos.z * i.colorDz;
+                float4 estColor = /*weight * */(i.color + localPos.x * i.colorDx + localPos.z * i.colorDz);
                 float4 colorDx = ddx(estColor);
                 float4 colorDy = ddy(estColor);
 
-                result.v = closeness * i.color;//estColor;
-                result.dx = closeness * colorDx;
-                result.dy = closeness * colorDy;
+                result.v = weight * estColor;
+                // product rule for differentiation
+                result.dx = weight * colorDx;// + ddx(weight) * float4(i.color.xyz, 0.0);
+                result.dy = weight * colorDy;// + ddy(weight) * float4(i.color.xyz, 0.0);
+                // result.dx = colorDx;// + ddx(weight) * float4(i.color.xyz, 0.0);
+                // result.dy = colorDy;// + ddy(weight) * float4(i.color.xyz, 0.0);
+                // result.dx = float4(100.0 * ddx(weight),0,0,1);
 
                 // result.dx = float4(localPos.xz*.5+.5,0,1); // surface test
-                // result.id = closeness < _IdCutoff ? i.surfelId : 0;
+                // result.id = weight < _IdCutoff ? i.surfelId : 0;
                 return result;
 
-                //Albedo = float3(closeness,closeness,closeness);
+                //Albedo = float3(weight,weight,weight);
                 //#ifndef UNITY_INSTANCING_ENABLED
                 //Albedo.yz = 0;
                 //#endif

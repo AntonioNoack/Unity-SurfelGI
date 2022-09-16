@@ -64,9 +64,9 @@ Material:
     - _AllowSkySurfels: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
-    - _Derivatives: 1
+    - _Derivatives: 0
     - _DetailNormalMapScale: 1
-    - _DivideByAlpha: 1
+    - _DivideByAlpha: 0
     - _DstBlend: 0
     - _Exposure: 8
     - _GlossMapScale: 1

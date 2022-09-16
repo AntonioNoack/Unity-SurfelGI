@@ -325,12 +325,11 @@
 				); // can we mix probabilities? should work fine :)
 
 				int remainingDepth = gMaxDepth - rayPayload.depth;
-				// todo remove true
 				if(remainingDepth <= 1 || nextRand(rayPayload.randomSeed) * remainingDepth < 1.0) {
 					// we cannot trace rays on different RTAS here, because we cannot set it :/
 					// save all info into rayPayload, and read it from original sender
 
-					// todo also trace a ray towards the sky to sample its emission?
+					// here we could send an additional ray towards the sky, to sample it better
 
 					rayPayload.weight *= hittingCameraProbability;
 					rayPayload.pos = worldPos;
