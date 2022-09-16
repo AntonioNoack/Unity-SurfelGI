@@ -3,9 +3,7 @@
 		_Exposure("Exposure", Range(0.0, 1000.0)) = 1.0
 		_SplitX("SplitX", Range(0,1)) = 0.75
 		_SplitY("SplitY", Range(0,1)) = 0.50
-		_DivideByAlpha("Divide By Alpha", Float) = 0.0
 		_ShowIllumination("Show GI", Float) = 0.0
-		_AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
 		_VisualizeSurfels("Visualize Surfels", Float) = 0.0
 		_Derivatives("Use Derivatives", Float) = 0.0
 	}
@@ -43,14 +41,12 @@
 			float _Exposure;
 			float _SplitX, _SplitY;
 			float _Far;
-			float _AllowSkySurfels;
 
 			float2 _CameraScale;
 			float4 _CameraRotation;
 			float _ShowIllumination;
 			float _VisualizeSurfels;
 			float _Derivatives;
-			float _DivideByAlpha;
 
 			float2 _Duv;
 
@@ -128,7 +124,7 @@
 					} else return float4(1,0,1,0.3); // could not be fixed, magenta
 				}
 
-				if(rawDepth <= 0.001 && !_AllowSkySurfels) {
+				if(rawDepth <= 0.001) {
 					ill = 1;
 				}
 
@@ -170,7 +166,7 @@
 							float2 uv2 = uv + float2(i,j) * _Duv;
 							float3 nor = readSurfaceNormal(uv2);
 							float4 illumination = tex2Dlod(_Accumulation, float4(uv2,0,0));
-							if(!_AllowSkySurfels && illumination.w == 0.0) illumination = 1;// sky
+							if(illumination.w == 0.0) illumination = 1;// sky
 							float weight = i == 0 && j == 0 ? 1.0 : exp(-sigma*float(i*i+j*j)) * max(0.0, dot(nor,normal) - 0.8);
 							sum += float4(illumination.xyz * (weight / illumination.w), weight);
 						}

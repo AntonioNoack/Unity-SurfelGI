@@ -83,7 +83,7 @@ public class DXRCamera : MonoBehaviour {
 
     public Mesh cubeMesh;
     public Material surfelMaterial, surfelProcMaterial, surfel2ProcMaterial;
-    public bool doRT = false;
+    public bool perPixelRT = false;
 
     private CommandBuffer cmdBuffer = null;
 
@@ -487,11 +487,14 @@ public class DXRCamera : MonoBehaviour {
     }
 
     public float lightSamplingRatio = 1f;
+    public int samplesPerPixel = 1, raysPerSample = 10;
 
     private void UpdatePixelGI() {
         var shader = rayTracingShader;
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
         shader.SetInt("_FrameIndex", frameIndex);
+        shader.SetInt("_SPP", samplesPerPixel);
+        shader.SetInt("_RPS", raysPerSample);
         shader.SetVector("_CameraPosition", transform.position);
         shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
         shader.SetVector("_CameraOffset", CalcCameraOffset());
@@ -535,7 +538,7 @@ public class DXRCamera : MonoBehaviour {
         Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
 
         // Debug.Log("on-rimage: "+_camera.worldToCameraMatrix);
-        if(doRT) {
+        if(perPixelRT) {
 
             // start path tracer
             UpdatePixelGI();

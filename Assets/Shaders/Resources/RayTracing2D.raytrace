@@ -10,8 +10,9 @@ float4 _CameraRotation;
 float3 _CameraOffset;
 
 int _FrameIndex;
+int _SPP, _RPS;
 
-#pragma max_recursion_depth 31 // system maximum according to Unity, isn't mentioned on the docs tho
+#pragma max_recursion_depth 1 // system maximum according to Unity, isn't mentioned on the docs tho
 // https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
 // must not be surpassed, or Unity will crash (why? 😟)
 
@@ -32,27 +33,59 @@ void PixelGI() {
 	// + float2(nextRand(seed), nextRand(seed))
 	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 
-	// init ray decriptor
 	RayDesc rayDesc;
-	rayDesc.Origin = _CameraPosition;
-	rayDesc.Direction = rayDir;
-	rayDesc.TMin = 0;
-	rayDesc.TMax = 100;
-
-	// Create and init the ray payload
 	RayPayload rayPayload;
-	rayPayload.color = float3(0.0, 0.0, 0.0);
 	rayPayload.randomSeed = seed;
-	rayPayload.depth = 0;
+	rayPayload.withinGlassDepth = 0;
 
-	// shoot primary ray
-	// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
-	// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-	TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-		RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+	float3 color = 0;
+	int spp = _SPP; // samples per pixel per frame
+	int rps = _RPS; // rays per sample
+	for(int j=0;j<spp;j++){
+
+		// init ray decriptor
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = rayDir;
+
+		// Create and init the ray payload
+		rayPayload.color = float3(1,1,1);
+
+		bool foundLight = false;
+		for(int i=0;i<rps;i++) {
+
+			rayDesc.TMin = 0.001;
+			rayDesc.TMax = 100;
+			rayPayload.depth = i;
+
+			// shoot primary ray
+			// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
+			// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+			TraceRay(_RaytracingAccelerationStructure,
+				rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+			// evaluate result
+			float3 n = rayPayload.dir;
+			if(dot2(n) > 0.0 && dot2(rayPayload.color) > 0) {
+				// continue tracing
+				rayDesc.Origin = rayPayload.pos;
+				rayDesc.Direction = n;
+			} else {
+				// reached sky / emissive
+				foundLight = true;
+				break;
+			}
+
+		}
+
+		if(foundLight) {
+			color += rayPayload.color;
+		}
+
+	}
 
 	// store result
-	_DxrTarget[dispatchIdx] = float4(rayPayload.color, 1);	
+	_DxrTarget[dispatchIdx] = float4(color, spp);	
 }
 
 SamplerState _LinearClamp;
@@ -60,6 +93,9 @@ SamplerState _LinearClamp;
 [shader("miss")]
 void PixelGIMiss(inout RayPayload rayPayload : SV_RayPayload) {
 	// todo this looks like SDR... how do we get HDR colors?
-	float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
-	rayPayload.color = rayPayload.depth == 0 ? float3(1,1,1) : color;
+	if(rayPayload.depth > 0) {
+		float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+		rayPayload.color *= color;
+	}
+	rayPayload.dir = 0;
 }

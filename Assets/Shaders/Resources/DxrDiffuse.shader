@@ -75,9 +75,9 @@
 				rayPayload.distance = RayTCurrent();
 
 				// stop if we have reached max recursion depth
-				if(rayPayload.depth + 1 >= gMaxDepth) {
+				/*if(rayPayload.depth + 1 >= gMaxDepth) {
 					return;
-				}
+				}*/
 
 				// compute vertex data on ray/triangle intersection
 				IntersectionVertex vertex;
@@ -117,6 +117,22 @@
 				// perturb reflection direction to get rought metal effect 
 				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
+
+				rayPayload.pos = worldPos;
+				rayPayload.dir = scatterRayDir;
+
+				// occlusion by surface
+				if(dot(scatterRayDir, surfaceWorldNormal) < 0.0){
+					rayPayload.dir = 0;
+				}
+
+				if(rayPayload.depth > 0){
+					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
+					float3 color = color0.rgb * _Color.rgb;
+					rayPayload.color *= color;
+				}
+
+				return;
 
 				// prevent a lot of light bleeding
 				if(dot(scatterRayDir, surfaceWorldNormal) >= 0.0) {
@@ -171,9 +187,7 @@
 						// todo only check for surface properties and visibility at that location,
 						// todo perhaps with some kind of flag
 
-						/**
-						 * trace differential ray 1
-						 */
+						// trace differential ray 1
 						RayDesc rayDesc1;
 						rayDesc1.Origin = ray1Pos;
 						float3 deltaPos1 = nextSurfacePos - ray1Pos;
@@ -192,9 +206,8 @@
 							scatterRayPayload1.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 							RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc1, scatterRayPayload1);
 
-						/**
-						 * trace differential ray 2
-						 */
+						
+						// trace differential ray 2
 						rayDesc.Origin = ray2Pos;
 						float3 deltaPos2 = nextSurfacePos - ray1Pos;
 						float deltaLen2 = length(deltaPos2);

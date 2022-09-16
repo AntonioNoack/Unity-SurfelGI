@@ -198,7 +198,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: ba3393ba7c965a042b3fb8e2f67bb988, type: 2}
+  - {fileID: 2100000, guid: e08dfea450c75e146857d71e36e2b070, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1178,9 +1178,9 @@ MonoBehaviour:
   enablePathTracing: 1
   enableLightSampling: 0
   surfelDensity: 3
-  sleep: 0
+  sleep: 0.0114
   allowSkySurfels: 0
-  showIllumination: 1
+  showIllumination: 0
   allowStrayRays: 0
   visualizeSurfels: 0
   hasPlacedSurfels: 0
@@ -1204,10 +1204,12 @@ MonoBehaviour:
   surfelMaterial: {fileID: 2100000, guid: 831a6575fc018dc4d90096379790bda2, type: 2}
   surfelProcMaterial: {fileID: 2100000, guid: fac0ec78882c92c44819b0eec43fb38c, type: 2}
   surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
-  doRT: 0
+  perPixelRT: 1
   useProceduralSurfels: 1
   updateSurfels: 1
   lightSamplingRatio: 1
+  samplesPerPixel: 16
+  raysPerSample: 2
   useDerivatives: 1
   surfelPlacementIterations: 1
 --- !u!114 &963194232
@@ -1322,7 +1324,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 8c595c76dec11594fa00ce756c45bff2, type: 2}
+      objectReference: {fileID: 2100000, guid: e08dfea450c75e146857d71e36e2b070, type: 2}
     - target: {fileID: 919132149155446097, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Name
       value: SmoothCube
@@ -1404,7 +1406,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ba3393ba7c965a042b3fb8e2f67bb988, type: 2}
+      objectReference: {fileID: 2100000, guid: cfca43fc0c3e96c419149c771f3a8bca, type: 2}
     - target: {fileID: 919132149155446097, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Name
       value: SmoothCube (1)
@@ -1954,7 +1956,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 8c595c76dec11594fa00ce756c45bff2, type: 2}
+  - {fileID: 2100000, guid: e7ebcf4fed9e17c48bbeb3982e2c5b8f, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2059,7 +2061,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: e00bf2dc5b5c8074ebaf82d256b4dfde, type: 2}
+  - {fileID: 2100000, guid: d3cd00ec9b60b4e4698815fa71130c2c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2164,7 +2166,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: e00bf2dc5b5c8074ebaf82d256b4dfde, type: 2}
+  - {fileID: 2100000, guid: bf0828990adcba246a2a33b3f33c13b1, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2741,7 +2743,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 5f0849ba77cb2424ebfa2c42bc9eec45, type: 2}
+      objectReference: {fileID: 2100000, guid: cfca43fc0c3e96c419149c771f3a8bca, type: 2}
     - target: {fileID: 919132149155446097, guid: 97ef7a204e39aa7408b35493c7f9edf0, type: 3}
       propertyPath: m_Name
       value: SmoothCube (2)

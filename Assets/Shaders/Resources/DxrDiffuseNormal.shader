@@ -45,9 +45,9 @@
 				rayPayload.distance = RayTCurrent();
 
 				// stop if we have reached max recursion depth
-				if(rayPayload.depth + 1 >= gMaxDepth) {
+				/*if(rayPayload.depth + 1 >= gMaxDepth) {
 					return;
-				}
+				}*/
 
 				// compute vertex data on ray/triangle intersection
 				IntersectionVertex currentvertex;
@@ -72,7 +72,7 @@
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
 				float3 _Color = worldNormal * 0.5 + 0.5;
 
-				RayDesc rayDesc;
+				/*RayDesc rayDesc;
 				rayDesc.Origin = worldPos;
 				rayDesc.Direction = scatterRayDir;
 				rayDesc.TMin = 0.001;
@@ -89,7 +89,14 @@
 				
 				rayPayload.color = rayPayload.depth == 0 ? 
 					scatterRayPayload.color :
-					_Color * scatterRayPayload.color;
+					_Color * scatterRayPayload.color;*/
+
+				rayPayload.pos = worldPos;
+				rayPayload.dir = scatterRayDir;
+
+				if(rayPayload.depth > 0){
+					rayPayload.color *= _Color;
+				}
 			}			
 
 			ENDHLSL

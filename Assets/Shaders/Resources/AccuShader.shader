@@ -70,7 +70,7 @@
 
 				if(_UseMotionVectors > 0.5) {
 
-					float3 currentFrame = tex2D(_CurrentFrame, uv).rgb;
+					float4 currentFrame = tex2D(_CurrentFrame, uv);
 
 					float2 motion = tex2D(_CameraMotionVectorsTexture, uv);
 					float2 uv2 = uv - motion;
@@ -81,13 +81,11 @@
 
 					if(uv2.x > 0.0 && uv2.y > 0.0 && uv2.x < 1.0 && uv2.y < 1.0){
 
-						float3 previousFrame = 0;
-
 						half spec0, spec1, depth0, depth1;
 						half3 col0, col1, emm0, emm1;
 						GetGBuffer0(uv,spec0,depth0,col0,emm0);
 						
-						previousFrame = tex2D(_Accumulation, uv2).rgb;
+						float4 previousFrame = tex2D(_Accumulation, uv2);
 						GetGBuffer1(uv2,spec1,depth1,col1,emm1);
 						half3 colorDifference = col1 - col0;
 						half3 specDifference = emm1 - emm0;
@@ -99,8 +97,8 @@
 							saturate(1.0 - 1.0 * abs(log2(depth0/depth1)));
 						
 						// compute linear average of all rendered frames
-						return float4(currentFrame + previousFrame * prevWeight, 1.0 + prevWeight);
-					} else return float4(currentFrame, 1.0);
+						return float4(currentFrame.rgb + previousFrame.rgb * prevWeight, currentFrame.a + prevWeight * previousFrame.a);
+					} else return currentFrame;
 
 				} else {
 
