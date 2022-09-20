@@ -558,51 +558,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 350236601}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!1 &363519758
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 363519760}
-  - component: {fileID: 363519759}
-  m_Layer: 0
-  m_Name: GameObject
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &363519759
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 363519758}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5dabbbfb28d824c4ca6ed9ae4129376f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Configuration: {fileID: 11400000, guid: 610a07acd1a279d4986a5c5ddbae99f2, type: 2}
---- !u!4 &363519760
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 363519758}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.37013245, y: 0.9745297, z: 4.2870526}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_RootOrder: 5
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &701850449
 GameObject:
   m_ObjectHideFlags: 0
@@ -952,7 +907,7 @@ Transform:
   m_Children:
   - {fileID: 1751068596}
   m_Father: {fileID: 0}
-  m_RootOrder: 6
+  m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &941016408
 PrefabInstance:
@@ -1210,7 +1165,7 @@ MonoBehaviour:
   lightSamplingRatio: 1
   samplesPerPixel: 16
   raysPerSample: 2
-  useDerivatives: 0
+  useDerivatives: 1
   surfelPlacementIterations: 1
 --- !u!114 &963194232
 MonoBehaviour:
@@ -1257,6 +1212,7 @@ MonoBehaviour:
   blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
   addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
+  normMaterial: {fileID: 2100000, guid: a90049f8ec77c984e9fab397033bc361, type: 2}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -1,4 +1,4 @@
-﻿Shader "RayTracing/AddShader" {
+﻿Shader "RayTracing/PoissonShader" {
 	Properties {}
 	SubShader {
 		// No culling or depth

@@ -1,5 +1,7 @@
 ﻿Shader "RayTracing/BlurShader" {
-	Properties {}
+	Properties {
+		_MainTex ("Albedo", 2D) = "white" { }
+	}
 	SubShader {
 		// No culling or depth
 		Cull Off ZWrite Off ZTest Always
@@ -19,7 +21,8 @@
 				float4 sum = 0;
 				int n = min(_N, 127);
 				for(int j=-n;j<=n;j++){
-					sum += -_Weights[j + _N] * tex2D(_MainTex, i.uv + _DeltaUV * j);
+					float4 col = tex2D(_MainTex, i.uv + _DeltaUV * j);
+					sum += _Weights[j + _N] * col;
 				}
 				return sum;
 			}

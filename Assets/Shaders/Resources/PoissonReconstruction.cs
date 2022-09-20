@@ -6,10 +6,15 @@ using UnityEngine;
  * Poisson Image Reconstruction
  */
 public class PoissonReconstruction : MonoBehaviour {
+
+    // allows you to enable/disable the component
+    void Start(){
+
+    }
     
     public int poissonBlurRadius = 25;
     public Shader blurShader;
-    public Material poissonMaterial, addMaterial;
+    public Material poissonMaterial, addMaterial, normMaterial;
 
     private void blur(RenderTexture src, RenderTexture tmp, RenderTexture dst){
         blurX(src, tmp);
@@ -17,6 +22,13 @@ public class PoissonReconstruction : MonoBehaviour {
     }
 
     private void kernel(RenderTexture src, RenderTexture dst, int dx, int dy, Material material) {
+        if(material == null){
+            Debug.LogWarning("Material for kernel is null!");
+            return;
+        } else if(src == null){
+            Debug.LogWarning("src for kernel is null!");
+            return;
+        }
         material.SetVector("_DeltaUV", new Vector2(dx / (src.width-1), dy / (src.height-1)));
         Graphics.Blit(src, dst, material);
     }
@@ -53,6 +65,11 @@ public class PoissonReconstruction : MonoBehaviour {
 
     private void add(RenderTexture a, RenderTexture b, RenderTexture c, RenderTexture dst) {
         var shader = addMaterial;
+        if(a == null || b == null || c == null){
+            Debug.LogError("Textures are null!!!");
+            return;
+        }
+        shader.SetTexture("_MainTex", a);
         shader.SetTexture("_TexA", a);
         shader.SetTexture("_TexB", b);
         shader.SetTexture("_TexC", c);
@@ -60,15 +77,60 @@ public class PoissonReconstruction : MonoBehaviour {
     }
 
     private int numPoissonIterations = 10;
-    private RenderTexture blurred, bdx, bdy, res0;
+    private RenderTexture blurred, bdx, bdy, res0, src1, dx1, dy1;
     private float[] unsignedBlurMask, signedBlurMask;
     private Material signedBlurMaterial, unsignedBlurMaterial;
     private float gaussianWeight(int i, float n, float sigma){ // gaussian bell curve with standard deviation <sigma> from -<n> to <n>
-        float x = i * sigma / (n-1);
-        return Mathf.Exp(-x*x);
+        float x = i / n;
+        return Mathf.Exp(-x*x*sigma);
+    }
+
+    void OnDestroy(){
+        Destroy();
+    }
+
+    private void Destroy(){
+        if(src1 != null) src1.Release();
+        if(dx1 != null) dx1.Release();
+        if(dy1 != null) dy1.Release();
+        if(bdx != null) bdx.Release();
+        if(bdy != null) bdy.Release();
+        if(res0 != null) res0.Release();
+        if(blurred != null) blurred.Release();
+    }
+
+    private void Create(int w, int h){
+        bdx = Create2(w,h);
+        bdy = Create2(w,h);
+        res0 = Create2(w,h);
+        blurred = Create2(w,h);
+        src1 = Create2(w,h);
+        dx1 = Create2(w,h);
+        dy1 = Create2(w,h);
+    }
+
+    private RenderTexture Create2(int w, int h){
+        var bdx = new RenderTexture(w, h, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
+        bdx.enableRandomWrite = true;
+        bdx.Create();
+        return bdx;
     }
 
     public RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
+
+        if(bdx == null || bdx.width != src.width || bdx.height != src.height){
+            Destroy();
+            Create(src.width, src.height);
+        }
+
+        if(true){
+            Graphics.Blit(src, src1, normMaterial);
+            Graphics.Blit(dx, dx1, normMaterial);
+            Graphics.Blit(dy, dy1, normMaterial);
+            src = src1;
+            dx = dx1;
+            dy = dy1;
+        }
 
         if(signedBlurMaterial == null){
             if(blurShader == null){
@@ -79,7 +141,7 @@ public class PoissonReconstruction : MonoBehaviour {
             unsignedBlurMaterial = new Material(blurShader);
         }
 
-        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1){
+        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1 || true){
             // create blur masks
             float sigma = 2.5f;
             unsignedBlurMask = new float[poissonBlurRadius * 2 + 1];
@@ -92,17 +154,21 @@ public class PoissonReconstruction : MonoBehaviour {
             float weightScale = 1f / weightSum;
             for(int i=0;i<=poissonBlurRadius;i++){
                 float weight = weightScale * gaussianWeight(i, n, sigma);
-                int j = i + poissonBlurRadius;
-                unsignedBlurMask[i] = unsignedBlurMask[j] = weight;
-                signedBlurMask[i] = -weight;
+                int j = poissonBlurRadius+i;
+                int k = poissonBlurRadius-i;
+                unsignedBlurMask[k] = +weight;
+                unsignedBlurMask[j] = +weight;
+                signedBlurMask[k] = -weight;
                 signedBlurMask[j] = +weight;
             }
             signedBlurMask[poissonBlurRadius] = 0; // blur mask must be symmetric
-            signedBlurMaterial.SetInt("_N", poissonBlurRadius);
             signedBlurMaterial.SetFloatArray("_Weights", signedBlurMask);
-            unsignedBlurMaterial.SetInt("_N", poissonBlurRadius);
             unsignedBlurMaterial.SetFloatArray("_Weights", unsignedBlurMask);
+            Debug.Log(string.Join(";", signedBlurMask));
         }
+        
+        signedBlurMaterial.SetInt("_N", poissonBlurRadius);
+        unsignedBlurMaterial.SetInt("_N", poissonBlurRadius);
 
         if(addMaterial == null){
             Debug.Log("AddMaterial is missing!");

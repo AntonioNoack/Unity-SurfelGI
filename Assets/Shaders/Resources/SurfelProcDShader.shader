@@ -153,14 +153,17 @@ Shader "Custom/Surfel2ProcShader" {
                 // if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
                 // result.v = i.color * weight;
 
-                float4 estColor = weight * (i.color + localPos.x * i.colorDx + localPos.z * i.colorDz);
-                float4 colorDx = ddx(estColor);
-                float4 colorDy = ddy(estColor);
+                float3 estColor = weight * (i.color.xyz + localPos.x * i.colorDx.xyz + localPos.z * i.colorDz.xyz);
+                float3 colorDx = ddx(estColor);
+                float3 colorDy = ddy(estColor);
 
-                result.v = weight * estColor;
-                // product rule for differentiation
-                result.dx = weight * colorDx;// + ddx(weight) * float4(i.color.xyz, 0.0);
-                result.dy = weight * colorDy;// + ddy(weight) * float4(i.color.xyz, 0.0);
+                // result.v = weight * estColor;
+                // result.dx = weight * colorDx;
+                // result.dy = weight * colorDy;
+
+                result.v  = float4(estColor, weight);
+                result.dx = float4(colorDx.xyz, weight);
+                result.dy = float4(colorDy.xyz, weight);
                 // result.dx = colorDx;// + ddx(weight) * float4(i.color.xyz, 0.0);
                 // result.dy = colorDy;// + ddy(weight) * float4(i.color.xyz, 0.0);
                 // result.dx = weight * i.colorDx;

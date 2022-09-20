@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: PoissonMaterial
-  m_Shader: {fileID: 4800000, guid: 1ab77c783e38f794da02df491e3a83c8, type: 3}
+  m_Name: NormMaterial
+  m_Shader: {fileID: 4800000, guid: b0e6ef503f9149e4a9c45cacbe49a8e5, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
