@@ -16,6 +16,54 @@ int _FrameIndex;
 
 RWStructuredBuffer<Surfel> _Surfels;
 
+float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, out float3 nextSurfacePos) {
+
+	bool foundLight = false;
+	bool foundSurface = true;
+
+	for(int i=rayPayload.depth;i<maxRaysPerSample;i++) {
+
+		rayPayload.depth = i;
+
+		if(i > 0) {
+			rayDesc.TMin = 0.001; // margin for refractive objects; could be set to 0, when back faces are being culled
+			rayDesc.TMax = _Far;
+		}
+
+		TraceRay(_RaytracingAccelerationStructure,
+			rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+		if(i == 1) {
+			nextSurfacePos = rayPayload.pos;
+		}
+
+		// if we land outside the expected region, reject the sample
+		if(i == 0 && !(rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)) {
+			foundSurface = false;
+			break;
+		}
+
+		float3 n = rayPayload.dir;
+		if(dot2(n) > 0.0){
+			// continue tracing
+			rayDesc.Origin = rayPayload.pos;
+			rayDesc.Direction = n;
+		} else {
+			// reached sky or emissive
+			foundLight = true;
+			break;
+		}
+			
+	}
+
+	if(foundSurface){
+		if(!foundLight) rayPayload.color = 0;
+		return float4(rayPayload.color, 1.0);
+	} else return float4(0,0,0,0);
+
+}
+
 [shader("raygeneration")]
 void SurfelPathTracing() {
 
@@ -35,9 +83,8 @@ void SurfelPathTracing() {
 	if(surfelSize >= _Far * 0.5) return; // the sky has GI = 1, so no updates required
 
 	float3 surfelPos = surfel.position.xyz;
-	float3 deltaPos = surfelPos - _CameraPosition;
-	float  distance = length(deltaPos);
-	float3 worldDir = deltaPos / distance;
+	float4 surfelRotation = surfel.rotation;
+	float3 worldDir = normalize(surfelPos - _CameraPosition);
 	float3 worldNormal = quatRot(float3(0,1,0), surfel.rotation);
 	float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
 
@@ -45,108 +92,74 @@ void SurfelPathTracing() {
 	float2 uvTolerance = 1.05; // close to edge should be traced as well
 	if(!(cameraDir.z > 0.0 && all(abs(cameraDir.xy) < _CameraUVSize * uvTolerance) && 
 		// test whether the surfel can be visible from the camera; the sky has no GBuffer information in Unity -> skip this test
-		dot(worldDir, worldNormal) < 0.0 &&
-		distance > 0.001)) return;
+		dot(worldDir, worldNormal) < 0.0)) return;
 
-	// problem stays the same
-	// distance = 1;
-	// worldDir = -worldNormal;
-				
 	// init random seed from current pixel location and frame index
 	uint seed = initRand(index, _FrameIndex);
-
-	// get random uv inside current pixel
-	// this gives us anti-aliasing for free
-	// + float2(nextRand(seed), nextRand(seed))
-	// we could spawn random rays to any point of the surfel disk
-	// -> gives bleeding because of backface-culling, so avoid it or disable backface-culling
-
-	float startDist = clamp(0.1 * surfelSize, 0.01, 100.0);
 	
 	// init ray decriptor
 	RayDesc rayDesc;
-	rayDesc.Direction = worldDir;
-	rayDesc.TMin = startDist * 0.5;
-	rayDesc.TMax = startDist * 2.0;
 
-	int samplesPerSurfel = 1;//max(1, 8 - (int) surfel.color.w);
-	int raysPerSample = 5;
-
-	// float3 surfelBaseX = quatRot(float3(1,0,0), surfel.rotation);
-	// float3 surfelBaseZ = quatRot(float3(0,0,1), surfel.rotation);
+	int samplesPerSurfel = 10;//max(1, 8 - (int) surfel.color.w);
+	int maxRaysPerSample = 15;
 
 	// Create and init the ray payload
 	RayPayload rayPayload = (RayPayload) 0;
-	rayPayload.randomSeed = seed;
-	rayPayload.colorDx = 0;
-	rayPayload.colorDz = 0;
 	rayPayload.surfelRotation = surfel.rotation;
 	rayPayload.surfelSize = surfelSize;
-	rayPayload.withinGlassDepth = 0;
+
+	float cosa, sina, distance;
+	float3 ray1Pos, ray2Pos;
+	GenerateGradientRays(
+		surfelPos, surfelRotation, surfelSize, rayPayload.randomSeed,
+		cosa, sina, distance, ray1Pos, ray2Pos
+	);
 
 	bool hasChanged = false;
 	for(int j=0;j<samplesPerSurfel;j++){
 
-		float randomDist = surfelSize * pow(nextRand(rayPayload.randomSeed), 2.0);
-		float randomAngle = TAU * nextRand(rayPayload.randomSeed);
-
-		rayDesc.Origin = surfelPos - startDist * worldDir // start close to the surface
-		// 	+ surfelBaseX * randomDist * cos(randomAngle) // but also somewhere random
-		// 	+ surfelBaseZ * randomDist * sin(randomAngle) // ; nice idea to make reflections less voronoi-looking, but it introduces bleeding at edges, where there is extra, invisible geometry within the walls
-		;
-
+		// go back a step
+		float startDist = 0.1 * surfelSize;
+		rayDesc.Origin = surfelPos - startDist * worldDir;
+		rayDesc.Direction = normalize(surfelPos - _CameraPosition);
+		rayDesc.TMin = startDist * 0.5;
+		rayDesc.TMax = startDist * 2.0;
 		rayPayload.color = float3(1,1,1);
 		rayPayload.depth = 0;
 		rayPayload.distance = 0.0;
+		rayPayload.randomSeed = seed;
+		rayPayload.withinGlassDepth = 0;
 
-		bool foundLight = false;
-		bool foundSurface = true;
+		float3 nextSurfacePos, ignored;
+		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
+		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		
+		rayPayload.color = float3(1,1,1);
+		rayPayload.withinGlassDepth = 0;
+		SetupGradientRayStart(rayDesc, ray1Pos, nextSurfacePos);
 
-		for(int i=0;i<raysPerSample;i++) {
+		float3 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
-			rayPayload.depth = i;
+		rayPayload.color = float3(1,1,1);
+		rayPayload.withinGlassDepth = 0;
+		SetupGradientRayStart(rayDesc, ray2Pos, nextSurfacePos);
 
-			if(i > 0){
-				rayDesc.TMin = 0.001; // margin for refractive objects; could be set to 0, when back faces are being culled
-				rayDesc.TMax = _Far;
-			}
+		float3 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
-			// shoot primary ray
-			// flags: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
-			// maybe for later, for shadows: RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-			TraceRay(_RaytracingAccelerationStructure,
-				rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
-			// if we land outside the expected region, reject the sample
-			if(i == 0 && !(rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)) {
-				foundSurface = false;
-				break;
-			}
-
-			float3 n = rayPayload.dir;
-			if(dot2(n) > 0.0){
-				// continue tracing
-				rayDesc.Origin = rayPayload.pos;
-				rayDesc.Direction = n;
-			} else {
-				// reached sky or emissive
-				foundLight = true;
-				break;
-			}
+		surfel.color += color;
 			
-		}
+		float3 gradient1 = (colorD1 - color.xyz) / distance;
+		float3 gradient2 = (colorD2 - color.xyz) / distance;
 
-		if(foundSurface){
+		// reverse rotation
+		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
+		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
 
-			if(!foundLight) rayPayload.color = 0;
+		surfel.colorDx += float4(gradientDX, 1.0);
+		surfel.colorDz += float4(gradientDZ, 1.0);
+		hasChanged = true;
 
-			surfel.color += float4(rayPayload.color, 1.0);
-			surfel.colorDx += rayPayload.colorDx;
-			surfel.colorDz += rayPayload.colorDz;
-			hasChanged = true;
-
-		}
 	}
 	if(hasChanged) {
 		_Surfels[index] = surfel;

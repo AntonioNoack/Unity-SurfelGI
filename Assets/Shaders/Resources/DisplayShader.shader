@@ -131,10 +131,10 @@
 				// show derivatives for debugging
 				if(_Derivatives){
 					if(uv.x < 0.333){
-						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
+						ill.xyz = tex2Dlod(_AccuDx, float4(uv,0,0)).xyz;
 						ill.xyz += ill.w * 0.5;
 					} else if(uv.x > 0.667){
-						ill = tex2Dlod(_AccuDy, float4(uv,0,0));
+						ill.xyz = tex2Dlod(_AccuDy, float4(uv,0,0)).xyz;
 						ill.xyz += ill.w * 0.5;
 					}
 				}

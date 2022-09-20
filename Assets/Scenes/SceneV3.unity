@@ -1210,7 +1210,7 @@ MonoBehaviour:
   lightSamplingRatio: 1
   samplesPerPixel: 16
   raysPerSample: 2
-  useDerivatives: 1
+  useDerivatives: 0
   surfelPlacementIterations: 1
 --- !u!114 &963194232
 MonoBehaviour:

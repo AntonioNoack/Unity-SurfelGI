@@ -13,7 +13,7 @@ RWStructuredBuffer<LightSample> g_Samples;
 
 [shader("miss")]
 void LS1MissShader(inout RayPayload rayPayload : SV_RayPayload) {
-    rayPayload.color = float3(0, 0, 0);
+    rayPayload.weight = 0;
 }
 
 [shader("raygeneration")]
@@ -45,8 +45,11 @@ void TestPass1() {
 				rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
-        if(dot2(rayPayload.color) == 0.0 || dot2(rayPayload.dir) == 0.0){
+        if(dot2(rayPayload.color) == 0.0 || dot2(rayPayload.dir) == 0.0 || rayPayload.weight == 0.0){
             foundLight = false;
+            break;
+        } else if(rayPayload.depth == 0xffff){
+            // found a surface to land on
             break;
         } else {
             rayDesc.Origin = rayPayload.pos;
@@ -60,7 +63,7 @@ void TestPass1() {
     result.color = foundLight ? rayPayload.color : float3(0,0,0);
     result.weight = rayPayload.weight;
     result.surfacePos = rayPayload.pos;
-    result.surfaceDir = rayPayload.dir2;// todo we need a secondary property for this
+    result.surfaceDir = rayPayload.dir;// todo we need a secondary property for this
     g_Samples[index] = result;
     
 }

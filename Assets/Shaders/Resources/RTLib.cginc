@@ -127,4 +127,41 @@ void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionV
 	outVertex.texCoord3Area = abs((v1.texCoord3.x - v0.texCoord3.x) * (v2.texCoord3.y - v0.texCoord3.y) - (v2.texCoord3.x - v0.texCoord3.x) * (v1.texCoord3.y - v0.texCoord3.y));
 }
 
+void GenerateGradientRays(
+	float3 surfelPos, float4 surfelRotation, float surfelSize, inout uint randomSeed,
+	out float cosa, out float sina, out float distance, out float3 ray1Pos, out float3 ray2Pos
+) {
+
+	float baseAngle = TAU * nextRand(randomSeed);
+
+	cosa = cos(baseAngle);
+	sina = sin(baseAngle);
+
+	// not too close, but also within surfel limits;
+	// 0.1 is arbitrary
+	// using a constant size would potentially introduce aliasing in symmetry-rich scenes
+	distance = lerp(0.1, 1.0, nextRand(randomSeed));
+
+	float wb = distance * surfelSize;
+	float3 baseX = wb * quatRot(float3(1,0,0), surfelRotation);
+	float3 baseZ = wb * quatRot(float3(0,0,1), surfelRotation);
+	ray1Pos = surfelPos + baseX * cosa - baseZ * sina;
+	ray2Pos = surfelPos + baseX * sina + baseZ * cosa;
+
+}
+
+void SetupGradientRayStart(inout RayDesc rayDesc, float3 origin, float3 target){
+	rayDesc.Origin = origin;
+	float3 direction = target - origin;
+	float distance = length(direction);
+	rayDesc.Direction = direction / distance;
+	rayDesc.TMin = 0.001;
+	rayDesc.TMax = distance * 1.01; // this is the length, where we hit the other surface; we only can miss it, if we have numerical issues
+}
+
+
+
+
+
+
 #endif // RTLIB_CGINC
