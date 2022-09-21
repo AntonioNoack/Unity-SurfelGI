@@ -30,6 +30,9 @@ public class DXRCamera : MonoBehaviour {
     [Range(0.0f, 0.2f)]
     public float sleep = 0f;
 
+    [LogarithmicRangeAttribute(0.001, 1000.0)]
+    public float exposure = 2f;
+
     public bool allowSkySurfels = false;
     public bool showIllumination = false;
     public bool allowStrayRays = false;
@@ -604,35 +607,30 @@ public class DXRCamera : MonoBehaviour {
             }
 
             var poissonReconstr = GetComponent<PoissonReconstruction>();
+            var accu = emissiveTarget;
             if(useDerivatives && poissonReconstr != null && poissonReconstr.enabled){
-
-                var result = poissonReconstr.poissonReconstruct( emissiveTarget, emissiveDxTarget, emissiveDyTarget );
-                Graphics.Blit(result, destination);
-
-                // todo execute display shader with the reconstructed emissions
-
-            } else {
-
-                // display result on screen
-                displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
-                displayMaterial.SetFloat("_DivideByAlpha", 1f);
-                displayMaterial.SetTexture("_SkyBox", skyBox);
-                displayMaterial.SetTexture("_Accumulation", emissiveTarget);
-                displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
-                displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
-                displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
-                displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-                displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
-                displayMaterial.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
-                displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
-                displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
-                displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-                float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-                displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
-                Graphics.Blit(null, destination, displayMaterial);
-
+                accu = poissonReconstr.poissonReconstruct( emissiveTarget, emissiveDxTarget, emissiveDyTarget );
             }
             
+
+            // display result on screen
+            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
+            displayMaterial.SetFloat("_DivideByAlpha", 1f);
+            displayMaterial.SetTexture("_SkyBox", skyBox);
+            displayMaterial.SetFloat("_Exposure", exposure);
+            displayMaterial.SetTexture("_Accumulation", accu);
+            displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
+            displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
+            displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
+            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+            displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+            displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
+            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+            Graphics.Blit(null, destination, displayMaterial);
+
             PreservePrevTransform();
             
         }

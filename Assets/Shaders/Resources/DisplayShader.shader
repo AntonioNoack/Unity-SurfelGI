@@ -130,10 +130,12 @@
 
 				// show derivatives for debugging
 				if(_Derivatives){
-					if(uv.x < 0.333){
+					float b1 = lerp(0.5, 0.0, _SplitX);
+					float b2 = lerp(0.5, 1.0, _SplitX);
+					if(uv.x < b1){
 						ill.xyz = tex2Dlod(_AccuDx, float4(uv,0,0)).xyz;
 						ill.xyz += ill.w * 0.5;
-					} else if(uv.x > 0.667){
+					} else if(uv.x > b2){
 						ill.xyz = tex2Dlod(_AccuDy, float4(uv,0,0)).xyz;
 						ill.xyz += ill.w * 0.5;
 					}
@@ -176,7 +178,8 @@
 				color *= sum.xyz * (_Exposure / sum.w);
 				
 				color = HDR_to_LDR(color);
-				if(uv.x > _SplitX) return float4(color, 1.0);
+				// if(uv.x > _SplitX)
+					return float4(color, 1.0);
 				
 				return float4(uv.y < _SplitY ? HDR_to_LDR(tex2D(_Accumulation, uv).rgb) : color0, 1.0);
 				// return float4(normalize(normal)*.5+.5, 1.0);

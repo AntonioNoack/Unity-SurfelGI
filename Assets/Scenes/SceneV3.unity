@@ -1134,6 +1134,7 @@ MonoBehaviour:
   enableLightSampling: 0
   surfelDensity: 3
   sleep: 0.0114
+  exposure: 10
   allowSkySurfels: 0
   showIllumination: 0
   allowStrayRays: 0
@@ -1209,6 +1210,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   poissonBlurRadius: 25
+  numPoissonIterations: 10
   blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
   addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
