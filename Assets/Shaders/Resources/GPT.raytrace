@@ -148,7 +148,7 @@ enum BSDFType: int {
 
 };
 
-enum EMeasure {
+enum EMeasure: int {
 	EDiscrete,
 	ESolidAngle
 };
@@ -167,6 +167,11 @@ enum RayConnection {
 struct BSDF {
 	int type;
 	float eta;
+    float roughness;
+    float3 solidAngleColor;
+    float3 discreteColor;
+    float solidAnglePdf;
+    float discretePdf;
 };
 
 struct Ray {
@@ -179,22 +184,28 @@ struct Ray {
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/shape.h
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/records.inl
+// 
 struct Intersection {
     float t; // distance along ray
     float3 p; // point
     Frame geoFrame; // geometry frame = coordinate system along normal
     Frame shFrame; // shading frame = coordinate system along normal after normal mapping
-    float dudx,
-    dudy,
-    dvdx,
-    dvdy;
-    float3 dpdu,
-    dpdv;
+    float dudx;
+    float dudy;
+    float dvdx;
+    float dvdy;
+    float3 dpdu;
+    float3 dpdv;
     float time;
-    float3 color;
     float3 wi; // incident direction in local shading frame
     bool hasUVPartials;
 	bool isValid;
+	bool isEmitter;
+    float3 emission;// 0 if not emitter, else color
+    bool isOnSurface;// sampleEmitterDirectVisible can lead to samples being taken from point lights; then it's false
+    Ray ray;
+    BSDF bsdf;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/integrator.h
@@ -205,6 +216,7 @@ struct RadianceQueryRecord {
     float alpha;
     float dist;
     int extra; // internal flag
+    uint seed;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/integrators/gpt/gpt.cpp
@@ -254,6 +266,7 @@ struct BSDFSamplingRecord {
 	float3 wo;
 	bool mode; // radiance or importance; required for non-reciprocal (?) BSDFs as transmission through dielectric materials
 	int sampledType;
+    float eta;
 };
 
 /// Stores the results of a BSDF sample.
@@ -271,6 +284,7 @@ struct PositionSamplingRecord {
 	float pdf;
 	EMeasure measure;
 	float2 uv;
+    Intersection its;
 	// object.. which could be an emitter
 };
 
@@ -280,6 +294,7 @@ struct DirectSamplingRecord : PositionSamplingRecord {
 	float3 refN;
 	float3 d;
 	float dist;
+    float pdf;
 };
 
 bool isZero(float3 v) {
@@ -301,15 +316,82 @@ float lengthSquared(float3 v) {
 bool rayIntersect(Ray ray, inout Intersection its){
 	// todo intersect and fill in its
 
-	// returns null at sky
+	// returns false at sky
+    its.ray = ray;
 	return false;
 }
 
-bool rayIntersect(RadianceQueryRecord rRec, Ray ray){
-	// todo intersect and fill in its
-	
-	// returns null at sky
-	return false;
+bool rayIntersect(inout RadianceQueryRecord rRec, Ray ray){
+	return rayIntersect(ray, rRec.its);
+}
+
+void sendTrace(inout Intersection its, inout Ray ray){
+    rayIntersect(ray, its);
+}
+
+float nextSample1D(inout RadianceQueryRecord r){
+    return nextRand(r.seed);
+}
+
+float2 nextSample2D(inout RadianceQueryRecord r){
+    return float2(nextRand(r.seed),nextRand(r.seed));
+}
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/shape.h
+BSDF getBSDF(inout Intersection its, inout Ray ray) {
+    // ray matching is guranteed
+    // if(ray != its.ray) sendTrace(its, ray);
+    return its.bsdf;
+}
+
+float pdfEmitterDirect(DirectSamplingRecord rec){
+    return rec.pdf;
+}
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h
+// ~ line 400
+
+float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
+    // if(rec.ray != rec.its.ray) sendTrace(rec.its, ray);
+    return measure == ESolidAngle ? bsdf.solidAngleColor : bsdf.discreteColor;
+}
+
+float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
+    return eval(bsdf, rec, ESolidAngle);
+}
+
+float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
+    // if(ray != rec.its.ray) sendTrace(rec.its, ray);
+    return measure == ESolidAngle ? bsdf.solidAnglePdf : bsdf.discretePdf;
+}
+
+float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
+    return pdf(bsdf, rec, ESolidAngle);
+}
+
+float getRoughness(BSDF bsdf, Intersection its, int componentIndex){
+    return bsdf.roughness;
+}
+
+float3 toWorld(Frame f, float3 v){
+	return mul(f, v);
+}
+
+float3 toLocal(Frame f, float3 v){
+	return mul(transpose(f), v);
+}
+
+float3 toWorld(Intersection its, float3 v){
+	return toWorld(its.shFrame, v);
+}
+
+float3 toLocal(Intersection its, float3 v){
+	return toLocal(its.shFrame, v);
+}
+
+float3 Le(Intersection its, float3 dir){
+    // light emitted at intersection in direction dir
+    return its.emission;
 }
 
 bool testVisibility(float3 a, float3 b, float time) {
@@ -327,6 +409,10 @@ bool testVisibility(float3 a, float3 b, float time) {
 				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
     return rayPayload.distance >= dist;
+}
+
+void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible){
+    // todo sample lights and fill in all information
 }
 
 bool testEnvironmentVisibility(Ray ray) {
@@ -496,7 +582,7 @@ VertexType getVertexType(const BSDF bsdf, Intersection its, unsigned int bsdfTyp
 	bool found_smooth = false;
 	bool found_dirac = false;
 	for(int i = 0, component_count = bsdf.getComponentCount(); i < component_count; ++i) {
-		float component_roughness = bsdf.getRoughness(its, i);
+		float component_roughness = getRoughness(bsdf, its, i);
 
 		if(component_roughness == 0.0) {
 			found_dirac = true;
@@ -522,7 +608,29 @@ VertexType getVertexType(const BSDF bsdf, Intersection its, unsigned int bsdfTyp
 }
 
 VertexType getVertexType(RayState ray, unsigned int bsdfType) {
-	return getVertexType(ray.rRec.its.getBSDF(ray.ray), ray.rRec.its, bsdfType);
+	return getVertexType(getBSDF(ray.rRec.its, ray.ray), ray.rRec.its, bsdfType);
+}
+
+
+/// Samples a direction according to the BSDF at the given ray position.
+BSDFSampleResult sampleBSDF(inout RayState rayState) {
+
+	// Note: If the base path's BSDF evaluation uses random numbers, it would be beneficial to use the same random numbers for the offset path's BSDF.
+	//       This is not done currently.
+	BSDF bsdf = getBSDF(rayState.rRec.its, rayState.ray);
+
+	// Sample BSDF * cos(theta).
+	BSDFSampleResult result = {
+		BSDFSamplingRecord(rayState.rRec.its, rayState.rRec.sampler, ERadiance),
+		float3(0,0,0),
+		0.0
+	};
+
+	result.weight = sample(bsdf, result.bRec, result.pdf, nextSample2D(rayState.rRec));
+
+	// Variable result.pdf will be 0 if the BSDF sampler failed to produce a valid direction.
+	// SAssert(result.pdf <= (Float)0 || fabs(result.bRec.wo.length() - 1.0) < 0.00001);
+	return result;
 }
 
 /// Constructs a sequence of base paths and shifts them into offset paths, evaluating their throughputs and differences.
@@ -554,8 +662,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
     // Add very direct light from non-environment.
     // Include emitted radiance if requested.
-    if (main.rRec.its.isEmitter() && (main.rRec.type & EEmittedRadiance)) {
-        out_veryDirect += main.throughput * main.rRec.its.Le(-main.ray.d);
+    if (main.rRec.its.isEmitter && (main.rRec.type & EEmittedRadiance)) {
+        out_veryDirect += main.throughput * Le(main.rRec.its, -main.ray.d);
     }
 
     // If no intersection of an offset ray could be found, its offset paths can not be generated.
@@ -610,14 +718,14 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         // Sample incoming radiance from lights (next event estimation).
         {
-            const BSDF mainBSDF = main.rRec.its.getBSDF(main.ray);
+            BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
 
-            if (main.rRec.type & EDirectSurfaceRadiance && mainBSDF.getType() & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
+            if (main.rRec.type & EDirectSurfaceRadiance && mainBSDF.type & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
                 // Sample an emitter and evaluate f = f/p * p for it. */
-                DirectSamplingRecord dRec;
+                DirectSamplingRecord dRec = (DirectSamplingRecord) 0;
 				dRec.its = main.rRec.its;
 
-                float2 lightSample = main.rRec.nextSample2D();
+                float2 lightSample = nextSample2D(main.rRec);
 
 				float3 emitterRadiance;
                 bool mainEmitterVisible;
@@ -625,24 +733,27 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 Spectrum mainEmitterRadiance = emitterRadiance * dRec.pdf;
 
                 // const Emitter * emitter = static_cast < const Emitter *  > (dRec.object);
-				Emitter emitter = dRec.object;
+				// Emitter emitter = dRec.object;
 
                 // If the emitter sampler produces a non-emitter, that's a problem.
                 // SAssert(emitter != nullptr);
 
                 // Add radiance and gradients to the base path and its offset path.
                 // Query the BSDF to the emitter's direction.
-                BSDFSamplingRecord mainBRec(main.rRec.its, main.rRec.its.toLocal(dRec.d), ERadiance);
+                BSDFSamplingRecord mainBRec = (BSDFSamplingRecord) 0;
+                mainBRec.its = main.rRec.its;
+                mainBRec.wo = toLocal(main.rRec.its, dRec.d);
+                mainBRec.mode = ERadiance;
 
                 // Evaluate BSDF * cos(theta).
-                Spectrum mainBSDFValue = mainBSDF.eval(mainBRec);
+                Spectrum mainBSDFValue = eval(mainBSDF, mainBRec);
 
                 // Calculate the probability density of having generated the sampled path segment by BSDF sampling. Note that if the emitter is not visible, the probability density is zero.
                 // Even if the BSDF sampler has zero probability density, the light sampler can still sample it.
-                float mainBsdfPdf = (emitter.isOnSurface() && dRec.measure == ESolidAngle && mainEmitterVisible) ? mainBSDF.pdf(mainBRec) : 0;
+                float mainBsdfPdf = (dRec.its.isOnSurface && dRec.measure == ESolidAngle && mainEmitterVisible) ? pdf(mainBSDF, mainBRec) : 0;
 
                 // There values are probably needed soon for the Jacobians.
-                float mainDistanceSquared = (main.rRec.its.p - dRec.p).lengthSquared();
+                float mainDistanceSquared = lengthSquared(main.rRec.its.p - dRec.p);
                 float mainOpposingCosine = dot(dRec.n, (main.rRec.its.p - dRec.p)) / sqrt(mainDistanceSquared);
 
                 // Power heuristic weights for the following strategies: light sample from base, BSDF sample from base.
@@ -690,14 +801,14 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                                 BSDFSamplingRecord bRec;
 								bRec.its = main.rRec.its;
-								bRec.wi = main.rRec.its.toLocal(incomingDirection);
-								bRec.wo = main.rRec.its.toLocal(dRec.d);
+								bRec.wi = toLocal(main.rRec.its, incomingDirection);
+								bRec.wo = toLocal(main.rRec.its, dRec.d);
 								bRec.mode = ETransportRadiance;
 
                                 // Sample the BSDF.
-                                float shiftedBsdfPdf = (emitter.isOnSurface() && dRec.measure == ESolidAngle && mainEmitterVisible) ? mainBSDF.pdf(bRec) : 0; // The BSDF sampler can not sample occluded path segments.
+                                float shiftedBsdfPdf = (dRec.its.isOnSurface && dRec.measure == ESolidAngle && mainEmitterVisible) ? pdf(mainBSDF, bRec) : 0; // The BSDF sampler can not sample occluded path segments.
                                 float shiftedDRecPdf = dRec.pdf;
-                                Spectrum shiftedBsdfValue = mainBSDF.eval(bRec);
+                                Spectrum shiftedBsdfValue = eval(mainBSDF, bRec);
                                 Spectrum shiftedEmitterRadiance = mainEmitterRadiance;
                                 float jacobian = 1;
 
@@ -713,7 +824,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                 // shiftedRays[i].connection_status == RAY_NOT_CONNECTED
                                 // Reconnect to the sampled light vertex. No shared vertices.
 
-                                const BSDF shiftedBSDF = shiftedRays[i].rRec.its.getBSDF(shiftedRays[i].ray);
+                                BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                                 // This implementation uses light sampling only for the reconnect-shift.
                                 // When one of the BSDFs is very glossy, light sampling essentially reduces to a failed shift anyway.
@@ -724,7 +835,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                                 if (mainAtPointLight || (mainVertexType == VERTEX_TYPE_DIFFUSE && shiftedVertexType == VERTEX_TYPE_DIFFUSE)) {
                                     // Get emitter radiance.
-                                    DirectSamplingRecord shiftedDRec(shiftedRays[i].rRec.its);
+                                    DirectSamplingRecord shiftedDRec = (DirectSamplingRecord) 0;
+                                    shiftedDRec.its = shiftedRays[i].rRec.its;
                                     // std::pair<Spectrum, bool> emitterTuple = 
                                     bool shiftedEmitterVisible;
 									float emitterRadiance;
@@ -734,13 +846,13 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                     float shiftedDRecPdf = shiftedDRec.pdf;
 
                                     // Sample the BSDF.
-                                    float shiftedDistanceSquared = (dRec.p - shiftedRays[i].rRec.its.p).lengthSquared();
+                                    float shiftedDistanceSquared = lengthSquared(dRec.p - shiftedRays[i].rRec.its.p);
                                     Vector emitterDirection = (dRec.p - shiftedRays[i].rRec.its.p) / sqrt(shiftedDistanceSquared);
-                                    float shiftedOpposingCosine = -dot(Frame_n(dRec), emitterDirection);
+                                    float shiftedOpposingCosine = -dot(dRec.n, emitterDirection);
 
-                                    BSDFSamplingRecord bRec;
+                                    BSDFSamplingRecord bRec = (BSDFSamplingRecord) 0;
 									bRec.its = shiftedRays[i].rRec.its;
-									bRec.wo = shiftedRays[i].rRec.its.toLocal(emitterDirection);
+									bRec.wo = toLocal(shiftedRays[i].rRec.its, emitterDirection);
 									bRec.mode = ETransportRadiance;
 
                                     // Strict normals check, to make the output match with bidirectional methods when normal maps are present.
@@ -748,8 +860,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                         // Invalid, non-samplable offset path.
                                         shiftSuccessful = false;
                                     } else {
-                                        Spectrum shiftedBsdfValue = shiftedBSDF.eval(bRec);
-                                        float shiftedBsdfPdf = (emitter.isOnSurface() && dRec.measure == ESolidAngle && shiftedEmitterVisible) ? shiftedBSDF.pdf(bRec) : 0;
+                                        Spectrum shiftedBsdfValue = eval(shiftedBSDF, bRec);
+                                        float shiftedBsdfPdf = (dRec.its.isOnSurface && dRec.measure == ESolidAngle && shiftedEmitterVisible) ? pdf(shiftedBSDF, bRec) : 0;
                                         float jacobian = abs(shiftedOpposingCosine * mainDistanceSquared) / (Epsilon + abs(mainOpposingCosine * shiftedDistanceSquared));
 
                                         // Power heuristic between light sample from base, BSDF sample from base, light sample from offset, BSDF sample from offset.
@@ -799,7 +911,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             break;
         }
 
-        const Vector mainWo = main.rRec.its.toWorld(mainBsdfResult.bRec.wo);
+        const Vector mainWo = toWorld(main.rRec.its, mainBsdfResult.bRec.wo);
 
         // Prevent light leaks due to the use of shading normals.
         float mainWoDotGeoN = dot(Frame_n(main.rRec.its.geoFrame), mainWo);
@@ -814,8 +926,9 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         bool mainHitEmitter = false;
         Spectrum mainEmitterRadiance = float3(0, 0, 0);
 
-        DirectSamplingRecord mainDRec(main.rRec.its);
-        const BSDF mainBSDF = main.rRec.its.getBSDF(main.ray);
+        DirectSamplingRecord mainDRec = (DirectSamplingRecord) 0;
+        mainDRec.its = main.rRec.its;
+        BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
 
         // Update the vertex types.
         VertexType mainVertexType = getVertexType(main, mainBsdfResult.bRec.sampledType);
@@ -827,10 +940,17 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         if (rayIntersect(main.ray, main.rRec.its)) {
             // Intersected something - check if it was a luminaire.
-            if (main.rRec.its.isEmitter()) {
-                mainEmitterRadiance = main.rRec.its.Le(-main.ray.d);
+            if (main.rRec.its.isEmitter) {
+                mainEmitterRadiance = Le(main.rRec.its, -main.ray.d);
 
-                mainDRec.setQuery(main.ray, main.rRec.its);
+                // mainDRec.setQuery(main.ray, main.rRec.its); is equal to the following:
+                mainDRec.p = main.rRec.its.p;
+                mainDRec.n = Frame_n(main.rRec.its.shFrame);
+                mainDRec.measure = ESolidAngle;// not specified -> default value
+                mainDRec.uv = main.rRec.its.uv;
+                mainDRec.d = main.ray.d;
+                mainDRec.dist = main.rRec.its.t;
+
                 mainHitEmitter = true;
             }
 
@@ -910,16 +1030,16 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                     Vector3 incomingDirection = normalize(shiftedRays[i].rRec.its.p - main.ray.o);
                     BSDFSamplingRecord bRec;
 					bRec.its = previousMainIts;
-					bRec.wi = previousMainIts.toLocal(incomingDirection);
-					bRec.wo = previousMainIts.toLocal(main.ray.d);
+					bRec.wi = toLocal(previousMainIts, incomingDirection);
+					bRec.wo = toLocal(previousMainIts, main.ray.d);
 					bRec.mode = ETransportRadiance;
 
                     // Note: mainBSDF is the BSDF at previousMainIts, which is the current position of the offset path.
 
                     EMeasure measure = (mainBsdfResult.bRec.sampledType & EDelta) ? EDiscrete : ESolidAngle;
 
-                    Spectrum shiftedBsdfValue = mainBSDF.eval(bRec, measure);
-                    float shiftedBsdfPdf = mainBSDF.pdf(bRec, measure);
+                    Spectrum shiftedBsdfValue = eval(mainBSDF, bRec, measure);
+                    float shiftedBsdfPdf = pdf(mainBSDF, bRec, measure);
 
                     float shiftedLumPdf = mainLumPdf;
                     Spectrum shiftedEmitterRadiance = mainEmitterRadiance;
@@ -939,7 +1059,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 } else {
                     // Not connected - apply either reconnection or half-vector duplication shift.
 
-                    const BSDF shiftedBSDF = shiftedRays[i].rRec.its.getBSDF(shiftedRays[i].ray);
+                    BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                     // Update the vertex type of the offset path.
                     VertexType shiftedVertexType = getVertexType(shiftedRays[i], mainBsdfResult.bRec.sampledType);
@@ -972,8 +1092,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                             BSDFSamplingRecord bRec;
 							bRec.its = shiftedRays[i].rRec.its;
-							bRec.wi = shiftedRays[i].rRec.its.toLocal(incomingDirection);
-							bRec.wo = shiftedRays[i].rRec.its.toLocal(outgoingDirection);
+							bRec.wi = toLocal(shiftedRays[i].rRec.its, incomingDirection);
+							bRec.wo = toLocal(shiftedRays[i].rRec.its, outgoingDirection);
 							bRec.mode = ETransportRadiance;
 
                             // Strict normals check.
@@ -983,8 +1103,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                             }
 
                             // Evaluate the BRDF to the new direction.
-                            Spectrum shiftedBsdfValue = shiftedBSDF.eval(bRec);
-                            float shiftedBsdfPdf = shiftedBSDF.pdf(bRec);
+                            Spectrum shiftedBsdfValue = eval(shiftedBSDF, bRec);
+                            float shiftedBsdfPdf = pdf(shiftedBSDF, bRec);
 
                             // Update throughput and pdf.
                             shiftedRays[i].throughput *= shiftedBsdfValue * shiftResult.jacobian;
@@ -1002,13 +1122,13 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                 if (main.rRec.its.isValid) {
                                     // Hit an object.
                                     if (mainHitEmitter) {
-                                        shiftedEmitterRadiance = main.rRec.its.Le(-outgoingDirection);
+                                        shiftedEmitterRadiance = Le(main.rRec.its, -outgoingDirection);
 
                                         // Evaluate the light sampling PDF of the new segment.
                                         DirectSamplingRecord shiftedDRec;
                                         shiftedDRec.p = mainDRec.p;
                                         shiftedDRec.n = mainDRec.n;
-                                        shiftedDRec.dist = (mainDRec.p - shiftedRays[i].rRec.its.p).length();
+                                        shiftedDRec.dist = length(mainDRec.p - shiftedRays[i].rRec.its.p);
                                         shiftedDRec.d = (mainDRec.p - shiftedRays[i].rRec.its.p) / shiftedDRec.dist;
                                         shiftedDRec.ref = mainDRec.ref;
                                         shiftedDRec.refN = Frame_n(shiftedRays[i].rRec.its.shFrame);
@@ -1035,11 +1155,11 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         bool half_vector_shift_failed = false;
 
                         // Use half-vector duplication shift. These paths could not have been sampled by light sampling (by our decision).
-                        Vector3 tangentSpaceIncomingDirection = shiftedRays[i].rRec.its.toLocal(-shiftedRays[i].ray.d);
+                        Vector3 tangentSpaceIncomingDirection = toLocal(shiftedRays[i].rRec.its, -shiftedRays[i].ray.d);
                         Vector3 tangentSpaceOutgoingDirection;
                         Spectrum shiftedEmitterRadiance = 0.0;
 
-                        const BSDF shiftedBSDF = shiftedRays[i].rRec.its.getBSDF(shiftedRays[i].ray);
+                        const BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                         // Deny shifts between Dirac and non-Dirac BSDFs.
                         bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (shiftedBSDF.type & EDelta);
@@ -1049,12 +1169,12 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                             half_vector_shift_failed = true;
                         }
 
-                        // SAssert(fabs(shiftedRays[i].ray.d.lengthSquared() - 1) < 0.000001);
+                        // SAssert(abs(lengthSquared(shiftedRays[i].ray.d) - 1) < 0.000001);
 
                         // Apply the local shift.
                         if (!half_vector_shift_failed) {
 
-                            HalfVectorShiftResult shiftResult = halfVectorShift(mainBsdfResult.bRec.wi, mainBsdfResult.bRec.wo, shiftedRays[i].rRec.its.toLocal(-shiftedRays[i].ray.d), mainBSDF.eta, shiftedBSDF.eta);
+                            HalfVectorShiftResult shiftResult = halfVectorShift(mainBsdfResult.bRec.wi, mainBsdfResult.bRec.wo, toLocal(shiftedRays[i].rRec.its, -shiftedRays[i].ray.d), mainBSDF.eta, shiftedBSDF.eta);
                             if (mainBsdfResult.bRec.sampledType & EDelta) {
                                 // Dirac delta integral is a point evaluation - no Jacobian determinant!
                                 shiftResult.jacobian = 1.0;
@@ -1073,7 +1193,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                             if (!half_vector_shift_failed) {
 
-                                Vector3 outgoingDirection = shiftedRays[i].rRec.its.toWorld(tangentSpaceOutgoingDirection);
+                                Vector3 outgoingDirection = toWorld(shiftedRays[i].rRec.its, tangentSpaceOutgoingDirection);
 
                                 // Update throughput and pdf.
                                 BSDFSamplingRecord bRec;
@@ -1081,10 +1201,10 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 								bRec.wi = tangentSpaceIncomingDirection;
 								bRec.wo = tangentSpaceOutgoingDirection;
 								bRec.mode = ETransportRadiance;
-                                EMeasure measure = (mainBsdfResult.bRec.sampledType & EDelta) ? EDiscrete : ESolidAngle;
+                                EMeasure measure = (mainBsdfResult.bRec.sampledType & EDelta) != 0 ? EDiscrete : ESolidAngle;
 
-                                shiftedRays[i].throughput *= shiftedBSDF.eval(bRec, measure);
-                                shiftedRays[i].pdf *= shiftedBSDF.pdf(bRec, measure);
+                                shiftedRays[i].throughput *= eval(shiftedBSDF, bRec, measure);
+                                shiftedRays[i].pdf *= pdf(shiftedBSDF, bRec, measure);
 
                                 if (shiftedRays[i].pdf == 0.0) {
                                     // Offset path is invalid!
@@ -1148,9 +1268,9 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                                 // Non-invertible shift: the reverse-shift would use another strategy!
                                                 shiftedRays[i].alive = false;
                                                 half_vector_shift_failed = true;
-                                            } else if (shiftedRays[i].rRec.its.isEmitter()) {
+                                            } else if (shiftedRays[i].rRec.its.isEmitter) {
                                                 // Hit emitter.
-                                                shiftedEmitterRadiance = shiftedRays[i].rRec.its.Le(-shiftedRays[i].ray.d);
+                                                shiftedEmitterRadiance = Le(shiftedRays[i].rRec.its, -shiftedRays[i].ray.d);
                                             }
                                         }
                                     }
@@ -1217,7 +1337,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             getting stuck (e.g. due to total internal reflection) */
 
             float q = min(max3(main.throughput / main.pdf) * main.eta * main.eta, (float)0.95f);
-            if (main.rRec.nextSample1D() >= q)
+            if (nextSample1D(main.rRec) >= q)
                 break;
 
             main.pdf *= q;
