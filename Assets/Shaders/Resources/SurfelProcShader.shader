@@ -23,6 +23,7 @@ Shader "Custom/SurfelProcShader" {
 
             #include "UnityCG.cginc"
             #include "Surfel.cginc"
+            #include "Common.cginc"
 
             struct v2f {
                 float4 vertex : SV_POSITION;

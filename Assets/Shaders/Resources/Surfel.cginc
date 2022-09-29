@@ -1,14 +1,6 @@
 #ifndef SURFEL_CGING
 #define SURFEL_CGING
 
-float3 quatRot(float3 v, float4 q){
-	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-}
-
-float3 quatRotInv(float3 v, float4 q) {
-	return v - 2.0 * cross(q.xyz, cross(v, q.xyz) + q.w * v);
-}
-
 struct Surfel {// 6 * 4 floats
     float4 position; // world position (local to world)
     float4 rotation; // local to world rotation quaternion

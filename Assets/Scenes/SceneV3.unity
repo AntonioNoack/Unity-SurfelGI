@@ -1134,7 +1134,7 @@ MonoBehaviour:
   enableLightSampling: 0
   surfelDensity: 3
   sleep: 0.0114
-  exposure: 10
+  exposure: 1.0715193
   allowSkySurfels: 0
   showIllumination: 0
   allowStrayRays: 0
@@ -1204,7 +1204,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b5b8d3c603a5a6c4eaa7d8a3ed703ead, type: 3}
   m_Name: 

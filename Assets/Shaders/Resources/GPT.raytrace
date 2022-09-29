@@ -1,5 +1,6 @@
 ﻿#include "RTLib.cginc"
 #include "Surfel.cginc"
+#include "Common.cginc"
 
 float3 _CameraPosition;
 float4 _CameraRotation;
@@ -19,7 +20,7 @@ RWStructuredBuffer < Surfel > _Surfels;
 #define Vector float3
 #define Point3 float3
 #define Spectrum float3
-#define Frame float3x3 // quaternion or matrix? mmh...
+#define Frame float4 // quaternion or matrix? mmh...
 
 // miss shader, used when we don't hit any geometry
 TextureCube _SkyBox;
@@ -165,19 +166,28 @@ enum RayConnection {
 };
 
 struct BSDF {
+
+    // todo all these need to be filled by our material shaders
+
 	int type;
+
 	float eta;
     float roughness;
+
     float3 solidAngleColor;
-    float3 discreteColor;
     float solidAnglePdf;
+
+    float3 discreteColor;
     float discretePdf;
+
+    float3 sampledColor;
+    float sampledPdf;
+
 };
 
 struct Ray {
     float3 o; // origin
     float3 d; // direction
-    float3 dRcp; // 1/direction
     float time;
     float mint;
     float maxt;
@@ -185,27 +195,23 @@ struct Ray {
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/shape.h
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/records.inl
-// 
 struct Intersection {
     float t; // distance along ray
     float3 p; // point
     Frame geoFrame; // geometry frame = coordinate system along normal
     Frame shFrame; // shading frame = coordinate system along normal after normal mapping
-    float dudx;
-    float dudy;
-    float dvdx;
-    float dvdy;
-    float3 dpdu;
-    float3 dpdv;
-    float time;
     float3 wi; // incident direction in local shading frame
     bool hasUVPartials;
 	bool isValid;
 	bool isEmitter;
     float3 emission;// 0 if not emitter, else color
     bool isOnSurface;// sampleEmitterDirectVisible can lead to samples being taken from point lights; then it's false
-    Ray ray;
     BSDF bsdf;
+    // idc
+    float time;
+    // cache key
+    Ray ray;
+    float3 wo;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/integrator.h
@@ -224,7 +230,7 @@ struct RayState {
     Ray ray;
     RadianceQueryRecord rRec; // The radiance query record for this ray.
     float3 radiance; // = 0; // accumulated
-    float3 gradient; // = 0; // acumulated
+    float3 gradient; // = 0; // accumulated
     float3 throughput; // = 0;
     float pdf; // = 1.0;
     bool alive; // = true;
@@ -302,11 +308,19 @@ bool isZero(float3 v) {
 }
 
 float Frame_cosTheta(float3 v) {
-    return v.z;
+    return v.y;
 }
 
 float Frame_n(Frame f){
-	return f[2]; // z component; column
+	return f[1]; // z component; column
+}
+
+float3 toWorld(Frame f, float3 v){
+	return quatRot(v, f);
+}
+
+float3 toLocal(Frame f, float3 v){
+	return quatRotInv(v, f);
 }
 
 float lengthSquared(float3 v) {
@@ -314,11 +328,22 @@ float lengthSquared(float3 v) {
 }
 
 bool rayIntersect(Ray ray, inout Intersection its){
-	// todo intersect and fill in its
+	// todo fill in its, BSDF
+    // todo required parameters:
+    // todo wi, wo, geoFrame, shFrame
+    RayPayload payload = (RayPayload) 0;
 
-	// returns false at sky
+    // todo intersect
+
+    its.p = ray.o + ray.d * payload.distance;
+    its.t = payload.distance;
+
+	bool sky = its.t >= _Far;
+    its.isOnSurface = !sky; // returns false at sky
+    its.isValid = !sky;
+    its.isEmitter = dot2(payload.emissive) > 0;
     its.ray = ray;
-	return false;
+	return !sky;
 }
 
 bool rayIntersect(inout RadianceQueryRecord rRec, Ray ray){
@@ -327,14 +352,6 @@ bool rayIntersect(inout RadianceQueryRecord rRec, Ray ray){
 
 void sendTrace(inout Intersection its, inout Ray ray){
     rayIntersect(ray, its);
-}
-
-float nextSample1D(inout RadianceQueryRecord r){
-    return nextRand(r.seed);
-}
-
-float2 nextSample2D(inout RadianceQueryRecord r){
-    return float2(nextRand(r.seed),nextRand(r.seed));
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/shape.h
@@ -351,8 +368,15 @@ float pdfEmitterDirect(DirectSamplingRecord rec){
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h
 // ~ line 400
 
+// eval and pdf don't necessarily are the same as the original ray
+// sample: shiftedBsdfValue = eval(shiftedBSDF, bRec), where bRec.wo = toLocal(someIts, emitterDirection), and emitterDirection = some calculation (line 894)
+// there are two possible solutions:
+// - 1) encode the BSDF in RayPayload, 
+// - 2) trace another ray
+
 float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
-    // if(rec.ray != rec.its.ray) sendTrace(rec.its, ray);
+    if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
+        sendTrace(rec.its, rec.its.ray);
     return measure == ESolidAngle ? bsdf.solidAngleColor : bsdf.discreteColor;
 }
 
@@ -361,7 +385,8 @@ float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
 }
 
 float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
-    // if(ray != rec.its.ray) sendTrace(rec.its, ray);
+    if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
+        sendTrace(rec.its, rec.its.ray);
     return measure == ESolidAngle ? bsdf.solidAnglePdf : bsdf.discretePdf;
 }
 
@@ -373,14 +398,6 @@ float getRoughness(BSDF bsdf, Intersection its, int componentIndex){
     return bsdf.roughness;
 }
 
-float3 toWorld(Frame f, float3 v){
-	return mul(f, v);
-}
-
-float3 toLocal(Frame f, float3 v){
-	return mul(transpose(f), v);
-}
-
 float3 toWorld(Intersection its, float3 v){
 	return toWorld(its.shFrame, v);
 }
@@ -389,9 +406,30 @@ float3 toLocal(Intersection its, float3 v){
 	return toLocal(its.shFrame, v);
 }
 
+// calls Emitter.eval(its, dir)
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h#L482
 float3 Le(Intersection its, float3 dir){
     // light emitted at intersection in direction dir
-    return its.emission;
+    // question:
+    //   is this truly constant? look at different lights, and decide whether a constant is good enough
+    //   https://github.com/mmanzi/gradientdomain-mitsuba/tree/c7c94e66e17bc41cca137717971164de06971bc7/src/emitters
+    // answer:
+    //   https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/emitters/area.cpp#L104
+    //   https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/emitters/constant.cpp#L102
+    //   environment is more complex, but we handle that separately
+    //   not defined in other classes -> we're done here :)
+    if (dot(Frame_n(its.shFrame), dir) <= 0.0)
+		return 0.0;
+	else
+		return its.emission;
+}
+
+float nextSample1D(inout RadianceQueryRecord r){
+    return nextRand(r.seed);
+}
+
+float2 nextSample2D(inout RadianceQueryRecord r){
+    return float2(nextRand(r.seed),nextRand(r.seed));
 }
 
 bool testVisibility(float3 a, float3 b, float time) {
@@ -413,6 +451,13 @@ bool testVisibility(float3 a, float3 b, float time) {
 
 void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible){
     // todo sample lights and fill in all information
+}
+
+// Environment(Emitter).fillDirectSamplingRecord
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h, line 600
+bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
+    // todo fill in environment sampling information
+    return false;
 }
 
 bool testEnvironmentVisibility(Ray ray) {
@@ -581,7 +626,7 @@ VertexType getVertexType(const BSDF bsdf, Intersection its, unsigned int bsdfTyp
 
 	bool found_smooth = false;
 	bool found_dirac = false;
-	for(int i = 0, component_count = bsdf.getComponentCount(); i < component_count; ++i) {
+	for(int i = 0, component_count = 1 /*getComponentCount(bsdf)*/; i < component_count; ++i) {
 		float component_roughness = getRoughness(bsdf, its, i);
 
 		if(component_roughness == 0.0) {
@@ -611,6 +656,16 @@ VertexType getVertexType(RayState ray, unsigned int bsdfType) {
 	return getVertexType(getBSDF(ray.rRec.its, ray.ray), ray.rRec.its, bsdfType);
 }
 
+/**
+ * draws a random sample from the BSDF (= random direction from the outgoing lobe);
+ * in contrast to eval() and pdf(), which use a pre-determined outgoing direction
+ */
+float3 sample1(inout BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf1, float2 random) {
+    // how often is this being called = can we precompute this in the RT hit shader?
+    // this is only being called once, so yes, we can compute this in the material shader :)
+    pdf1 = bsdf.sampledPdf;
+    return bsdf.sampledColor;
+}
 
 /// Samples a direction according to the BSDF at the given ray position.
 BSDFSampleResult sampleBSDF(inout RayState rayState) {
@@ -620,13 +675,15 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	BSDF bsdf = getBSDF(rayState.rRec.its, rayState.ray);
 
 	// Sample BSDF * cos(theta).
-	BSDFSampleResult result = {
-		BSDFSamplingRecord(rayState.rRec.its, rayState.rRec.sampler, ERadiance),
-		float3(0,0,0),
-		0.0
-	};
+	BSDFSampleResult result = (BSDFSampleResult) 0;
+	result.bRec.its = rayState.rRec.its;
+    // extra sampler for some BSDFs; according to
+    // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h, line 126,
+    // this can improve the quality; all this does is generating random numbers
+    // result.bRec.? = rayState.rRec.sampler;
+    result.bRec.mode = ERadiance;
 
-	result.weight = sample(bsdf, result.bRec, result.pdf, nextSample2D(rayState.rRec));
+	result.weight = sample1(bsdf, result.bRec, result.pdf, nextSample2D(rayState.rRec));
 
 	// Variable result.pdf will be 0 if the BSDF sampler failed to produce a valid direction.
 	// SAssert(result.pdf <= (Float)0 || fabs(result.bRec.wo.length() - 1.0) < 0.00001);
@@ -642,12 +699,6 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
     rayIntersect(main.rRec, main.ray);
     main.ray.mint = Epsilon;
 
-    // Perform the same first ray intersection for the offset paths.
-    for (int i = 0; i < secondaryCount; ++i) {
-        rayIntersect(shiftedRays[i].rRec, shiftedRays[i].ray);
-        shiftedRays[i].ray.mint = Epsilon;
-    }
-
     if (!main.rRec.its.isValid) {
         // First hit is not in the scene so can't continue. Also there there are no paths to shift.
 
@@ -658,6 +709,17 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         //SLog(EInfo, "Main ray(%d): First hit not in scene.", rayCount);
         return;
+    }
+
+    // Perform the same first ray intersection for the offset paths.
+    for (int i = 0; i < secondaryCount; ++i) {
+        float3 delta = main.rRec.its.p - shiftedRays[i].ray.o;
+        float len = max(1e-9, length(delta));
+        shiftedRays[i].ray.d = delta / len;
+        shiftedRays[i].ray.mint = len * 0.99;
+        shiftedRays[i].ray.maxt = len * 1.01;
+        rayIntersect(shiftedRays[i].rRec, shiftedRays[i].ray);
+        shiftedRays[i].ray.mint = Epsilon;// why is this set after rayIntersect?
     }
 
     // Add very direct light from non-environment.
@@ -947,7 +1009,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 mainDRec.p = main.rRec.its.p;
                 mainDRec.n = Frame_n(main.rRec.its.shFrame);
                 mainDRec.measure = ESolidAngle;// not specified -> default value
-                mainDRec.uv = main.rRec.its.uv;
+                // mainDRec.uv = main.rRec.its.uv; // todo is this used anywhere?
                 mainDRec.d = main.ray.d;
                 mainDRec.dist = main.rRec.its.t;
 
@@ -980,7 +1042,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         // Compute the probability density of generating base path's direction using the implemented direct illumination sampling technique.
         const float mainLumPdf = (mainHitEmitter && main.rRec.depth + 1 >= m_minDepth && !(mainBsdfResult.bRec.sampledType & EDelta)) ?
-        pdfEmitterDirect(mainDRec) : 0.0;
+            pdfEmitterDirect(mainDRec) : 0.0;
 
         // Power heuristic weights for the following strategies: light sample from base, BSDF sample from base.
         float mainWeightNumerator = mainPreviousPdf * mainBsdfResult.pdf;
@@ -1036,7 +1098,9 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                     // Note: mainBSDF is the BSDF at previousMainIts, which is the current position of the offset path.
 
-                    EMeasure measure = (mainBsdfResult.bRec.sampledType & EDelta) ? EDiscrete : ESolidAngle;
+                    EMeasure measure = ESolidAngle;
+                    if((mainBsdfResult.bRec.sampledType & EDelta) != 0)
+                        measure = EDiscrete;
 
                     Spectrum shiftedBsdfValue = eval(mainBSDF, bRec, measure);
                     float shiftedBsdfPdf = pdf(mainBSDF, bRec, measure);
@@ -1081,73 +1145,74 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                 shiftResult = environmentShift(main.ray, shiftedRays[i].rRec.its.p);
                             }
 
+                            // bool shift_failed;
                             if (!shiftResult.success) {
                                 // Failed to construct the offset path.
                                 shiftedRays[i].alive = false;
-                                goto shift_failed;
-                            }
+                                // shift_failed = true;
+                            } else {
+                                Vector3 incomingDirection = -shiftedRays[i].ray.d;
+                                Vector3 outgoingDirection = shiftResult.wo;
 
-                            Vector3 incomingDirection = -shiftedRays[i].ray.d;
-                            Vector3 outgoingDirection = shiftResult.wo;
+                                BSDFSamplingRecord bRec;
+                                bRec.its = shiftedRays[i].rRec.its;
+                                bRec.wi = toLocal(shiftedRays[i].rRec.its, incomingDirection);
+                                bRec.wo = toLocal(shiftedRays[i].rRec.its, outgoingDirection);
+                                bRec.mode = ETransportRadiance;
 
-                            BSDFSamplingRecord bRec;
-							bRec.its = shiftedRays[i].rRec.its;
-							bRec.wi = toLocal(shiftedRays[i].rRec.its, incomingDirection);
-							bRec.wo = toLocal(shiftedRays[i].rRec.its, outgoingDirection);
-							bRec.mode = ETransportRadiance;
-
-                            // Strict normals check.
-                            if (m_strictNormals && dot(outgoingDirection, Frame_n(shiftedRays[i].rRec.its.geoFrame)) * Frame_cosTheta(bRec.wo) <= 0) {
-                                shiftedRays[i].alive = false;
-                                goto shift_failed;
-                            }
-
-                            // Evaluate the BRDF to the new direction.
-                            Spectrum shiftedBsdfValue = eval(shiftedBSDF, bRec);
-                            float shiftedBsdfPdf = pdf(shiftedBSDF, bRec);
-
-                            // Update throughput and pdf.
-                            shiftedRays[i].throughput *= shiftedBsdfValue * shiftResult.jacobian;
-                            shiftedRays[i].pdf *= shiftedBsdfPdf * shiftResult.jacobian;
-
-                            shiftedRays[i].connection_status = RAY_RECENTLY_CONNECTED;
-
-                            if (mainHitEmitter) {
-                                // Also the offset path hit the emitter, as visibility was checked at reconnectShift or environmentShift.
-
-                                // Evaluate radiance to this direction.
-                                Spectrum shiftedEmitterRadiance = 0.0;
-                                float shiftedLumPdf = 0.0;
-
-                                if (main.rRec.its.isValid) {
-                                    // Hit an object.
-                                    if (mainHitEmitter) {
-                                        shiftedEmitterRadiance = Le(main.rRec.its, -outgoingDirection);
-
-                                        // Evaluate the light sampling PDF of the new segment.
-                                        DirectSamplingRecord shiftedDRec;
-                                        shiftedDRec.p = mainDRec.p;
-                                        shiftedDRec.n = mainDRec.n;
-                                        shiftedDRec.dist = length(mainDRec.p - shiftedRays[i].rRec.its.p);
-                                        shiftedDRec.d = (mainDRec.p - shiftedRays[i].rRec.its.p) / shiftedDRec.dist;
-                                        shiftedDRec.ref = mainDRec.ref;
-                                        shiftedDRec.refN = Frame_n(shiftedRays[i].rRec.its.shFrame);
-                                        shiftedDRec.object = mainDRec.object;
-
-                                        shiftedLumPdf = pdfEmitterDirect(shiftedDRec);
-                                    }
+                                // Strict normals check.
+                                if (m_strictNormals && dot(outgoingDirection, Frame_n(shiftedRays[i].rRec.its.geoFrame)) * Frame_cosTheta(bRec.wo) <= 0) {
+                                    shiftedRays[i].alive = false;
+                                    // shift_failed = true;
                                 } else {
-                                    // Hit the environment.
-                                    shiftedEmitterRadiance = mainEmitterRadiance;
-                                    shiftedLumPdf = mainLumPdf;
+                                    // Evaluate the BRDF to the new direction.
+                                    Spectrum shiftedBsdfValue = eval(shiftedBSDF, bRec);
+                                    float shiftedBsdfPdf = pdf(shiftedBSDF, bRec);
+
+                                    // Update throughput and pdf.
+                                    shiftedRays[i].throughput *= shiftedBsdfValue * shiftResult.jacobian;
+                                    shiftedRays[i].pdf *= shiftedBsdfPdf * shiftResult.jacobian;
+
+                                    shiftedRays[i].connection_status = RAY_RECENTLY_CONNECTED;
+
+                                    if (mainHitEmitter) {
+                                        // Also the offset path hit the emitter, as visibility was checked at reconnectShift or environmentShift.
+
+                                        // Evaluate radiance to this direction.
+                                        Spectrum shiftedEmitterRadiance = 0.0;
+                                        float shiftedLumPdf = 0.0;
+
+                                        if (main.rRec.its.isValid) {
+                                            // Hit an object.
+                                            if (mainHitEmitter) {
+                                                shiftedEmitterRadiance = Le(main.rRec.its, -outgoingDirection);
+
+                                                // Evaluate the light sampling PDF of the new segment.
+                                                DirectSamplingRecord shiftedDRec = mainDRec;
+                                                shiftedDRec.p = mainDRec.p;
+                                                shiftedDRec.n = mainDRec.n;
+                                                shiftedDRec.dist = length(mainDRec.p - shiftedRays[i].rRec.its.p);
+                                                shiftedDRec.d = (mainDRec.p - shiftedRays[i].rRec.its.p) / shiftedDRec.dist;
+                                                shiftedDRec.ref = mainDRec.ref;
+                                                shiftedDRec.refN = Frame_n(shiftedRays[i].rRec.its.shFrame);
+                                                // shiftedDRec.object = mainDRec.object;
+
+                                                shiftedLumPdf = pdfEmitterDirect(shiftedDRec);
+                                            }
+                                        } else {
+                                            // Hit the environment.
+                                            shiftedEmitterRadiance = mainEmitterRadiance;
+                                            shiftedLumPdf = mainLumPdf;
+                                        }
+
+                                        // Power heuristic between light sample from base, BSDF sample from base, light sample from offset, BSDF sample from offset.
+                                        float shiftedWeightDenominator = (shiftedPreviousPdf * shiftedPreviousPdf) * ((shiftedLumPdf * shiftedLumPdf) + (shiftedBsdfPdf * shiftedBsdfPdf));
+                                        weight = mainWeightNumerator / (D_EPSILON + shiftedWeightDenominator + mainWeightDenominator);
+
+                                        mainContribution = main.throughput * mainEmitterRadiance;
+                                        shiftedContribution = shiftedRays[i].throughput * shiftedEmitterRadiance; // Note: Jacobian baked into .throughput.
+                                    }
                                 }
-
-                                // Power heuristic between light sample from base, BSDF sample from base, light sample from offset, BSDF sample from offset.
-                                float shiftedWeightDenominator = (shiftedPreviousPdf * shiftedPreviousPdf) * ((shiftedLumPdf * shiftedLumPdf) + (shiftedBsdfPdf * shiftedBsdfPdf));
-                                weight = mainWeightNumerator / (D_EPSILON + shiftedWeightDenominator + mainWeightDenominator);
-
-                                mainContribution = main.throughput * mainEmitterRadiance;
-                                shiftedContribution = shiftedRays[i].throughput * shiftedEmitterRadiance; // Note: Jacobian baked into .throughput.
                             }
                         }
                     } else {
@@ -1159,7 +1224,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         Vector3 tangentSpaceOutgoingDirection;
                         Spectrum shiftedEmitterRadiance = 0.0;
 
-                        const BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
+                        BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                         // Deny shifts between Dirac and non-Dirac BSDFs.
                         bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (shiftedBSDF.type & EDelta);
@@ -1201,7 +1266,10 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 								bRec.wi = tangentSpaceIncomingDirection;
 								bRec.wo = tangentSpaceOutgoingDirection;
 								bRec.mode = ETransportRadiance;
-                                EMeasure measure = (mainBsdfResult.bRec.sampledType & EDelta) != 0 ? EDiscrete : ESolidAngle;
+
+                                EMeasure measure = ESolidAngle;
+                                if((mainBsdfResult.bRec.sampledType & EDelta) != 0)
+                                    measure = EDiscrete;
 
                                 shiftedRays[i].throughput *= eval(shiftedBSDF, bRec, measure);
                                 shiftedRays[i].pdf *= pdf(shiftedBSDF, bRec, measure);
@@ -1301,7 +1369,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 }
             }
 
-            shift_failed:
+            // shift_failed:
             if (!shiftedRays[i].alive) {
                 // The offset path cannot be generated; Set offset PDF and offset throughput to zero.
                 weight = mainWeightNumerator / (D_EPSILON + mainWeightDenominator);
@@ -1388,7 +1456,7 @@ void SurfelPathTracing() {
     // init ray decriptor
     RayDesc rayDesc;
 
-    int samplesPerSurfel = 10; //max(1, 8 - (int) surfel.color.w);
+    int samplesPerSurfel = 1; //max(1, 8 - (int) surfel.color.w);
     int maxRaysPerSample = 15;
 
     // Create and init the ray payload
@@ -1396,11 +1464,12 @@ void SurfelPathTracing() {
     rayPayload.surfelRotation = surfel.rotation;
     rayPayload.surfelSize = surfelSize;
 
-    float cosa,
-    sina,
-    distance;
-    float3 ray1Pos,
-    ray2Pos;
+    float cosa;
+    float sina;
+    float distance;
+    float3 ray1Pos;
+    float3 ray2Pos;
+
     GenerateGradientRays(
         surfelPos, surfelRotation, surfelSize, rayPayload.randomSeed,
         cosa, sina, distance, ray1Pos, ray2Pos);
@@ -1411,17 +1480,57 @@ void SurfelPathTracing() {
         // go back a step
         float startDist = 0.1 * surfelSize;
         float3 origin = surfelPos - startDist * worldDir;
-        float3 direction = normalize(surfelPos - _CameraPosition);
+        float3 delta = surfelPos - _CameraPosition;
+        float3 direction = normalize(delta);
         float tMin = startDist * 0.5;
         float tMax = startDist * 2.0;
 
-        float3 nextSurfacePos,
-        ignored;
-        TraceRay(
-            origin, direction, tMin, tMax,
-            ray1Pos, ray2Pos,
-            surfelPos * 2 - ray1Pos, surfelPos * 2 - ray2Pos,
-            surfel);
+        float3 nextSurfacePos;
+        float3 ignored;
+
+        RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
+        rRec.seed = seed;
+
+        RayState mainRay = (RayState) 0;
+        // fill in ray
+        mainRay.ray.o = surfelPos;
+        mainRay.ray.d = 0;
+        mainRay.ray.mint = length(delta) * 0.99;
+        mainRay.ray.maxt = length(delta) * 1.01;
+        mainRay.throughput = float3(1,1,1);
+		mainRay.rRec = rRec;
+		mainRay.rRec.its = rRec.its;
+
+        RayState shiftedRays[4];
+
+        shiftedRays[0].ray.o = ray1Pos;
+        shiftedRays[1].ray.o = ray2Pos;
+        shiftedRays[2].ray.o = surfelPos * 2 - ray1Pos;
+        shiftedRays[3].ray.o = surfelPos * 2 - ray2Pos;
+        
+        for(int i = 0; i < 4; ++i) {
+            // direction is defined in evaluate()
+			shiftedRays[i].throughput = float3(1,1,1);
+			shiftedRays[i].rRec = rRec;
+			shiftedRays[i].rRec.its = rRec.its;
+		}
+
+        float3 veryDirect = 0;
+        evaluate(mainRay, shiftedRays, 4, veryDirect);
+
+        // update surfel by main and shiftedRays
+        // todo divide by color of first hit...
+        // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
+        // todo can we confirm the weight is 1.0?
+        float weight = 1.0;
+        surfel.color += float4(mainRay.radiance + veryDirect, weight); // is it correct to add veryDirect here?
+        float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);
+        float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);
+		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
+		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
+        surfel.colorDx += float4(gradientDX, weight);
+        surfel.colorDz += float4(gradientDZ, weight);
+
         hasChanged = true;
 
     }

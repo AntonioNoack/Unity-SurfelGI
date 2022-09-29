@@ -36,6 +36,9 @@ struct RayPayload {
 	float4 surfelRotation;
 	float surfelSize;
 	int surfelId; // -1 = nothing
+
+	// gradient path tracing
+	float3 emissive;
 };
 
 // Triangle attributes
@@ -158,10 +161,5 @@ void SetupGradientRayStart(inout RayDesc rayDesc, float3 origin, float3 target){
 	rayDesc.TMin = 0.001;
 	rayDesc.TMax = distance * 1.01; // this is the length, where we hit the other surface; we only can miss it, if we have numerical issues
 }
-
-
-
-
-
 
 #endif // RTLIB_CGINC

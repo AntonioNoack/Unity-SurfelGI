@@ -5,6 +5,7 @@
 
 #include "Random.cginc"
 #include "Surfel.cginc"
+#include "Common.cginc"
 
 #define PI 3.141592653589793
 
