@@ -115,7 +115,9 @@
 				// get random scattered ray dir along surface normal
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
 				// perturb reflection direction to get rought metal effect 
-				float3 reflection = normalize(reflect(rayDir, worldNormal) + (1.0 - _Glossiness) * randomVector);
+				float roughness = 1.0 - _Glossiness;
+				float3 reflectDir = reflect(rayDir, worldNormal);
+				float3 reflection = normalize(reflectDir + roughness * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
 				rayPayload.pos = worldPos;
@@ -126,10 +128,84 @@
 					rayPayload.dir = 0;
 				}
 
+				float4 color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color.rgb;
 				if(rayPayload.depth > 0){
-					float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
-					float3 color = color0.rgb * _Color.rgb;
 					rayPayload.color *= color;
+				}
+
+				// todo define GPT material parameters
+				// todo we need materials, that are customized to Mitsuba...
+
+				// todo fresnelConductorExact
+				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp
+				// todo for sampling:
+				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/warp.cpp
+
+				// todo microfacet distribution; visible = true (distr of visible normals)
+				// todo there are multiple types... which one do we choose? Beckmann, GGX, Phong
+				// alphaU, alphaV = roughnesses in tangent and bitangent direction
+				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
+
+				float3 wi = 0;// todo transform rayDir into local space
+				float cosThetaWi = abs(dot(rayDir, worldNormal));
+				if(_Metallic > 0.5){
+					// conductor
+					float eta = 1.5;
+					float k = 0.0;
+					if(roughness > 0.001) {
+						// todo replace with rough conductor
+						rayPayload.bsdf.components[0].type = EGlossyReflection;
+						rayPayload.bsdf.components[0].roughness = 0;// this is not specified...
+						float3 H = normalize(rayPayload.queriedWo+wi);
+						
+						float D = distrEval(H);
+						if(D == 0){
+							rayPayload.bsdf.color = 0;
+						} else {
+							// fresnel factor
+							float3 F = fresnelConductorExact(dot(wi, H), eta, k) * color;
+							// shadow masking
+							float G = distrG(wi, rayPayload.queriedWo, H);
+							// total amount of reflection
+							float model = D * G / (4.0 * wiCosTheta);
+							rayPayload.bsdf.color = F * model;
+						}
+						rayPayload.bsdf.pdf = distrEval(H) * distrSmithG1(wi, H) / (4.0 * cosThetaWi);
+						rayPayload.bsdf.numComponents = 1;
+						// generate random sample
+						float pdf;
+						float3 m = distrSample(wi, rayPayload.seed, pdf);
+						rayPayload.bsdf.sampledWo = reflectDir;
+						rayPayload.bsdf.eta = 1.0;
+						rayPayload.bsdf.sampledType = EGlossyReflection;
+						float weight = distrSmithG1(reflectDir, m);
+						if(weight > 0) {
+							rayPayload.bsdf.sampledPdf = pdf / (4.0 * dot(rayPayload.bsdf.sampledWo, m));
+							rayPayload.bsdf.sampledColor = pdf * color * fresnelConductorExact(dot(wi, m), eta, k);
+						} else {
+							rayPayload.bsdf.sampledColor = 0;
+							rayPayload.bsdf.sampledPdf = 0;
+						}
+					} else {
+						// perfectly smooth conductor
+						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/conductor.cpp
+						rayPayload.bsdf.components[0].type = EDeltaReflection;
+						rayPayload.bsdf.components[0].roughness = 0;// this is not specified...
+						float eta = 1.5;
+						float k = 0.0;
+						rayPayload.bsdf.color = color * fresnelConductorExact(cosThetaWi, eta, k);
+						rayPayload.bsdf.pdf = abs(dot(reflectDir, rayPayload.queriedWo)-1) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
+						rayPayload.bsdf.numComponents = 1;
+						// generate random sample
+						rayPayload.bsdf.sampledType = EDeltaReflection;
+						rayPayload.bsdf.sampledWo = reflectDir;
+						rayPayload.bsdf.sampledPdf = 1.0;
+						rayPayload.bsdf.sampledColor = color * fresnelConductorExact(cosThetaWi, eta, k)
+						rayPayload.bsdf.eta = 1.0;
+					}
+				} else {
+					// todo diffuse or plastic material
+					rayPayload.bsdf.numComponents = 2;
 				}
 
 			}

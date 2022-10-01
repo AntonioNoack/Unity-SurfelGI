@@ -20,16 +20,108 @@ RaytracingAccelerationStructure _RaytracingAccelerationStructure;
 // max recursion depth
 static const uint gMaxDepth = 8;
 
+#define maxNumComponents 2
+
+#define Frame float4 // quaternion or matrix? mmh...
+
+enum BSDFType: int {
+
+	// =============================================================
+	//                      BSDF lobe types
+	// =============================================================
+	/// 'null' scattering event, i.e. particles do not undergo deflection
+	ENull                 = 0x00001,
+	/// Ideally diffuse reflection
+	EDiffuseReflection    = 0x00002,
+	/// Ideally diffuse transmission
+	EDiffuseTransmission  = 0x00004,
+	/// Glossy reflection
+	EGlossyReflection     = 0x00008,
+	/// Glossy transmission
+	EGlossyTransmission   = 0x00010,
+	/// Reflection into a discrete set of directions
+	EDeltaReflection      = 0x00020,
+	/// Transmission into a discrete set of directions
+	EDeltaTransmission    = 0x00040,
+	/// Reflection into a 1D space of directions
+	EDelta1DReflection    = 0x00080,
+	/// Transmission into a 1D space of directions
+	EDelta1DTransmission  = 0x00100,
+
+	// =============================================================
+	//!                   Other lobe attributes
+	// =============================================================
+	/// The lobe is not invariant to rotation around the normal
+	EAnisotropic          = 0x01000,
+	/// The BSDF depends on the UV coordinates
+	ESpatiallyVarying     = 0x02000,
+	/// Flags non-symmetry (e.g. transmission in dielectric materials)
+	ENonSymmetric         = 0x04000,
+	/// Supports interactions on the front-facing side
+	EFrontSide            = 0x08000,
+	/// Supports interactions on the back-facing side
+	EBackSide             = 0x10000,
+	/// Uses extra random numbers from the supplied sampler instance
+	EUsesSampler          = 0x20000,
+
+	/// Any reflection component (scattering into discrete, 1D, or 2D set of directions)
+	EReflection   = EDiffuseReflection | EDeltaReflection | EDelta1DReflection | EGlossyReflection,
+	/// Any transmission component (scattering into discrete, 1D, or 2D set of directions)
+	ETransmission = EDiffuseTransmission | EDeltaTransmission | EDelta1DTransmission | EGlossyTransmission | ENull,
+	/// Diffuse scattering into a 2D set of directions
+	EDiffuse      = EDiffuseReflection | EDiffuseTransmission,
+	/// Non-diffuse scattering into a 2D set of directions
+	EGlossy       = EGlossyReflection | EGlossyTransmission,
+	/// Scattering into a 2D set of directions
+	ESmooth       = EDiffuse | EGlossy,
+	/// Scattering into a discrete set of directions
+	EDelta        = ENull | EDeltaReflection | EDeltaTransmission,
+	/// Scattering into a 1D space of directions
+	EDelta1D      = EDelta1DReflection | EDelta1DTransmission,
+	/// Any kind of scattering
+	EAll          = EDiffuse | EGlossy | EDelta | EDelta1D,
+
+};
+
+struct BSDFComponent {
+	// requested type is always EAll, requested component is always -1 (all)
+    int type;
+    float roughness;
+};
+
+struct BSDF {
+
+    // todo all these need to be filled by our material shaders
+    float eta; // relative index of refraction; 1.0 is default
+
+    BSDFComponent components[maxNumComponents];
+    int numComponents;
+	// EAll
+    float3 color;
+    float pdf;
+	
+    float3 sampledColor;
+	float sampledPdf;
+    Frame sampledWo;
+	int sampledType;
+
+};
+
 struct RayPayload {
+
 	// Color of the ray
 	float3 color;
 	float4 colorDx, colorDz;
+
 	// Random Seed
 	uint randomSeed;
+
 	// Recursion depth
 	uint depth;
+
 	// Distance to the first hit
 	float distance;
+
 	int withinGlassDepth;
 	float3 pos, dir;
 	float weight;
@@ -38,7 +130,15 @@ struct RayPayload {
 	int surfelId; // -1 = nothing
 
 	// gradient path tracing
-	float3 emissive;
+	float3 emissive; // emission color
+
+	Frame queriedWo; // queried ray outgoing direction
+	Frame geoFrame; // rotation of triangle surface without normal mapping
+	Frame shFrame; // rotation of triangle surface with normal mapping
+	
+	BSDF bsdf;
+	float2 seed;
+
 };
 
 // Triangle attributes

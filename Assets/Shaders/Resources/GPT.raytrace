@@ -20,7 +20,6 @@ RWStructuredBuffer < Surfel > _Surfels;
 #define Vector float3
 #define Point3 float3
 #define Spectrum float3
-#define Frame float4 // quaternion or matrix? mmh...
 
 // miss shader, used when we don't hit any geometry
 TextureCube _SkyBox;
@@ -59,11 +58,11 @@ enum ERadianceQuery: int {
     /// Direct (surface) radiance */
     EDirectSurfaceRadiance = 0x0004,
 
-    /*! \brief Indirect (surface) radiance, where the last bounce did not go
+    /* Indirect (surface) radiance, where the last bounce did not go
     through a Dirac delta BSDF */
     EIndirectSurfaceRadiance = 0x0008,
 
-    /*! \brief Indirect (surface) radiance, where the last bounce went
+    /* Indirect (surface) radiance, where the last bounce went
     through a Dirac delta BSDF */
     ECausticRadiance = 0x0010,
 
@@ -76,7 +75,7 @@ enum ERadianceQuery: int {
     /// Distance to the next surface intersection
     EDistance = 0x0080,
 
-    /*! \brief A ray intersection may need to be performed. This can be set to
+    /* A ray intersection may need to be performed. This can be set to
     zero if the caller has already provided the intersection */
     EIntersection = 0x0200,
 
@@ -87,65 +86,6 @@ enum ERadianceQuery: int {
 
     /// Default radiance query, ray intersection required
     ERadiance = ERadianceNoEmission | EEmittedRadiance,
-
-};
-
-enum BSDFType: int {
-
-	// =============================================================
-	//                      BSDF lobe types
-	// =============================================================
-	/// 'null' scattering event, i.e. particles do not undergo deflection
-	ENull                 = 0x00001,
-	/// Ideally diffuse reflection
-	EDiffuseReflection    = 0x00002,
-	/// Ideally diffuse transmission
-	EDiffuseTransmission  = 0x00004,
-	/// Glossy reflection
-	EGlossyReflection     = 0x00008,
-	/// Glossy transmission
-	EGlossyTransmission   = 0x00010,
-	/// Reflection into a discrete set of directions
-	EDeltaReflection      = 0x00020,
-	/// Transmission into a discrete set of directions
-	EDeltaTransmission    = 0x00040,
-	/// Reflection into a 1D space of directions
-	EDelta1DReflection    = 0x00080,
-	/// Transmission into a 1D space of directions
-	EDelta1DTransmission  = 0x00100,
-
-	// =============================================================
-	//!                   Other lobe attributes
-	// =============================================================
-	/// The lobe is not invariant to rotation around the normal
-	EAnisotropic          = 0x01000,
-	/// The BSDF depends on the UV coordinates
-	ESpatiallyVarying     = 0x02000,
-	/// Flags non-symmetry (e.g. transmission in dielectric materials)
-	ENonSymmetric         = 0x04000,
-	/// Supports interactions on the front-facing side
-	EFrontSide            = 0x08000,
-	/// Supports interactions on the back-facing side
-	EBackSide             = 0x10000,
-	/// Uses extra random numbers from the supplied sampler instance
-	EUsesSampler          = 0x20000,
-
-	/// Any reflection component (scattering into discrete, 1D, or 2D set of directions)
-	EReflection   = EDiffuseReflection | EDeltaReflection | EDelta1DReflection | EGlossyReflection,
-	/// Any transmission component (scattering into discrete, 1D, or 2D set of directions)
-	ETransmission = EDiffuseTransmission | EDeltaTransmission | EDelta1DTransmission | EGlossyTransmission | ENull,
-	/// Diffuse scattering into a 2D set of directions
-	EDiffuse      = EDiffuseReflection | EDiffuseTransmission,
-	/// Non-diffuse scattering into a 2D set of directions
-	EGlossy       = EGlossyReflection | EGlossyTransmission,
-	/// Scattering into a 2D set of directions
-	ESmooth       = EDiffuse | EGlossy,
-	/// Scattering into a discrete set of directions
-	EDelta        = ENull | EDeltaReflection | EDeltaTransmission,
-	/// Scattering into a 1D space of directions
-	EDelta1D      = EDelta1DReflection | EDelta1DTransmission,
-	/// Any kind of scattering
-	EAll          = EDiffuse | EGlossy | EDelta | EDelta1D,
 
 };
 
@@ -163,26 +103,6 @@ enum RayConnection {
     RAY_NOT_CONNECTED, ///< Not yet connected - shifting in progress.
     RAY_RECENTLY_CONNECTED, ///< Connected, but different incoming direction so needs a BSDF evaluation.
     RAY_CONNECTED ///< Connected, allows using BSDF values from the base path.
-};
-
-struct BSDF {
-
-    // todo all these need to be filled by our material shaders
-
-	int type;
-
-	float eta;
-    float roughness;
-
-    float3 solidAngleColor;
-    float solidAnglePdf;
-
-    float3 discreteColor;
-    float discretePdf;
-
-    float3 sampledColor;
-    float sampledPdf;
-
 };
 
 struct Ray {
@@ -303,46 +223,71 @@ struct DirectSamplingRecord : PositionSamplingRecord {
     float pdf;
 };
 
-bool isZero(float3 v) {
+bool isZero(const float3 v) {
     return v.x == 0 && v.y == 0 && v.z == 0;
 }
 
-float Frame_cosTheta(float3 v) {
+float Frame_cosTheta(const float3 v) {
     return v.y;
 }
 
-float Frame_n(Frame f){
+float Frame_n(const Frame f){
 	return f[1]; // z component; column
 }
 
-float3 toWorld(Frame f, float3 v){
+float3 toWorld(const Frame f, const float3 v){
 	return quatRot(v, f);
 }
 
-float3 toLocal(Frame f, float3 v){
+float3 toLocal(const Frame f, const float3 v){
 	return quatRotInv(v, f);
 }
 
-float lengthSquared(float3 v) {
+float lengthSquared(const float3 v) {
     return dot(v, v);
 }
 
-bool rayIntersect(Ray ray, inout Intersection its){
-	// todo fill in its, BSDF
-    // todo required parameters:
-    // todo wi, wo, geoFrame, shFrame
-    RayPayload payload = (RayPayload) 0;
+float3 toWorld(const Intersection its, const float3 v){
+	return toWorld(its.shFrame, v);
+}
 
-    // todo intersect
+float3 toLocal(const Intersection its, const float3 v){
+	return toLocal(its.shFrame, v);
+}
 
-    its.p = ray.o + ray.d * payload.distance;
-    its.t = payload.distance;
+bool rayIntersect(Ray ray, inout Intersection its) {
+
+    RayDesc rayDesc = (RayDesc) 0;
+    rayDesc.Origin = ray.o;
+    rayDesc.Direction = ray.d;
+    rayDesc.TMin = ray.mint;
+    rayDesc.TMax = ray.maxt;
+
+    RayPayload rayPayload = (RayPayload) 0;
+    rayPayload.distance = _Far;
+    rayPayload.depth = 0;
+
+    // default values for bsdf
+    rayPayload.bsdf.eta = 1.0;
+    rayPayload.bsdf.numComponents = 0;
+
+    TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
+			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+    its.p = ray.o + ray.d * rayPayload.distance;
+    its.t = rayPayload.distance;
 
 	bool sky = its.t >= _Far;
     its.isOnSurface = !sky; // returns false at sky
     its.isValid = !sky;
-    its.isEmitter = dot2(payload.emissive) > 0;
+    its.geoFrame = rayPayload.geoFrame;
+    its.shFrame = rayPayload.shFrame;
+    its.wi = toLocal(its, ray.d);
+    its.wo = rayPayload.bsdf.sampledWo;
+    its.isEmitter = dot2(rayPayload.emissive) > 0;
+    // bsdf data
     its.ray = ray;
+    its.bsdf = rayPayload.bsdf;
 	return !sky;
 }
 
@@ -375,9 +320,21 @@ float pdfEmitterDirect(DirectSamplingRecord rec){
 // - 2) trace another ray
 
 float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
+    // can we query the component index here? not being used, component index is never defined, so it is -1 (all)
     if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
         sendTrace(rec.its, rec.its.ray);
-    return measure == ESolidAngle ? bsdf.solidAngleColor : bsdf.discreteColor;
+    // can there be multiple components of the same base-type? yes, e.g. rough plastic
+    // however, we always query all lobes with this function, so we can just compute this general case :)
+    // is there a case, where color depends on measure? ->
+    // todo is there a case, where multiple measures are used in a single BSDF?
+    int mask = (measure == ESolidAngle ? EDiffuse : EDelta);
+    for(int i=0;i<bsdf.numComponents;i++){
+        if((mask & bsdf.components[i].type) != 0){
+            // we found a match :)
+            return bsdf.color;
+        }
+    }
+    return float3(0,0,0);
 }
 
 float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
@@ -387,7 +344,14 @@ float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
 float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
     if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
         sendTrace(rec.its, rec.its.ray);
-    return measure == ESolidAngle ? bsdf.solidAnglePdf : bsdf.discretePdf;
+    int mask = (measure == ESolidAngle ? EDiffuse : EDelta);
+    for(int i=0;i<bsdf.numComponents;i++){
+        if((mask & bsdf.components[i].type) != 0){
+            // we found a match :)
+            return bsdf.pdf;
+        }
+    }
+    return 0;
 }
 
 float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
@@ -395,15 +359,7 @@ float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
 }
 
 float getRoughness(BSDF bsdf, Intersection its, int componentIndex){
-    return bsdf.roughness;
-}
-
-float3 toWorld(Intersection its, float3 v){
-	return toWorld(its.shFrame, v);
-}
-
-float3 toLocal(Intersection its, float3 v){
-	return toLocal(its.shFrame, v);
+    return bsdf.components[componentIndex].roughness;
 }
 
 // calls Emitter.eval(its, dir)
@@ -593,7 +549,7 @@ ReconnectionShiftResult environmentShift(Ray mainRay, Point3 shiftSourceVertex) 
 
     // Return the results.
     result.success = true;
-    result.jacobian = float(1);
+    result.jacobian = 1.0;
     result.wo = mainRay.d;
 
     return result;
@@ -626,7 +582,7 @@ VertexType getVertexType(const BSDF bsdf, Intersection its, unsigned int bsdfTyp
 
 	bool found_smooth = false;
 	bool found_dirac = false;
-	for(int i = 0, component_count = 1 /*getComponentCount(bsdf)*/; i < component_count; ++i) {
+	for(int i = 0; i < bsdf.numComponents; i++) {
 		float component_roughness = getRoughness(bsdf, its, i);
 
 		if(component_roughness == 0.0) {
@@ -663,6 +619,8 @@ VertexType getVertexType(RayState ray, unsigned int bsdfType) {
 float3 sample1(inout BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf1, float2 random) {
     // how often is this being called = can we precompute this in the RT hit shader?
     // this is only being called once, so yes, we can compute this in the material shader :)
+    rec.wo = bsdf.sampledWo;
+    rec.sampledType = bsdf.sampledType;
     pdf1 = bsdf.sampledPdf;
     return bsdf.sampledColor;
 }
@@ -781,8 +739,11 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // Sample incoming radiance from lights (next event estimation).
         {
             BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
-
-            if (main.rRec.type & EDirectSurfaceRadiance && mainBSDF.type & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
+            int combinedMainType = 0;
+            for(int i=0;i<mainBSDF.numComponents;i++){
+                combinedMainType = mainBSDF.components[i].type;
+            }
+            if (main.rRec.type & EDirectSurfaceRadiance && combinedMainType & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
                 // Sample an emitter and evaluate f = f/p * p for it. */
                 DirectSamplingRecord dRec = (DirectSamplingRecord) 0;
 				dRec.its = main.rRec.its;
@@ -1227,8 +1188,12 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                         // Deny shifts between Dirac and non-Dirac BSDFs.
-                        bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (shiftedBSDF.type & EDelta);
-                        bool bothSmooth = (mainBsdfResult.bRec.sampledType & ESmooth) && (shiftedBSDF.type & ESmooth);
+                        int combinedShiftedType = 0;
+                        for(int i=0;i<shiftedBSDF.numComponents;i++){
+                            combinedShiftedType = shiftedBSDF.components[i].type;
+                        }
+                        bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (combinedShiftedType & EDelta);
+                        bool bothSmooth = (mainBsdfResult.bRec.sampledType & ESmooth) && (combinedShiftedType & ESmooth);
                         if (!(bothDelta || bothSmooth)) {
                             shiftedRays[i].alive = false;
                             half_vector_shift_failed = true;
@@ -1490,6 +1455,7 @@ void SurfelPathTracing() {
 
         RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
         rRec.seed = seed;
+        rRec.type = ERadiance;
 
         RayState mainRay = (RayState) 0;
         // fill in ray
