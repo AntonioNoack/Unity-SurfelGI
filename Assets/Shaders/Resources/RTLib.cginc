@@ -105,6 +105,8 @@ struct BSDF {
     float3 sampledWo;
 	int sampledType;
 
+    int type;
+
 };
 
 struct RayPayload {

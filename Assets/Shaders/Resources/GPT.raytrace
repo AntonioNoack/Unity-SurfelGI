@@ -87,10 +87,9 @@ enum ERadianceQuery: int {
 
 };
 
-enum EMeasure: int {
-	EDiscrete,
-	ESolidAngle
-};
+#define EMeasure bool
+const bool EDiscrete = false;
+const bool ESolidAngle = true;
 
 enum VertexType {
     VERTEX_TYPE_GLOSSY, ///< "Specular" vertex that requires the half-vector duplication shift.
@@ -278,6 +277,12 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     // bsdf data
     its.ray = ray;
     its.bsdf = rayPayload.bsdf;
+
+    its.bsdf.type = 0;
+    for(int i=0;i<its.bsdf.numComponents;i++){
+        its.bsdf.type |= its.bsdf.components[i].type;
+    }
+
 	return !sky;
 }
 
@@ -348,6 +353,78 @@ float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
     return pdf(bsdf, rec, ESolidAngle);
 }
 
+bool testVisibility(float3 a, float3 b, float time) {
+    // raycast to determine visibility
+	RayDesc rayDesc = (RayDesc) 0;
+	float3 dir = b-a;
+	float dist = min(_Far, length(dir));
+	rayDesc.Origin = a;
+	rayDesc.Direction = normalize(dir);
+	rayDesc.TMin = min(0.001f, dist);
+	rayDesc.TMax = dist;
+	RayPayload rayPayload = (RayPayload) 0;
+	rayPayload.distance = dist * 2.0; // set to infinity at start
+	TraceRay(_RaytracingAccelerationStructure,
+				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?
+				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+    return rayPayload.distance >= dist;
+}
+
+// light sample data
+float _LightAccuArea;
+StructuredBuffer<Triangle> g_Triangles;
+
+#include "SampleTri.cginc"
+
+void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible){
+    // todo do we need to write more information?
+    float relativeIndex = random.x * _LightAccuArea;
+    emitterRadiance = 0;
+    rec.pdf = 0;
+
+    // make seed depend on more parameters, maybe on random
+    uint index = DispatchRaysIndex().x;
+    uint randomSeed = initRand(index ^ 0xffff + DispatchRaysIndex().y, _FrameIndex ^ (int) (random.x * 0xffffff));
+
+    if(FindEmissiveTriangle(relativeIndex, rec.p, rec.d, emitterRadiance, randomSeed)){
+        // check visibility
+        // what is the start position? rec.ref, which is being set in the constructor of DirectSamplingRecord
+        mainEmitterVisible = testVisibility(rec.ref, rec.p, 0.0);
+        if(mainEmitterVisible){
+            // todo is this the correct probability?
+            rec.pdf = 1.0;
+            return;
+        }
+    }
+    mainEmitterVisible = false;
+}
+
+// Environment(Emitter).fillDirectSamplingRecord
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h, line 600
+bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
+    // ensure the ray is valid
+    if(any(rec.its.ray.o != ray.o) || any(rec.its.ray.d != ray.d))
+        sendTrace(rec.its, rec.its.ray);
+    rec.p = rec.its.p;
+    rec.n = Frame_n(rec.its.shFrame);
+    // find out what the measure is
+    // should be fine as long as this is the only component...
+    rec.measure = ((rec.its.bsdf.components[0].type & ESmooth) != 0) ? ESolidAngle : EDelta;
+    rec.d = ray.d;
+    rec.dist = rec.its.t;
+    rec.pdf = rec.its.bsdf.sampledPdf;
+    return false;
+}
+
+DirectSamplingRecord createDirectSamplingRecord(const Intersection its){
+    DirectSamplingRecord rec = (DirectSamplingRecord) 0;
+    rec.its = its;
+    rec.ref = its.p;
+    if((its.bsdf.type & (ETransmission | EBackSide)) == 0)
+        rec.refN = Frame_n(its.shFrame);
+    return rec;
+}
+
 float getRoughness(BSDF bsdf, Intersection its, int componentIndex){
     return bsdf.components[componentIndex].roughness;
 }
@@ -376,34 +453,6 @@ float nextSample1D(inout RadianceQueryRecord r){
 
 float2 nextSample2D(inout RadianceQueryRecord r){
     return float2(nextRand(r.seed),nextRand(r.seed));
-}
-
-bool testVisibility(float3 a, float3 b, float time) {
-    // raycast to determine visibility
-	RayDesc rayDesc = (RayDesc) 0;
-	float3 dir = b-a;
-	float dist = min(_Far, length(dir));
-	rayDesc.Origin = a;
-	rayDesc.Direction = normalize(dir);
-	rayDesc.TMin = min(0.001f, dist);
-	rayDesc.TMax = dist;
-	RayPayload rayPayload = (RayPayload) 0;
-	rayPayload.distance = dist * 2.0; // set to infinity at start
-	TraceRay(_RaytracingAccelerationStructure,
-				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?
-				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
-    return rayPayload.distance >= dist;
-}
-
-void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible){
-    // todo sample lights and fill in all information
-}
-
-// Environment(Emitter).fillDirectSamplingRecord
-// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h, line 600
-bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
-    // todo fill in environment sampling information
-    return false;
 }
 
 bool testEnvironmentVisibility(Ray ray) {
@@ -729,14 +778,9 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // Sample incoming radiance from lights (next event estimation).
         {
             BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
-            int combinedMainType = 0;
-            for(int i=0;i<mainBSDF.numComponents;i++){
-                combinedMainType = mainBSDF.components[i].type;
-            }
-            if (main.rRec.type & EDirectSurfaceRadiance && combinedMainType & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
+            if (main.rRec.type & EDirectSurfaceRadiance && mainBSDF.type & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
                 // Sample an emitter and evaluate f = f/p * p for it. */
-                DirectSamplingRecord dRec = (DirectSamplingRecord) 0;
-				dRec.its = main.rRec.its;
+                DirectSamplingRecord dRec = createDirectSamplingRecord(main.rRec.its);
 
                 float2 lightSample = nextSample2D(main.rRec);
 
@@ -847,9 +891,10 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                 VertexType shiftedVertexType = getVertexType(shiftedRays[i], ESmooth);
 
                                 if (mainAtPointLight || (mainVertexType == VERTEX_TYPE_DIFFUSE && shiftedVertexType == VERTEX_TYPE_DIFFUSE)) {
+
                                     // Get emitter radiance.
-                                    DirectSamplingRecord shiftedDRec = (DirectSamplingRecord) 0;
-                                    shiftedDRec.its = shiftedRays[i].rRec.its;
+                                    DirectSamplingRecord shiftedDRec = createDirectSamplingRecord(shiftedRays[i].rRec.its);
+                                    
                                     // std::pair<Spectrum, bool> emitterTuple = 
                                     bool shiftedEmitterVisible;
 									float emitterRadiance;
@@ -939,8 +984,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         bool mainHitEmitter = false;
         Spectrum mainEmitterRadiance = float3(0, 0, 0);
 
-        DirectSamplingRecord mainDRec = (DirectSamplingRecord) 0;
-        mainDRec.its = main.rRec.its;
+        DirectSamplingRecord mainDRec = createDirectSamplingRecord(main.rRec.its);
         BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
 
         // Update the vertex types.
@@ -960,7 +1004,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 mainDRec.p = main.rRec.its.p;
                 mainDRec.n = Frame_n(main.rRec.its.shFrame);
                 mainDRec.measure = ESolidAngle;// not specified -> default value
-                // mainDRec.uv = main.rRec.its.uv; // todo is this used anywhere?
+                // mainDRec.uv = main.rRec.its.uv; // to do is this used anywhere? not that I'd know of
                 mainDRec.d = main.ray.d;
                 mainDRec.dist = main.rRec.its.t;
 
@@ -1178,12 +1222,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                         // Deny shifts between Dirac and non-Dirac BSDFs.
-                        int combinedShiftedType = 0;
-                        for(int i=0;i<shiftedBSDF.numComponents;i++){
-                            combinedShiftedType = shiftedBSDF.components[i].type;
-                        }
-                        bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (combinedShiftedType & EDelta);
-                        bool bothSmooth = (mainBsdfResult.bRec.sampledType & ESmooth) && (combinedShiftedType & ESmooth);
+                        bool bothDelta = (mainBsdfResult.bRec.sampledType & EDelta) && (shiftedBSDF.type & EDelta);
+                        bool bothSmooth = (mainBsdfResult.bRec.sampledType & ESmooth) && (shiftedBSDF.type & ESmooth);
                         if (!(bothDelta || bothSmooth)) {
                             shiftedRays[i].alive = false;
                             half_vector_shift_failed = true;

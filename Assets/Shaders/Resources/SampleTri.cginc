@@ -1,17 +1,15 @@
 
    
-    uint index = DispatchRaysIndex().x;
-    uint randomSeed = initRand(index ^ 0xffff, _FrameIndex);
-	float relativeIndex = (DispatchRaysIndex().x + nextRand(randomSeed)) * _LightAccuArea / DispatchRaysDimensions().x;
-
 	// ------------------------------------------------------------- //
 	// binary search for correct triangle by size and emissive power //
 	// ------------------------------------------------------------- //
-	
+
+bool FindEmissiveTriangle(float relativeIndex, out float3 rayOrigin, out float3 rayDirection, out float3 color, inout uint randomSeed) {	
+
 	uint numTriangles, stride;
 	g_Triangles.GetDimensions(numTriangles, stride);
 
-	if(numTriangles == 0) return;
+	if(numTriangles == 0) return false;
 
 	int i0 = -1, i1 = numTriangles-1;
 	while(i1 > i0){
@@ -43,5 +41,11 @@
 	do {
 		randomVector = float3(nextRand(randomSeed),nextRand(randomSeed),nextRand(randomSeed))*2-1;
 	} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
-    float3 rayDirection = normalize(randomVector);
-    float3 rayOrigin = triA + (triB-triA) * u + (triC-triA) * v + rayDirection * 0.1;
+
+    rayDirection = normalize(randomVector);
+    rayOrigin = triA + (triB-triA) * u + (triC-triA) * v + rayDirection * 0.001;
+	color = float3(tri.r,tri.g,tri.b);
+
+	return true;
+
+}

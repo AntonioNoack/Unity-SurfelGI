@@ -16,10 +16,21 @@ void LS1MissShader(inout RayPayload rayPayload : SV_RayPayload) {
     rayPayload.weight = 0;
 }
 
+#include "SampleTri.cginc"
+
 [shader("raygeneration")]
 void TestPass1() {
 
-#include "SampleTri.cginc"
+    uint index = DispatchRaysIndex().x;
+    uint randomSeed = initRand(index ^ 0xffff, _FrameIndex);
+	float relativeIndex = (DispatchRaysIndex().x + nextRand(randomSeed)) * _LightAccuArea / DispatchRaysDimensions().x;
+
+    float3 rayOrigin;
+    float3 rayDirection;
+    float3 color;
+
+    if(!FindEmissiveTriangle(relativeIndex, rayOrigin, rayDirection, color, randomSeed))
+        return;
 
     // trace rayDesc into scene, and collect probabilty (weight) + color + where we landed
     RayDesc rayDesc;
@@ -29,7 +40,7 @@ void TestPass1() {
     rayDesc.TMax = 1000;
     
     RayPayload rayPayload = (RayPayload) 0;
-    rayPayload.color = float3(tri.r,tri.g,tri.b);
+    rayPayload.color = color;
     rayPayload.weight = 1;
     rayPayload.pos = rayDesc.Origin;
     rayPayload.dir = rayDesc.Direction;

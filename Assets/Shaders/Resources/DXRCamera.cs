@@ -525,10 +525,17 @@ public class DXRCamera : MonoBehaviour {
                 }
                 if(useOfficalGPT){
                     var shader = gptRTShader;
-                    // todo ensure data for light sampling
-                    // todo define all parameters
+                   
+                    // light sampling is being used via sampleEmitterDirectVisible()
+                    lightSampling.enableSky = false;// handled separately in GPT
+                    lightSampling.CollectEmissiveTriangles(_camera); // to do can be cached, if the scene is static
+                    shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
+                    shader.SetFloat("_LightAccuArea", lightSampling.lightAccuArea);
+                    shader.SetBuffer("g_Triangles", lightSampling.emissiveTriangles);
+
                     shader.SetVector("_CameraPosition", transform.position);
                     shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+                    float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
                     shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
                     shader.SetFloat("_Far", _camera.farClipPlane);
                     shader.SetInt("_FrameIndex", frameIndex);

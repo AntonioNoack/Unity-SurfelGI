@@ -65,7 +65,9 @@ public class LightSampling : MonoBehaviour {
     public Mesh skyMesh;
 
     public Shader emissiveDXRShader;
-    private ComputeBuffer emissiveTriangles;
+
+    [HideInInspector]
+    public ComputeBuffer emissiveTriangles;
 
     public Vector3 sunDir = new Vector3(0f, 1f, 0f);
     public Vector2 skySunRatio = new Vector2(0.5f, 0.5f);// todo calculate or guess how emissive the sun is, and how emissive the sky is overall
@@ -164,7 +166,7 @@ public class LightSampling : MonoBehaviour {
     }
 
     private Vector3 camPosition;
-    private void CollectEmissiveTriangles(Camera camera){
+    public void CollectEmissiveTriangles(Camera camera){
 
         MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
 
