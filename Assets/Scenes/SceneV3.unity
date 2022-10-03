@@ -1005,6 +1005,7 @@ GameObject:
   - component: {fileID: 963194231}
   - component: {fileID: 963194230}
   - component: {fileID: 963194229}
+  - component: {fileID: 963194234}
   - component: {fileID: 963194232}
   - component: {fileID: 963194233}
   m_Layer: 0
@@ -1143,14 +1144,13 @@ MonoBehaviour:
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
   maxNumSurfels: 65536
-  rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
-  accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
+  _camera: {fileID: 0}
+  giTarget: {fileID: 0}
+  prevCameraPosition: {x: 0, y: 0, z: 0}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}
-  copyGBuffMat0: {fileID: 2100000, guid: e33da8cf719138142bcba9830cf03bb1, type: 2}
-  copyGBuffMat1: {fileID: 2100000, guid: ff7672f1e884a644485a1e70831cd675, type: 2}
-  copyGBuffMat2: {fileID: 2100000, guid: 6aa67cace0a317a4c866a10f65ebafdc, type: 2}
-  copyGBuffMatD: {fileID: 2100000, guid: 68c0e304975d3ee4ca5a9feb07ac550f, type: 2}
+  frameIndex: 0
   skyResolution: 512
+  skyBox: {fileID: 0}
   skyBoxCamera: {fileID: 1974688716}
   needsSkyBoxUpdate: 0
   resetSurfels: 0
@@ -1215,6 +1215,24 @@ MonoBehaviour:
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
   addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
   normMaterial: {fileID: 2100000, guid: a90049f8ec77c984e9fab397033bc361, type: 2}
+--- !u!114 &963194234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44b859bf809eae14fa3c341056c533ff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
+  copyGBuffMat0: {fileID: 2100000, guid: e33da8cf719138142bcba9830cf03bb1, type: 2}
+  copyGBuffMat1: {fileID: 2100000, guid: ff7672f1e884a644485a1e70831cd675, type: 2}
+  copyGBuffMat2: {fileID: 2100000, guid: 6aa67cace0a317a4c866a10f65ebafdc, type: 2}
+  copyGBuffMatD: {fileID: 2100000, guid: 68c0e304975d3ee4ca5a9feb07ac550f, type: 2}
+  rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

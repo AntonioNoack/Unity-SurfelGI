@@ -102,7 +102,7 @@ struct BSDF {
 	
     float3 sampledColor;
 	float sampledPdf;
-    Frame sampledWo;
+    float3 sampledWo;
 	int sampledType;
 
 };
@@ -132,7 +132,7 @@ struct RayPayload {
 	// gradient path tracing
 	float3 emissive; // emission color
 
-	Frame queriedWo; // queried ray outgoing direction
+	float3 queriedWo; // queried ray outgoing direction; local space
 	Frame geoFrame; // rotation of triangle surface without normal mapping
 	Frame shFrame; // rotation of triangle surface with normal mapping
 	

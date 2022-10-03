@@ -21,6 +21,10 @@ Shader "Custom/SurfelShader" {
             #pragma target 3.5
 
             #include "UnityCG.cginc"
+            #include "UnityGBuffer.cginc"
+			#include "UnityStandardUtils.cginc"
+
+            #include "Common.cginc"
             #include "Surfel.cginc"
 
             struct appdata {
@@ -88,10 +92,6 @@ Shader "Custom/SurfelShader" {
                 o.localPos = localPos;
                 return o;
             }
-
-			#include "UnityCG.cginc"
-            #include "UnityGBuffer.cginc"
-			#include "UnityStandardUtils.cginc"
 
             float4 frag (v2f i) : SV_Target {
                 float2 uv = i.screenPos.xy / i.screenPos.w;

@@ -23,6 +23,9 @@ Shader "Custom/Surfel2ProcShader" {
             #pragma target 3.5
 
             #include "UnityCG.cginc"
+            #include "UnityGBuffer.cginc"
+			#include "UnityStandardUtils.cginc"
+            
             #include "Surfel.cginc"
             #include "Common.cginc"
 
@@ -97,10 +100,6 @@ Shader "Custom/Surfel2ProcShader" {
                 return o;
 
             }
-
-			#include "UnityCG.cginc"
-            #include "UnityGBuffer.cginc"
-			#include "UnityStandardUtils.cginc"
 
             struct f2t {
                 float4 v : SV_TARGET;

@@ -1,19 +1,21 @@
 ﻿#include "RTLib.cginc"
 #include "Surfel.cginc"
 #include "Common.cginc"
+#include "Distribution.cginc"
 
 float3 _CameraPosition;
 float4 _CameraRotation;
-float3 _CameraOffset;
 float2 _CameraUVSize;
 float _Far;
-bool _AllowStrayRays;
-
 int _FrameIndex;
 
 #pragma max_recursion_depth 1
 
-RWStructuredBuffer < Surfel > _Surfels;
+RWStructuredBuffer<Surfel> _Surfels;
+
+// miss shader, used when we don't hit any geometry
+TextureCube _SkyBox;
+SamplerState _LinearClamp;
 
 #define Float float
 #define Vector3 float3
@@ -21,16 +23,12 @@ RWStructuredBuffer < Surfel > _Surfels;
 #define Point3 float3
 #define Spectrum float3
 
-// miss shader, used when we don't hit any geometry
-TextureCube _SkyBox;
-SamplerState _LinearClamp;
-
 float3 SampleSky(float3 dir) {
     return _SkyBox.SampleLevel(_LinearClamp, dir, 0).rgb;
 }
 
-const float D_EPSILON = 1e-14;
-const float Epsilon = 1e-7f; // todo what is this value, where is it defined?
+#define D_EPSILON 1e-14
+// #define Epsilon 1e-4
 
 #define m_strictNormals false
 // depth to begin russian roulette
@@ -225,14 +223,6 @@ struct DirectSamplingRecord : PositionSamplingRecord {
 
 bool isZero(const float3 v) {
     return v.x == 0 && v.y == 0 && v.z == 0;
-}
-
-float Frame_cosTheta(const float3 v) {
-    return v.y;
-}
-
-float Frame_n(const Frame f){
-	return f[1]; // z component; column
 }
 
 float3 toWorld(const Frame f, const float3 v){
@@ -1382,7 +1372,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 }
 
 [shader("raygeneration")]
-void SurfelPathTracing() {
+void SurfelGPT() {
 
     // start one ray per surfel
 

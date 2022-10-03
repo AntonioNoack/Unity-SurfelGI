@@ -49,6 +49,7 @@
 			#pragma raytracing test
 					   
 			#include "RTLib.cginc"
+			#include "Distribution.cginc"
 
 			// the naming comes from Unitys default shader
 
@@ -120,6 +121,8 @@
 				float3 reflection = normalize(reflectDir + roughness * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
+				float wiCosTheta = abs(dot(rayDir, worldNormal));
+
 				rayPayload.pos = worldPos;
 				rayPayload.dir = scatterRayDir;
 
@@ -128,7 +131,7 @@
 					rayPayload.dir = 0;
 				}
 
-				float4 color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color.rgb;
+				float4 color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color;
 				if(rayPayload.depth > 0){
 					rayPayload.color *= color;
 				}
@@ -136,15 +139,17 @@
 				// todo define GPT material parameters
 				// todo we need materials, that are customized to Mitsuba...
 
-				// todo fresnelConductorExact
-				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp
 				// todo for sampling:
 				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/warp.cpp
 
-				// todo microfacet distribution; visible = true (distr of visible normals)
-				// todo there are multiple types... which one do we choose? Beckmann, GGX, Phong
+				// microfacet distribution; visible = true (distr of visible normals)
+				// there are multiple types... which one do we choose? Beckmann, GGX, Phong
 				// alphaU, alphaV = roughnesses in tangent and bitangent direction
 				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
+
+				MicrofacetType type = Beckmann;
+				float alphaU = roughness, alphaV = roughness;
+				float exponentU = 0, exponentV = exponentU; // used by Phong model
 
 				float3 wi = 0;// todo transform rayDir into local space
 				float cosThetaWi = abs(dot(rayDir, worldNormal));
@@ -158,27 +163,27 @@
 						rayPayload.bsdf.components[0].roughness = 0;// this is not specified...
 						float3 H = normalize(rayPayload.queriedWo+wi);
 						
-						float D = distrEval(H);
+						float D = distrEval(type, alphaU, alphaV, exponentU, exponentV, H);
 						if(D == 0){
 							rayPayload.bsdf.color = 0;
 						} else {
 							// fresnel factor
 							float3 F = fresnelConductorExact(dot(wi, H), eta, k) * color;
 							// shadow masking
-							float G = distrG(wi, rayPayload.queriedWo, H);
+							float G = distrG(type, alphaU, alphaV, wi, rayPayload.queriedWo, H);
 							// total amount of reflection
 							float model = D * G / (4.0 * wiCosTheta);
 							rayPayload.bsdf.color = F * model;
 						}
-						rayPayload.bsdf.pdf = distrEval(H) * distrSmithG1(wi, H) / (4.0 * cosThetaWi);
+						rayPayload.bsdf.pdf = distrEval(type, alphaU, alphaV, exponentU, exponentV, H) * distrSmithG1(type, alphaU, alphaV, wi, H) / (4.0 * cosThetaWi);
 						rayPayload.bsdf.numComponents = 1;
 						// generate random sample
 						float pdf;
-						float3 m = distrSample(wi, rayPayload.seed, pdf);
+						float3 m = distrSample(type, alphaU, alphaV, exponentU, exponentV, wi, rayPayload.seed, pdf);
 						rayPayload.bsdf.sampledWo = reflectDir;
 						rayPayload.bsdf.eta = 1.0;
 						rayPayload.bsdf.sampledType = EGlossyReflection;
-						float weight = distrSmithG1(reflectDir, m);
+						float weight = distrSmithG1(type, alphaU, alphaV, reflectDir, m);
 						if(weight > 0) {
 							rayPayload.bsdf.sampledPdf = pdf / (4.0 * dot(rayPayload.bsdf.sampledWo, m));
 							rayPayload.bsdf.sampledColor = pdf * color * fresnelConductorExact(dot(wi, m), eta, k);
@@ -194,13 +199,13 @@
 						float eta = 1.5;
 						float k = 0.0;
 						rayPayload.bsdf.color = color * fresnelConductorExact(cosThetaWi, eta, k);
-						rayPayload.bsdf.pdf = abs(dot(reflectDir, rayPayload.queriedWo)-1) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
+						rayPayload.bsdf.pdf = abs(dot(reflectDir, rayPayload.queriedWo)-1.0) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
 						rayPayload.bsdf.numComponents = 1;
 						// generate random sample
 						rayPayload.bsdf.sampledType = EDeltaReflection;
 						rayPayload.bsdf.sampledWo = reflectDir;
 						rayPayload.bsdf.sampledPdf = 1.0;
-						rayPayload.bsdf.sampledColor = color * fresnelConductorExact(cosThetaWi, eta, k)
+						rayPayload.bsdf.sampledColor = color * fresnelConductorExact(cosThetaWi, eta, k);
 						rayPayload.bsdf.eta = 1.0;
 					}
 				} else {
