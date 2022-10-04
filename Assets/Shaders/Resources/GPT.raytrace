@@ -24,13 +24,17 @@ SamplerState _LinearClamp;
 #define Spectrum float3
 
 float3 SampleSky(float3 dir) {
+    dir = normalize(dir);
+    int3 spot3 = (int3) (dir * 10.0);
+    int spot = spot3.x + spot3.y + spot3.z;
+    // return frac(dir*100.0+0.5);
     return _SkyBox.SampleLevel(_LinearClamp, dir, 0).rgb;
 }
 
 #define D_EPSILON 1e-14
 // #define Epsilon 1e-4
 
-#define m_strictNormals false
+#define m_strictNormals true
 // depth to begin russian roulette
 #define m_rrDepth 5
 // min, max "recursive" depth
@@ -253,7 +257,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     rayDesc.TMax = ray.maxt;
 
     RayPayload rayPayload = (RayPayload) 0;
-    rayPayload.distance = _Far;
+    rayPayload.distance = ray.maxt;
     rayPayload.depth = 0;
 
     // default values for bsdf
@@ -266,7 +270,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     its.p = ray.o + ray.d * rayPayload.distance;
     its.t = rayPayload.distance;
 
-	bool sky = its.t >= _Far;
+	bool sky = its.t >= ray.maxt;
     its.isOnSurface = !sky; // returns false at sky
     its.isValid = !sky;
     its.geoFrame = rayPayload.geoFrame;
@@ -274,6 +278,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     its.wi = toLocal(its, ray.d);
     its.wo = rayPayload.bsdf.sampledWo;
     its.isEmitter = dot2(rayPayload.emissive) > 0;
+    its.emission = rayPayload.emissive;
     // bsdf data
     its.ray = ray;
     its.bsdf = rayPayload.bsdf;
@@ -286,8 +291,8 @@ bool rayIntersect(Ray ray, inout Intersection its) {
 	return !sky;
 }
 
-bool rayIntersect(inout RadianceQueryRecord rRec, Ray ray){
-	return rayIntersect(ray, rRec.its);
+bool rayIntersect(inout RadianceQueryRecord rec, Ray ray){
+	return rayIntersect(ray, rec.its);
 }
 
 void sendTrace(inout Intersection its, inout Ray ray){
@@ -318,6 +323,7 @@ float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
     // can we query the component index here? not being used, component index is never defined, so it is -1 (all)
     if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
         sendTrace(rec.its, rec.its.ray);
+    rec.wo = rec.its.wo;
     // can there be multiple components of the same base-type? yes, e.g. rough plastic
     // however, we always query all lobes with this function, so we can just compute this general case :)
     // is there a case, where color depends on measure? ->
@@ -339,6 +345,7 @@ float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
 float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
     if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
         sendTrace(rec.its, rec.its.ray);
+    rec.wo = rec.its.wo;
     int mask = (measure == ESolidAngle ? EDiffuse : EDelta);
     for(int i=0;i<bsdf.numComponents;i++){
         if((mask & bsdf.components[i].type) != 0){
@@ -688,13 +695,13 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 }
 
 /// Constructs a sequence of base paths and shifts them into offset paths, evaluating their throughputs and differences.
-///
 /// This is the core of the rendering algorithm.
-void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryCount, inout Spectrum out_veryDirect) {
+bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryCount, inout Spectrum out_veryDirect) {
 
     // Perform the first ray intersection for the base path (or ignore if the intersection has already been provided).
     rayIntersect(main.rRec, main.ray);
     main.ray.mint = Epsilon;
+    main.ray.maxt = _Far;
 
     if (!main.rRec.its.isValid) {
         // First hit is not in the scene so can't continue. Also there there are no paths to shift.
@@ -705,7 +712,8 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         }
 
         //SLog(EInfo, "Main ray(%d): First hit not in scene.", rayCount);
-        return;
+        // false, because not allowed for surfels: the first ray must hit!
+        return false;
     }
 
     // Perform the same first ray intersection for the offset paths.
@@ -713,16 +721,20 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         float3 delta = main.rRec.its.p - shiftedRays[i].ray.o;
         float len = max(1e-9, length(delta));
         shiftedRays[i].ray.d = delta / len;
-        shiftedRays[i].ray.mint = len * 0.99;
-        shiftedRays[i].ray.maxt = len * 1.01;
+        shiftedRays[i].ray.mint = len * (1.0 - Epsilon);
+        shiftedRays[i].ray.maxt = len * (1.0 + Epsilon);
         rayIntersect(shiftedRays[i].rRec, shiftedRays[i].ray);
-        shiftedRays[i].ray.mint = Epsilon;// why is this set after rayIntersect?
+        shiftedRays[i].ray.mint = Epsilon;
+        shiftedRays[i].ray.maxt = _Far;
     }
 
     // Add very direct light from non-environment.
     // Include emitted radiance if requested.
     if (main.rRec.its.isEmitter && (main.rRec.type & EEmittedRadiance)) {
         out_veryDirect += main.throughput * Le(main.rRec.its, -main.ray.d);
+        // out_veryDirect += float3(1,0,0);// todo remove this, [debug]
+        // out_veryDirect += Frame_n(main.rRec.its.shFrame)*.5+.5;
+        // out_veryDirect += main.rRec.its.shFrame.xyz*.5+.5;
     }
 
     // If no intersection of an offset ray could be found, its offset paths can not be generated.
@@ -737,7 +749,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // If 'strictNormals'=true, when the geometric and shading normals classify the incident direction to the same side, then the main path is still good.
         if (dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi) >= 0) {
             // This is an impossible base path.
-            return;
+            return true;
         }
 
         for (int i = 0; i < secondaryCount; ++i) {
@@ -757,7 +769,7 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         if (m_strictNormals) {
             if (dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi) >= 0) {
                 // This is an impossible main path, and there are no more paths to shift.
-                return;
+                return true;
             }
 
             for (int i = 0; i < secondaryCount; ++i) {
@@ -1316,7 +1328,6 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                         }
                                     } else {
                                         // Hit something.
-
                                         if (!main.rRec.its.isValid) {
                                             // Deny shifts between env and non-env.
                                             shiftedRays[i].alive = false;
@@ -1409,6 +1420,9 @@ void evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             }
         }
     }
+
+    return true;
+
 }
 
 [shader("raygeneration")]
@@ -1452,7 +1466,6 @@ void SurfelGPT() {
     RayDesc rayDesc;
 
     int samplesPerSurfel = 1; //max(1, 8 - (int) surfel.color.w);
-    int maxRaysPerSample = 15;
 
     // Create and init the ray payload
     RayPayload rayPayload = (RayPayload)0;
@@ -1480,19 +1493,16 @@ void SurfelGPT() {
         float tMin = startDist * 0.5;
         float tMax = startDist * 2.0;
 
-        float3 nextSurfacePos;
-        float3 ignored;
-
         RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
         rRec.seed = seed;
         rRec.type = ERadiance;
 
         RayState mainRay = (RayState) 0;
         // fill in ray
-        mainRay.ray.o = surfelPos;
-        mainRay.ray.d = 0;
-        mainRay.ray.mint = length(delta) * 0.99;
-        mainRay.ray.maxt = length(delta) * 1.01;
+        mainRay.ray.o = origin;
+        mainRay.ray.d = direction;
+        mainRay.ray.mint = tMin;
+        mainRay.ray.maxt = tMax;
         mainRay.throughput = float3(1,1,1);
 		mainRay.rRec = rRec;
 		mainRay.rRec.its = rRec.its;
@@ -1512,7 +1522,8 @@ void SurfelGPT() {
 		}
 
         float3 veryDirect = 0;
-        evaluate(mainRay, shiftedRays, 4, veryDirect);
+        bool ok = evaluate(mainRay, shiftedRays, 4, veryDirect);
+        if(!ok) continue;
 
         // update surfel by main and shiftedRays
         // todo divide by color of first hit...
@@ -1520,8 +1531,8 @@ void SurfelGPT() {
         // todo can we confirm the weight is 1.0?
         float weight = 1.0;
         surfel.color += float4(mainRay.radiance + veryDirect, weight); // is it correct to add veryDirect here?
-        float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);
-        float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);
+        float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient) / distance;
+        float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient) / distance;
 		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
 		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
         surfel.colorDx += float4(gradientDX, weight);
@@ -1537,10 +1548,6 @@ void SurfelGPT() {
 
 [shader("miss")]
 void SurfelPTMiss(inout RayPayload rayPayload: SV_RayPayload) {
-    // todo this looks like SDR... how do we get HDR colors?
-    if (rayPayload.depth > 0) {
-        rayPayload.color *= SampleSky(WorldRayDirection());
-    }
     rayPayload.distance = _Far;
-    rayPayload.dir = 0;
+    rayPayload.bsdf.numComponents = 0;
 }

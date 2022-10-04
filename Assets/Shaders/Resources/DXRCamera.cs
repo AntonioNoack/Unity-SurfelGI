@@ -528,7 +528,9 @@ public class DXRCamera : MonoBehaviour {
                    
                     // light sampling is being used via sampleEmitterDirectVisible()
                     lightSampling.enableSky = false;// handled separately in GPT
-                    lightSampling.CollectEmissiveTriangles(_camera); // to do can be cached, if the scene is static
+                    if(lightSampling.emissiveTriangles == null)
+                        lightSampling.CollectEmissiveTriangles(_camera); // to do can be cached, if the scene is static
+                    shader.SetShaderPass("DxrPass");
                     shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
                     shader.SetFloat("_LightAccuArea", lightSampling.lightAccuArea);
                     shader.SetBuffer("g_Triangles", lightSampling.emissiveTriangles);
@@ -541,7 +543,7 @@ public class DXRCamera : MonoBehaviour {
                     shader.SetInt("_FrameIndex", frameIndex);
                     shader.SetTexture("_SkyBox", skyBox);
                     shader.SetBuffer("_Surfels", surfels);
-                    shader.Dispatch("SurfelGPT", giTarget.width, giTarget.height, 1, _camera);
+                    shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);
                 }
             }
 

@@ -4,17 +4,17 @@ using UnityEngine;
 
 public class Flicker : MonoBehaviour {
 
-    private new MeshRenderer renderer;
+    private MeshRenderer _renderer;
     public int period, phase;
     
     void Start() {
-        renderer = GetComponent<MeshRenderer>();
+        _renderer = GetComponent<MeshRenderer>();
     }
 
     void Update() {
         phase++;
-        if(renderer != null){
-            renderer.enabled = (phase % period) >= period / 2;
+        if(_renderer != null){
+            _renderer.enabled = (phase % period) >= period / 2;
         }
     }
 }

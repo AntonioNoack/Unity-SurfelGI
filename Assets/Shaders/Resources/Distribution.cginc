@@ -12,6 +12,8 @@
 #define RCPOVERFLOW 2.93873587705571876e-39
 #define SQRT_PI_INV 0.5641895835477563
 #define Epsilon 1e-4
+#define Infinity 1e38
+#define INV_PI 0.3183098861837907
 
 #define Frame float4
 
@@ -19,8 +21,8 @@ float Frame_cosTheta(const float3 v) {
     return v.z;
 }
 
-float Frame_n(const Frame f){
-	return f[2]; // z component; column
+float3 Frame_n(const Frame f){
+	return quatRot(float3(0,0,1), f); // z component; column
 }
 
 float Frame_sinTheta2(const float3 v) {// sin(theta)²
@@ -487,5 +489,42 @@ Spectrum fresnelConductorExact(Float cosThetaI, const Spectrum eta, const Spectr
 
 	return 0.5 * (Rp2 + Rs2);
 }
+
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/core/warp.h
+Float squareToCosineHemispherePdf(const Vector d){ return INV_PI * Frame_cosTheta(d); }
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/warp.cpp
+Point2 squareToUniformDiskConcentric(const Point2 sample1) {
+	Float r1 = 2.0*sample1.x - 1.0;
+	Float r2 = 2.0*sample1.y - 1.0;
+
+	/* Modified concencric map code with less branching (by Dave Cline), see
+	   http://psgraphics.blogspot.ch/2011/01/improved-code-for-concentric-map.html */
+	Float phi, r;
+	if (r1 == 0 && r2 == 0) {
+		r = phi = 0;
+	} else if (r1*r1 > r2*r2) {
+		r = r1;
+		phi = (M_PI*0.25) * (r2/r1);
+	} else {
+		r = r2;
+		phi = (M_PI*0.5) - (r1/r2) * (M_PI*0.25);
+	}
+
+	Float cosPhi, sinPhi;
+	sincos(phi, sinPhi, cosPhi);
+
+	return Point2(r * cosPhi, r * sinPhi);
+}
+
+Vector squareToCosineHemisphere(const Point2 sample1) {
+	Point2 p = squareToUniformDiskConcentric(sample1);
+	Float z = safe_sqrt(1.0 - p.x*p.x - p.y*p.y);
+
+	/* z: Guard against numerical imprecisions */
+	return Vector(p.x, p.y, max(z, 1e-10));
+}
+
 
 #endif // DISTR_CGINC

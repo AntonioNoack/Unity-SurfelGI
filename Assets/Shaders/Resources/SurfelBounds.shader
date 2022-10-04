@@ -101,6 +101,7 @@
             [shader("closesthit")]
             void ClosestHitMain(inout RayPayload payload : SV_RayPayload, in AttributeData attribs : SV_IntersectionAttributes) {
                 float c = frac(log2(RayTCurrent()));
+                payload.distance = RayTCurrent();
                 payload.color.xyz = float3(c,c,c);// g_Colors[PrimitiveIndex()].xyz;
             }
 

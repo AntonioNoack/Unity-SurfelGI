@@ -44,6 +44,31 @@
 				rayPayload.distance = RayTCurrent();
 				rayPayload.color *= _Color.xyz;
 				rayPayload.dir = 0;
+
+				// define emission for GPT
+
+				IntersectionVertex vertex;
+				GetCurrentIntersectionVertex(attributeData, vertex);
+				
+				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
+				float3 objectNormal = normalize(vertex.normalOS);
+				float3 worldNormal = normalize(mul(objectToWorld, objectNormal));
+				rayPayload.geoFrame = normalToQuaternionZ(worldNormal);
+				rayPayload.shFrame = rayPayload.geoFrame;
+
+				// do we need wi, wo?
+				float3 rayDir = WorldRayDirection();
+				float3 wi = quatRotInv(rayDir, rayPayload.shFrame);
+
+				rayPayload.emissive = _Color.xyz;
+				rayPayload.bsdf.color = _Color.xyz;
+				rayPayload.bsdf.pdf = 1;
+
+				// components aren't really defined for emitters
+				rayPayload.bsdf.components[0].type = 0;
+				rayPayload.bsdf.components[0].roughness = 0.0;
+				rayPayload.bsdf.numComponents = 0;
+
 			}
 
 			ENDHLSL

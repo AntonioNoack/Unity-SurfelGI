@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+#if UNITY_EDITOR
 public class ComputeDebugger : EditorWindow {
     private HashSet<string> stages = new HashSet<string>();
     public string selectedStage;
@@ -49,3 +50,4 @@ public class ComputeDebugger : EditorWindow {
         }
     }
 }
+#endif // UNITY_EDITOR

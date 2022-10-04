@@ -136,32 +136,36 @@
 					rayPayload.color *= color;
 				}
 
-				// todo define GPT material parameters
-				// todo we need materials, that are customized to Mitsuba...
-
-				// todo for sampling:
-				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/warp.cpp
+				// define GPT material parameters
+				// todo best define materials, that are customized to Mitsuba...
 
 				// microfacet distribution; visible = true (distr of visible normals)
 				// there are multiple types... which one do we choose? Beckmann, GGX, Phong
 				// alphaU, alphaV = roughnesses in tangent and bitangent direction
 				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
 
+				// define geoFrame and shFrame;
+				// the function is defined to make y = up, but for Mitsuba, we need z = up, so we swizzle it
+				rayPayload.geoFrame = normalToQuaternionZ(surfaceWorldNormal);
+				rayPayload.shFrame = normalToQuaternionZ(worldNormal);
+
 				MicrofacetType type = Beckmann;
 				float alphaU = roughness, alphaV = roughness;
-				float exponentU = 0, exponentV = exponentU; // used by Phong model
+				// what is a good value for the exponent?
+				float exponentU = 100.0, exponentV = exponentU; // used by Phong model
 
-				float3 wi = 0;// todo transform rayDir into local space
+				float3 wi = quatRotInv(rayDir, rayPayload.shFrame);
 				float cosThetaWi = abs(dot(rayDir, worldNormal));
 				if(_Metallic > 0.5){
 					// conductor
 					float eta = 1.5;
 					float k = 0.0;
 					if(roughness > 0.001) {
-						// todo replace with rough conductor
+						// rough conductor
+						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
 						rayPayload.bsdf.components[0].type = EGlossyReflection;
-						rayPayload.bsdf.components[0].roughness = 0;// this is not specified...
-						float3 H = normalize(rayPayload.queriedWo+wi);
+						rayPayload.bsdf.components[0].roughness = 0.0;
+						float3 H = normalize(rayPayload.queriedWo + wi);
 						
 						float D = distrEval(type, alphaU, alphaV, exponentU, exponentV, H);
 						if(D == 0){
@@ -195,7 +199,7 @@
 						// perfectly smooth conductor
 						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/conductor.cpp
 						rayPayload.bsdf.components[0].type = EDeltaReflection;
-						rayPayload.bsdf.components[0].roughness = 0;// this is not specified...
+						rayPayload.bsdf.components[0].roughness = 0.0;
 						float eta = 1.5;
 						float k = 0.0;
 						rayPayload.bsdf.color = color * fresnelConductorExact(cosThetaWi, eta, k);
@@ -209,8 +213,37 @@
 						rayPayload.bsdf.eta = 1.0;
 					}
 				} else {
-					// todo diffuse or plastic material
-					rayPayload.bsdf.numComponents = 2;
+
+					// diffuse material
+					if(true || roughness < 0.01){
+						rayPayload.bsdf.components[0].type = EDiffuseReflection;
+						rayPayload.bsdf.components[0].roughness = Infinity;
+						rayPayload.bsdf.color = color * INV_PI * Frame_cosTheta(rayPayload.queriedWo);
+						rayPayload.bsdf.pdf = squareToCosineHemispherePdf(rayPayload.queriedWo);
+						rayPayload.bsdf.numComponents = 1;
+
+						rayPayload.bsdf.sampledType = EDiffuseReflection;
+						rayPayload.bsdf.sampledWo = squareToCosineHemisphere(rayPayload.seed);
+						rayPayload.bsdf.sampledPdf = squareToCosineHemispherePdf(rayPayload.bsdf.sampledWo);
+						rayPayload.bsdf.sampledColor = color;
+						rayPayload.bsdf.eta = 1.0;
+					} else {
+
+						rayPayload.bsdf.numComponents = 1;
+						rayPayload.bsdf.components[0].type = EGlossyReflection;
+						rayPayload.bsdf.components[0].roughness = Infinity;// why?
+						// rayPayload.bsdf.color = color * (INV_PI * Frame_cosTheta(wo))
+						rayPayload.bsdf.pdf = squareToCosineHemispherePdf(rayPayload.queriedWo)
+						
+						rayPayload.bsdf.sampledType = EGlossyReflection;
+						rayPayload.bsdf.sampledWo = squareToCosineHemisphere(rayPayload.seed);
+						rayPayload.bsdf.sampledPdf = squareToCosineHemispherePdf(rayPayload.bsdf.sampledWo);
+						// rayPayload.bsdf.sampledColor = roughDiffuseEval() / rayPayload.bsdf.sampledPdf;
+						rayPayload.bsdf.eta = 1.0;
+					}
+
+					// todo rough diffuse... (that one is a lot of code..)
+
 				}
 
 			}
@@ -269,7 +302,7 @@
 				IntersectionVertex vertex;
 				GetCurrentIntersectionVertex(attributeData, vertex);
 
-				// todo we can compute the lod for the first hit, use it
+				// to do we can compute the lod for the first hit, use it
 				float lod = 0;
 
 				// transform normal to world space & apply normal map
@@ -289,7 +322,7 @@
 				float3 rayDir = WorldRayDirection();
 				float3 worldPos = rayOrigin + RayTCurrent() * rayDir;
 				
-				// todo respect metallic and glossiness maps
+				// to do respect metallic and glossiness maps
 				bool isMetallic = _Metallic > nextRand(rayPayload.randomSeed);
 				float roughness = (1.0 - _Glossiness);
 				float3 reflectDir = reflect(rayDir, worldNormal);

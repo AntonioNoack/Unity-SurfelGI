@@ -1131,18 +1131,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enablePathTracing: 1
+  enablePathTracing: 0
   enableLightSampling: 0
   surfelDensity: 3
   sleep: 0.0114
   exposure: 1.0715193
   allowSkySurfels: 0
-  showIllumination: 0
+  showIllumination: 1
   allowStrayRays: 0
   visualizeSurfels: 0
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
+  gptRTShader: {fileID: 4807578003741378534, guid: ae480560d6a4e624788d83638f3b33eb, type: 3}
   maxNumSurfels: 65536
   _camera: {fileID: 0}
   giTarget: {fileID: 0}
@@ -1166,8 +1167,9 @@ MonoBehaviour:
   lightSamplingRatio: 1
   samplesPerPixel: 16
   raysPerSample: 2
-  useDerivatives: 1
+  useDerivatives: 0
   surfelPlacementIterations: 1
+  useOfficalGPT: 1
 --- !u!114 &963194232
 MonoBehaviour:
   m_ObjectHideFlags: 0
