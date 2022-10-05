@@ -60,20 +60,6 @@
 				return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
 			}
 
-			float3 evalDielectric(float3 wi, float3 wo){// returns Color * pdf
-				float cosThetaT;
-				float eta = _IoR;
-				float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, eta);
-				if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
-					if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect reflection, return 0
-					return _Color * F;
-				} else {
-					if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect refraction, return 0
-					float factor = cosThetaT < 0.0 ? 1.0/eta : eta;
-					return _Color * factor * factor * (1.0 - F);
-				}
-			}
-
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
@@ -136,13 +122,11 @@
 				//------------------------//
 
 				float eta = _IoR;
+				rayPayload.bsdf.eta = _IoR;
+				rayPayload.bsdf.color = _Color;
 				rayPayload.geoFrame = normalToFrame(worldNormal);
 				rayPayload.shFrame = rayPayload.geoFrame;
 
-				float3 wi = -quatRotInv(rayDir, rayPayload.shFrame), wo = rayPayload.queriedWo;
-				float wiCosTheta = -dot(rayDir, worldNormal);
-
-				float2 sample1 = rayPayload.seed;
 				if(true || _Roughness < 0.01){
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
 					rayPayload.bsdf.components[0].type = EDeltaReflection;
@@ -150,31 +134,6 @@
 					rayPayload.bsdf.components[1].type = EDeltaTransmission;
 					rayPayload.bsdf.components[1].roughness = 0.0;
 					rayPayload.bsdf.numComponents = 2;
-					float cosThetaT;
-					float F = fresnelDielectricExt(wiCosTheta, cosThetaT, eta);
-					if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
-						if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) rayPayload.bsdf.pdf = 0.0;// not close enough to ideal reflection
-						else rayPayload.bsdf.pdf = F;
-					} else {
-						if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) rayPayload.bsdf.pdf = 0.0;// not close enough to ideal refraction
-						else rayPayload.bsdf.pdf = 1.0-F;
-					}
-					// float cosThetaT;
-					F = fresnelDielectricExt(wiCosTheta, cosThetaT, eta);
-					if(sample1.x <= F){
-						rayPayload.bsdf.sampledType = EDeltaReflection;
-						rayPayload.bsdf.sampledWo = reflect(wi);
-						rayPayload.bsdf.eta = 1.0;
-						rayPayload.bsdf.sampledColor = evalDielectric(wi, rayPayload.bsdf.sampledWo);
-						rayPayload.bsdf.sampledPdf = F;
-					} else {
-						rayPayload.bsdf.sampledType = EDeltaTransmission;
-						rayPayload.bsdf.sampledWo = refract(wi, eta);
-						rayPayload.bsdf.eta = cosThetaT ? eta : 1.0 / eta;
-						float factor = cosThetaT < 0 ? 1.0 / eta : eta;// ERadiance = true
-						rayPayload.bsdf.sampledColor = _Color * (factor * factor);
-						rayPayload.bsdf.sampledPdf = 1.0-F;
-					}
 				} else {
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdielectric.cpp
 					// todo rough dielectric as well
@@ -185,7 +144,6 @@
 					rayPayload.bsdf.components[1].roughness = _Roughness;
 					rayPayload.bsdf.components[1].type = EGlossyTransmission;
 					rayPayload.bsdf.numComponents = 2;
-					rayPayload.bsdf.eta = _IoR;
 				}
 
 			}

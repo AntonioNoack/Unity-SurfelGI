@@ -24,6 +24,29 @@ static const uint gMaxDepth = 8;
 
 #define Frame float4 // quaternion or matrix? mmh...
 
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
+enum MicrofacetType: int {
+	Beckmann = 0, // Beckmann distribution derived from Gaussian random surfaces
+	GGX = 1, // GGX: Long-tailed distribution for very rough surfaces (aka. Trowbridge-Reitz distr.)
+	Phong = 2, // Phong distribution (with the anisotropic extension by Ashikhmin and Shirley)
+};
+
+enum MaterialType: int {
+	// metalls
+	CONDUCTOR = 0,
+	// rough metalls, e.g. brushed
+	ROUGH_CONDUCTOR = 1,
+	// diffuse materials like wood
+	DIFFUSE = 2,
+	ROUGH_DIFFUSE = 3,
+	// transparent materials like glass
+	DIELECTRIC = 4,
+	ROUGH_DIELECTRIC = 5,
+	PLASTIC = 6,
+	// emissive:
+	AREA_LIGHT = 7,
+};
+
 enum BSDFType: int {
 
 	// =============================================================
@@ -91,21 +114,17 @@ struct BSDFComponent {
 
 struct BSDF {
 
-    // todo all these need to be filled by our material shaders
     float eta; // relative index of refraction; 1.0 is default
 
     BSDFComponent components[maxNumComponents];
     int numComponents;
-	// EAll
-    float3 color;
-    float pdf;
-	
-    float3 sampledColor;
-	float sampledPdf;
-    float3 sampledWo;
-	int sampledType;
 
-    int type;
+	int type;
+	
+	float3 color;
+	float roughness;
+
+	int materialType;
 
 };
 
@@ -131,15 +150,10 @@ struct RayPayload {
 	float surfelSize;
 	int surfelId; // -1 = nothing
 
-	// gradient path tracing
-	float3 emissive; // emission color
-
-	float3 queriedWo; // queried ray outgoing direction; local space
 	Frame geoFrame; // rotation of triangle surface without normal mapping
 	Frame shFrame; // rotation of triangle surface with normal mapping
 	
 	BSDF bsdf;
-	float2 seed;
 
 };
 

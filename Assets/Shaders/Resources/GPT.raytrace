@@ -130,9 +130,6 @@ struct Intersection {
     BSDF bsdf;
     // idc
     float time;
-    // cache key
-    Ray ray;
-    float3 wo;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/integrator.h
@@ -263,8 +260,8 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     // default values for bsdf
     rayPayload.bsdf.eta = 1.0;
     rayPayload.bsdf.numComponents = 0;
-    rayPayload.bsdf.pdf = 1.0;
-    rayPayload.queriedWo = its.wo;
+    // rayPayload.bsdf.pdf = 1.0;
+    // rayPayload.queriedWo = its.wo;
 
     TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
@@ -280,11 +277,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     // wi is defined as being negative:
     // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/skdtree.h#L427
     its.wi = toLocal(its, -ray.d);
-    its.wo = rayPayload.bsdf.sampledWo;
-    its.isEmitter = dot2(rayPayload.emissive) > 0;
-    its.emission = rayPayload.emissive;
-    // bsdf data
-    its.ray = ray;
+    its.isEmitter = rayPayload.bsdf.materialType == AREA_LIGHT;
     its.bsdf = rayPayload.bsdf;
 
     its.bsdf.type = 0;
@@ -314,6 +307,8 @@ float pdfEmitterDirect(DirectSamplingRecord rec){
     return rec.pdf;
 }
 
+#include "Materials.cginc"
+
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h
 // ~ line 400
 
@@ -324,40 +319,78 @@ float pdfEmitterDirect(DirectSamplingRecord rec){
 // - 2) trace another ray
 
 float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
-    // can we query the component index here? not being used, component index is never defined, so it is -1 (all)
-    if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
-        sendTrace(rec.its, rec.its.ray);
-    rec.wo = rec.its.wo;
-    // can there be multiple components of the same base-type? yes, e.g. rough plastic
-    // however, we always query all lobes with this function, so we can just compute this general case :)
-    // is there a case, where color depends on measure? ->
-    // todo is there a case, where multiple measures are used in a single BSDF?
-    int mask = (measure == ESolidAngle ? EDiffuse : EDelta);
-    for(int i=0;i<bsdf.numComponents;i++){
-        if((mask & bsdf.components[i].type) != 0){
-            // we found a match :)
+    switch(bsdf.materialType){
+        case CONDUCTOR:
+            return Conductor_eval(bsdf,rec,measure);
+        case ROUGH_CONDUCTOR:
+            return RoughConductor_eval(bsdf,rec,measure);
+        case DIFFUSE:
+            return Diffuse_eval(bsdf,rec,measure);
+        case ROUGH_DIFFUSE:
+            return RoughDiffuse_eval(bsdf,rec,measure);
+        case DIELECTRIC:
+            return Dielectric_eval(bsdf,rec,measure);
+        case ROUGH_DIELECTRIC:
+            return RoughDielectric_eval(bsdf,rec,measure);
+        case AREA_LIGHT:
             return bsdf.color;
-        }
+        default:
+            return 0;
     }
-    return float3(0,0,0);
+}
+
+float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
+    switch(bsdf.materialType){
+        case CONDUCTOR:
+            return Conductor_pdf(bsdf,rec,measure);
+        case ROUGH_CONDUCTOR:
+            return RoughConductor_pdf(bsdf,rec,measure);
+        case DIFFUSE:
+            return Diffuse_pdf(bsdf,rec,measure);
+        case ROUGH_DIFFUSE:
+            return RoughDiffuse_pdf(bsdf,rec,measure);
+        case DIELECTRIC:
+            return Dielectric_pdf(bsdf,rec,measure);
+        case ROUGH_DIELECTRIC:
+            return RoughDielectric_pdf(bsdf,rec,measure);
+        case AREA_LIGHT:
+            return 0.0;
+        default:
+            return 0;
+    }
+}
+
+/**
+ * draws a random sample from the BSDF (= random direction from the outgoing lobe);
+ * in contrast to eval() and pdf(), which use a pre-determined outgoing direction
+ */
+float3 sample1(inout BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 random) {
+    rec.eta = 1.0;
+    switch(bsdf.materialType){
+        case CONDUCTOR:
+            return Conductor_sample(bsdf,rec,pdf,random);
+        case ROUGH_CONDUCTOR:
+            return RoughConductor_sample(bsdf,rec,pdf,random);
+        case DIFFUSE:
+            return Diffuse_sample(bsdf,rec,pdf,random);
+        case ROUGH_DIFFUSE:
+            return RoughDiffuse_sample(bsdf,rec,pdf,random);
+        case DIELECTRIC:
+            return Dielectric_sample(bsdf,rec,pdf,random);
+        case ROUGH_DIELECTRIC:
+            return RoughDielectric_sample(bsdf,rec,pdf,random);
+        case AREA_LIGHT:
+            pdf = 1.0;
+            rec.wo = rec.wi;
+            return bsdf.color;
+        default:
+            pdf = 0;
+            return 0;
+    }
 }
 
 float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
     return eval(bsdf, rec, ESolidAngle);
-}
-
-float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
-    if(any(rec.wi != rec.its.wi) || any(rec.wo != rec.its.wo))
-        sendTrace(rec.its, rec.its.ray);
-    rec.wo = rec.its.wo;
-    int mask = (measure == ESolidAngle ? EDiffuse : EDelta);
-    for(int i=0;i<bsdf.numComponents;i++){
-        if((mask & bsdf.components[i].type) != 0){
-            // we found a match :)
-            return bsdf.pdf;
-        }
-    }
-    return 0;
 }
 
 float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec) {
@@ -371,10 +404,10 @@ bool testVisibility(float3 a, float3 b, float time) {
 	float dist = min(_Far, length(dir));
 	rayDesc.Origin = a;
 	rayDesc.Direction = normalize(dir);
-	rayDesc.TMin = min(0.001f, dist);
-	rayDesc.TMax = dist;
+	rayDesc.TMin = 0.01 * dist;
+	rayDesc.TMax = 0.99 * dist;
 	RayPayload rayPayload = (RayPayload) 0;
-	rayPayload.distance = dist * 2.0; // set to infinity at start
+	rayPayload.distance = max(_Far, dist * 2.0); // set to infinity at start
 	TraceRay(_RaytracingAccelerationStructure,
 				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
@@ -414,8 +447,6 @@ void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, o
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h, line 600
 bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
     // ensure the ray is valid
-    if(any(rec.its.ray.o != ray.o) || any(rec.its.ray.d != ray.d))
-        sendTrace(rec.its, rec.its.ray);
     rec.p = rec.its.p;
     rec.n = Frame_n(rec.its.shFrame);
     // find out what the measure is
@@ -423,7 +454,8 @@ bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
     rec.measure = ((rec.its.bsdf.components[0].type & ESmooth) != 0) ? ESolidAngle : EDelta;
     rec.d = ray.d;
     rec.dist = rec.its.t;
-    rec.pdf = rec.its.bsdf.sampledPdf;
+    // todo is this correct
+    rec.pdf = 1.0; // rec.its.bsdf.sampledPdf;
     return true;
 }
 
@@ -660,19 +692,6 @@ VertexType getVertexType(const BSDF bsdf, Intersection its, unsigned int bsdfTyp
 
 VertexType getVertexType(RayState ray, unsigned int bsdfType) {
 	return getVertexType(getBSDF(ray.rRec.its, ray.ray), ray.rRec.its, bsdfType);
-}
-
-/**
- * draws a random sample from the BSDF (= random direction from the outgoing lobe);
- * in contrast to eval() and pdf(), which use a pre-determined outgoing direction
- */
-float3 sample1(inout BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf1, float2 random) {
-    // how often is this being called = can we precompute this in the RT hit shader?
-    // this is only being called once, so yes, we can compute this in the material shader :)
-    rec.wo = bsdf.sampledWo;
-    rec.sampledType = bsdf.sampledType;
-    pdf1 = bsdf.sampledPdf;
-    return bsdf.sampledColor;
 }
 
 /// Samples a direction according to the BSDF at the given ray position.
@@ -1082,7 +1101,6 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 #endif
 
         // Construct the offset paths and evaluate emitter hits.
-
         for (int i = 0; i < secondaryCount; i++) {
 
             Spectrum shiftedEmitterRadiance = 0.0;
@@ -1148,8 +1166,8 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                     mainContribution = main.throughput * mainEmitterRadiance;
                     shiftedContribution = shiftedRays[i].throughput * shiftedEmitterRadiance; // Note: Jacobian baked into .throughput.
                 } else {
-                    // Not connected - apply either reconnection or half-vector duplication shift.
 
+                    // Not connected - apply either reconnection or half-vector duplication shift.
                     BSDF shiftedBSDF = getBSDF(shiftedRays[i].rRec.its, shiftedRays[i].ray);
 
                     // Update the vertex type of the offset path.
@@ -1548,7 +1566,6 @@ void SurfelGPT() {
             shiftedRays[i].ray.maxt = startDist1 * 2.0;
 			shiftedRays[i].throughput = float3(1,1,1);
 			shiftedRays[i].rRec = rRec;
-			shiftedRays[i].rRec.its = rRec.its;
 		}
 
         float3 veryDirect = 0;
@@ -1559,15 +1576,16 @@ void SurfelGPT() {
         // todo divide by color of first hit...
         // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
         // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
-        // todo why is everything black even though we definitely have a sky?
         float weight = mainRay.pdf;
-        surfel.color += float4((mainRay.radiance + veryDirect) * weight, weight); // is it correct to add veryDirect here?
+        float3 color = mainRay.radiance + veryDirect;
+        // todo how can weight or color be negative???
+        if(all(color >= 0.0) && weight >= 0) surfel.color += float4(color, weight); // is it correct to add veryDirect here?
         float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient) / distance;
         float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient) / distance;
 		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
 		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
-        surfel.colorDx += float4(gradientDX * weight, weight);
-        surfel.colorDz += float4(gradientDZ * weight, weight);
+        surfel.colorDx += float4(gradientDX, weight);
+        surfel.colorDz += float4(gradientDZ, weight);
 
         hasChanged = true;
 

@@ -15,6 +15,7 @@
 #define DeltaEpsilon 1e-3
 #define Infinity 1e38
 #define INV_PI 0.3183098861837907
+#define INV_SQRT2 0.7071067811865475
 
 #define Frame float4
 
@@ -27,7 +28,8 @@ float3 Frame_n(const Frame f){
 }
 
 float3 reflect(float3 v){
-	return reflect(v, float3(0,0,1));
+	// return reflect(v, float3(0,0,1));
+	return float3(-v.xy,v.z);
 }
 
 float3 refract(float3 v, float n){
@@ -46,6 +48,14 @@ float Frame_cosTheta2(const float3 v) {
 
 float Frame_sinTheta(const float3 v) {
     return sqrt(max(0, Frame_sinTheta2(v)));
+}
+
+float Frame_sinPhi(const float3 v) {
+    return v.y/Frame_sinTheta(v);
+}
+
+float Frame_cosPhi(const float3 v) {
+    return v.x/Frame_sinTheta(v);
 }
 
 float Frame_tanTheta(const float3 v) {
@@ -119,28 +129,6 @@ Float erf(Float x) {
 
 	return sign1*y;
 }
-
-// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
-
-enum MicrofacetType: int {
-	Beckmann = 0, // Beckmann distribution derived from Gaussian random surfaces
-	GGX = 1, // GGX: Long-tailed distribution for very rough surfaces (aka. Trowbridge-Reitz distr.)
-	Phong = 2, // Phong distribution (with the anisotropic extension by Ashikhmin and Shirley)
-};
-
-enum MaterialType {
-	// metalls
-	CONDUCTOR,
-	// rough metalls, e.g. brushed
-	ROUGH_CONDUCTOR,
-	// diffuse materials like wood
-	DIFFUSE,
-	ROUGH_DIFFUSE,
-	// transparent materials like glass
-	DIELECTRIC,
-	ROUGH_DIELECTRIC,
-	PLASTIC,
-};
 
 // Compute the interpolated roughness for the Phong model
 Float interpolatePhongExponent(bool isotropic, float m_exponentU, float m_exponentV, const Vector v) {
