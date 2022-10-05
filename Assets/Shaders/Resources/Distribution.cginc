@@ -12,6 +12,7 @@
 #define RCPOVERFLOW 2.93873587705571876e-39
 #define SQRT_PI_INV 0.5641895835477563
 #define Epsilon 1e-4
+#define DeltaEpsilon 1e-3
 #define Infinity 1e38
 #define INV_PI 0.3183098861837907
 
@@ -23,6 +24,14 @@ float Frame_cosTheta(const float3 v) {
 
 float3 Frame_n(const Frame f){
 	return quatRot(float3(0,0,1), f); // z component; column
+}
+
+float3 reflect(float3 v){
+	return reflect(v, float3(0,0,1));
+}
+
+float3 refract(float3 v, float n){
+	return refract(v, float3(0,0,1), n);
 }
 
 float Frame_sinTheta2(const float3 v) {// sin(theta)²
@@ -117,6 +126,20 @@ enum MicrofacetType: int {
 	Beckmann = 0, // Beckmann distribution derived from Gaussian random surfaces
 	GGX = 1, // GGX: Long-tailed distribution for very rough surfaces (aka. Trowbridge-Reitz distr.)
 	Phong = 2, // Phong distribution (with the anisotropic extension by Ashikhmin and Shirley)
+};
+
+enum MaterialType {
+	// metalls
+	CONDUCTOR,
+	// rough metalls, e.g. brushed
+	ROUGH_CONDUCTOR,
+	// diffuse materials like wood
+	DIFFUSE,
+	ROUGH_DIFFUSE,
+	// transparent materials like glass
+	DIELECTRIC,
+	ROUGH_DIELECTRIC,
+	PLASTIC,
 };
 
 // Compute the interpolated roughness for the Phong model
@@ -488,6 +511,37 @@ Spectrum fresnelConductorExact(Float cosThetaI, const Spectrum eta, const Spectr
 	Spectrum Rp2 = Rs2 * (term3 - term4) / (term3 + term4);
 
 	return 0.5 * (Rp2 + Rs2);
+}
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp
+Float fresnelDielectricExt(Float cosThetaI_, out Float cosThetaT_, Float eta) {
+	if (eta == 1.0) {// rare special case
+		cosThetaT_ = -cosThetaI_;
+		return 0.0;
+	}
+
+	/* Using Snell's law, calculate the squared sine of the
+	   angle between the normal and the transmitted ray */
+	Float scale = (cosThetaI_ > 0.0) ? 1.0 / eta : eta;
+	Float cosThetaTSqr = 1.0 - (1.0-cosThetaI_*cosThetaI_) * (scale*scale);
+
+	/* Check for total internal reflection */
+	if (cosThetaTSqr <= 0.0) {
+		cosThetaT_ = 0.0;
+		return 1.0;
+	}
+
+	/* Find the absolute cosines of the incident/transmitted rays */
+	Float cosThetaI = abs(cosThetaI_);
+	Float cosThetaT = sqrt(cosThetaTSqr);
+
+	Float Rs = (cosThetaI - eta * cosThetaT) / (cosThetaI + eta * cosThetaT);
+	Float Rp = (eta * cosThetaI - cosThetaT) / (eta * cosThetaI + cosThetaT);
+
+	cosThetaT_ = (cosThetaI_ > 0.0) ? -cosThetaT : cosThetaT;
+
+	/* No polarization -- return the unpolarized reflectance */
+	return 0.5 * (Rs * Rs + Rp * Rp);
 }
 
 

@@ -53,7 +53,7 @@
 				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
 				float3 objectNormal = normalize(vertex.normalOS);
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal));
-				rayPayload.geoFrame = normalToQuaternionZ(worldNormal);
+				rayPayload.geoFrame = normalToFrame(worldNormal);
 				rayPayload.shFrame = rayPayload.geoFrame;
 
 				// do we need wi, wo?

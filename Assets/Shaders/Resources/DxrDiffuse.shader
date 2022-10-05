@@ -121,7 +121,7 @@
 				float3 reflection = normalize(reflectDir + roughness * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
-				float wiCosTheta = abs(dot(rayDir, worldNormal));
+				float wiCosTheta = dot(rayDir, worldNormal);
 
 				rayPayload.pos = worldPos;
 				rayPayload.dir = scatterRayDir;
@@ -146,16 +146,16 @@
 
 				// define geoFrame and shFrame;
 				// the function is defined to make y = up, but for Mitsuba, we need z = up, so we swizzle it
-				rayPayload.geoFrame = normalToQuaternionZ(surfaceWorldNormal);
-				rayPayload.shFrame = normalToQuaternionZ(worldNormal);
+				rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
+				rayPayload.shFrame = normalToFrame(worldNormal);
 
 				MicrofacetType type = Beckmann;
 				float alphaU = roughness, alphaV = roughness;
 				// what is a good value for the exponent?
 				float exponentU = 100.0, exponentV = exponentU; // used by Phong model
 
-				float3 wi = quatRotInv(rayDir, rayPayload.shFrame);
-				float cosThetaWi = abs(dot(rayDir, worldNormal));
+				float3 wi = -quatRotInv(rayDir, rayPayload.shFrame);
+				float cosThetaWi = -dot(rayDir, worldNormal);
 				if(_Metallic > 0.5){
 					// conductor
 					float eta = 1.5;
@@ -229,11 +229,13 @@
 						rayPayload.bsdf.eta = 1.0;
 					} else {
 
+						// todo rough diffuse... (that one is a lot of code..)
+
 						rayPayload.bsdf.numComponents = 1;
 						rayPayload.bsdf.components[0].type = EGlossyReflection;
 						rayPayload.bsdf.components[0].roughness = Infinity;// why?
 						// rayPayload.bsdf.color = color * (INV_PI * Frame_cosTheta(wo))
-						rayPayload.bsdf.pdf = squareToCosineHemispherePdf(rayPayload.queriedWo)
+						rayPayload.bsdf.pdf = squareToCosineHemispherePdf(rayPayload.queriedWo);
 						
 						rayPayload.bsdf.sampledType = EGlossyReflection;
 						rayPayload.bsdf.sampledWo = squareToCosineHemisphere(rayPayload.seed);
@@ -241,8 +243,6 @@
 						// rayPayload.bsdf.sampledColor = roughDiffuseEval() / rayPayload.bsdf.sampledPdf;
 						rayPayload.bsdf.eta = 1.0;
 					}
-
-					// todo rough diffuse... (that one is a lot of code..)
 
 				}
 

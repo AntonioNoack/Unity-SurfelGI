@@ -263,6 +263,8 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     // default values for bsdf
     rayPayload.bsdf.eta = 1.0;
     rayPayload.bsdf.numComponents = 0;
+    rayPayload.bsdf.pdf = 1.0;
+    rayPayload.queriedWo = its.wo;
 
     TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
@@ -275,7 +277,9 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     its.isValid = !sky;
     its.geoFrame = rayPayload.geoFrame;
     its.shFrame = rayPayload.shFrame;
-    its.wi = toLocal(its, ray.d);
+    // wi is defined as being negative:
+    // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/skdtree.h#L427
+    its.wi = toLocal(its, -ray.d);
     its.wo = rayPayload.bsdf.sampledWo;
     its.isEmitter = dot2(rayPayload.emissive) > 0;
     its.emission = rayPayload.emissive;
@@ -420,7 +424,7 @@ bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
     rec.d = ray.d;
     rec.dist = rec.its.t;
     rec.pdf = rec.its.bsdf.sampledPdf;
-    return false;
+    return true;
 }
 
 DirectSamplingRecord createDirectSamplingRecord(const Intersection its){
@@ -694,6 +698,8 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	return result;
 }
 
+#define SURFELS_ONLY
+
 /// Constructs a sequence of base paths and shifts them into offset paths, evaluating their throughputs and differences.
 /// This is the core of the rendering algorithm.
 bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryCount, inout Spectrum out_veryDirect) {
@@ -707,9 +713,12 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // First hit is not in the scene so can't continue. Also there there are no paths to shift.
 
         // Add potential very direct light from the environment as gradients are not used for that.
+        // Removed for surfels, as this will be ignored anyway
+        #ifndef SURFELS_ONLY
         if (main.rRec.type & EEmittedRadiance) {
             out_veryDirect += main.throughput * evalEnvironment(main.ray);
         }
+        #endif
 
         //SLog(EInfo, "Main ray(%d): First hit not in scene.", rayCount);
         // false, because not allowed for surfels: the first ray must hit!
@@ -717,12 +726,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
     }
 
     // Perform the same first ray intersection for the offset paths.
-    for (int i = 0; i < secondaryCount; ++i) {
-        float3 delta = main.rRec.its.p - shiftedRays[i].ray.o;
-        float len = max(1e-9, length(delta));
-        shiftedRays[i].ray.d = delta / len;
-        shiftedRays[i].ray.mint = len * (1.0 - Epsilon);
-        shiftedRays[i].ray.maxt = len * (1.0 + Epsilon);
+    for (int i = 0; i < secondaryCount; i++) {
         rayIntersect(shiftedRays[i].rRec, shiftedRays[i].ray);
         shiftedRays[i].ray.mint = Epsilon;
         shiftedRays[i].ray.maxt = _Far;
@@ -732,27 +736,37 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
     // Include emitted radiance if requested.
     if (main.rRec.its.isEmitter && (main.rRec.type & EEmittedRadiance)) {
         out_veryDirect += main.throughput * Le(main.rRec.its, -main.ray.d);
-        // out_veryDirect += float3(1,0,0);// todo remove this, [debug]
-        // out_veryDirect += Frame_n(main.rRec.its.shFrame)*.5+.5;
-        // out_veryDirect += main.rRec.its.shFrame.xyz*.5+.5;
     }
 
     // If no intersection of an offset ray could be found, its offset paths can not be generated.
-    for (int i = 0; i < secondaryCount; ++i) {
+    for (int i = 0; i < secondaryCount; i++) {
         if (!shiftedRays[i].rRec.its.isValid) {
             shiftedRays[i].alive = false;
+            // can be used to debug how successful the first shifted rays are;
+            // in the original GPT, these rays were well defined to be at 1px offset, however with surfels,
+            // they can have varying directions and origins
+            // out_veryDirect.x++;
         }
     }
+
+    // todo remove this
+    // out_veryDirect += Frame_n(main.rRec.its.shFrame)*.5+.5;
+    // float f = dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi);
+    // out_veryDirect += f*.5+.5;
+    // if(f >= 0) out_veryDirect.z++;
+    // return true;
 
     // Strict normals check to produce the same results as bidirectional methods when normal mapping is used.
     if (m_strictNormals) {
         // If 'strictNormals'=true, when the geometric and shading normals classify the incident direction to the same side, then the main path is still good.
         if (dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi) >= 0) {
             // This is an impossible base path.
-            return true;
+            // this can also happen if the front side of the surfel cannot be seen from the camera
+            // out_veryDirect.z+=Frame_cosTheta(main.rRec.its.wi);
+            return false;
         }
 
-        for (int i = 0; i < secondaryCount; ++i) {
+        for (int i = 0; i < secondaryCount; i++) {
             if (dot(shiftedRays[i].ray.d, Frame_n(shiftedRays[i].rRec.its.geoFrame)) * Frame_cosTheta(shiftedRays[i].rRec.its.wi) >= 0) {
                 // This is an impossible offset path.
                 shiftedRays[i].alive = false;
@@ -760,19 +774,22 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         }
     }
 
+    // out_veryDirect.y++;
+
     // Main path tracing loop.
     main.rRec.depth = 1;
-    while (main.rRec.depth < m_maxDepth || m_maxDepth < 0) {
+    while (main.rRec.depth < m_maxDepth) {
 
         // Strict normals check to produce the same results as bidirectional methods when normal mapping is used.
         // If 'strictNormals'=true, when the geometric and shading normals classify the incident direction to the same side, then the main path is still good.
         if (m_strictNormals) {
             if (dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi) >= 0) {
                 // This is an impossible main path, and there are no more paths to shift.
+                // happens rarely; out_veryDirect.z++;
                 return true;
             }
 
-            for (int i = 0; i < secondaryCount; ++i) {
+            for (int i = 0; i < secondaryCount; i++) {
                 if (dot(shiftedRays[i].ray.d, Frame_n(shiftedRays[i].rRec.its.geoFrame)) * Frame_cosTheta(shiftedRays[i].rRec.its.wi) >= 0) {
                     // This is an impossible offset path.
                     shiftedRays[i].alive = false;
@@ -836,7 +853,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 // Strict normals check to produce the same results as bidirectional methods when normal mapping is used.
                 if (!m_strictNormals || dot(Frame_n(main.rRec.its.geoFrame), dRec.d) * Frame_cosTheta(mainBRec.wo) > 0) {
                     // The base path is good. Add radiance differences to offset paths.
-                    for (int i = 0; i < secondaryCount; ++i) {
+                    for (int i = 0; i < secondaryCount; i++) {
                         // Evaluate and apply the gradient.
 
                         Spectrum mainContribution = 0.0;
@@ -964,7 +981,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         addRadiance(shiftedRays[i], shiftedContribution, weight);
 #endif
                         addGradient(shiftedRays[i], shiftedContribution - mainContribution, weight);
-                    } // for(int i = 0; i < secondaryCount; ++i)
+                    } // for(int i = 0; i < secondaryCount; i++)
                 } // Strict normals
             }
         } // Sample incoming radiance from lights.
@@ -978,6 +995,9 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         if (mainBsdfResult.pdf <= 0.0) {
             // Impossible base path.
+            // e.g., can happen when there is no valid material
+            // remove after debugging
+            // out_veryDirect.x++;
             break;
         }
 
@@ -1016,7 +1036,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 mainDRec.p = main.rRec.its.p;
                 mainDRec.n = Frame_n(main.rRec.its.shFrame);
                 mainDRec.measure = ESolidAngle;// not specified -> default value
-                // mainDRec.uv = main.rRec.its.uv; // to do is this used anywhere? not that I'd know of
+                // mainDRec.uv = main.rRec.its.uv; // is this being used anywhere? not that I'd know of
                 mainDRec.d = main.ray.d;
                 mainDRec.dist = main.rRec.its.t;
 
@@ -1063,7 +1083,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         // Construct the offset paths and evaluate emitter hits.
 
-        for (int i = 0; i < secondaryCount; ++i) {
+        for (int i = 0; i < secondaryCount; i++) {
 
             Spectrum shiftedEmitterRadiance = 0.0;
             Spectrum mainContribution = 0.0;
@@ -1415,7 +1435,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 break;
 
             main.pdf *= q;
-            for (int i = 0; i < secondaryCount; ++i) {
+            for (int i = 0; i < secondaryCount; i++) {
                 shiftedRays[i].pdf *= q;
             }
         }
@@ -1483,27 +1503,28 @@ void SurfelGPT() {
         cosa, sina, distance, ray1Pos, ray2Pos);
 
     bool hasChanged = false;
+
+    RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
+    rRec.seed = seed;
+
     for (int j = 0; j < samplesPerSurfel; j++) {
 
         // go back a step
         float startDist = 0.1 * surfelSize;
         float3 origin = surfelPos - startDist * worldDir;
         float3 delta = surfelPos - _CameraPosition;
-        float3 direction = normalize(delta);
-        float tMin = startDist * 0.5;
-        float tMax = startDist * 2.0;
 
-        RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
-        rRec.seed = seed;
         rRec.type = ERadiance;
 
         RayState mainRay = (RayState) 0;
-        // fill in ray
+        // define first ray
         mainRay.ray.o = origin;
-        mainRay.ray.d = direction;
-        mainRay.ray.mint = tMin;
-        mainRay.ray.maxt = tMax;
+        mainRay.ray.d = normalize(delta);
+        // mint and maxt can be pretty exact, because we set the surfel exactly on the surface
+        mainRay.ray.mint = startDist * 0.9;
+        mainRay.ray.maxt = startDist * 1.1;
         mainRay.throughput = float3(1,1,1);
+        mainRay.pdf = 1.0;
 		mainRay.rRec = rRec;
 		mainRay.rRec.its = rRec.its;
 
@@ -1514,8 +1535,17 @@ void SurfelGPT() {
         shiftedRays[2].ray.o = surfelPos * 2 - ray1Pos;
         shiftedRays[3].ray.o = surfelPos * 2 - ray2Pos;
         
-        for(int i = 0; i < 4; ++i) {
-            // direction is defined in evaluate()
+        for(int i = 0; i < 4; i++) {
+            // define first ray for gradients
+            float startDist1 = 0.5 * surfelSize;
+            float3 surfelPos1 = shiftedRays[i].ray.o;
+            float3 origin1 = surfelPos1 - startDist1 * worldDir;
+            float3 delta1  = surfelPos1 - _CameraPosition;
+            shiftedRays[i].ray.o = origin1;
+            shiftedRays[i].ray.d = normalize(delta1);
+            // mint and maxt must account for a possible non-planar surface
+            shiftedRays[i].ray.mint = startDist1 * 0.5;
+            shiftedRays[i].ray.maxt = startDist1 * 2.0;
 			shiftedRays[i].throughput = float3(1,1,1);
 			shiftedRays[i].rRec = rRec;
 			shiftedRays[i].rRec.its = rRec.its;
@@ -1528,15 +1558,16 @@ void SurfelGPT() {
         // update surfel by main and shiftedRays
         // todo divide by color of first hit...
         // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
-        // todo can we confirm the weight is 1.0?
-        float weight = 1.0;
-        surfel.color += float4(mainRay.radiance + veryDirect, weight); // is it correct to add veryDirect here?
+        // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
+        // todo why is everything black even though we definitely have a sky?
+        float weight = mainRay.pdf;
+        surfel.color += float4((mainRay.radiance + veryDirect) * weight, weight); // is it correct to add veryDirect here?
         float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient) / distance;
         float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient) / distance;
 		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
 		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
-        surfel.colorDx += float4(gradientDX, weight);
-        surfel.colorDz += float4(gradientDZ, weight);
+        surfel.colorDx += float4(gradientDX * weight, weight);
+        surfel.colorDz += float4(gradientDZ * weight, weight);
 
         hasChanged = true;
 

@@ -41,6 +41,7 @@
 			#pragma raytracing test
 					   
 			#include "RTLib.cginc"
+			#include "Distribution.cginc"
 
 			float4 _Color;
 			float _Roughness;
@@ -59,15 +60,24 @@
 				return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
 			}
 
+			float3 evalDielectric(float3 wi, float3 wo){// returns Color * pdf
+				float cosThetaT;
+				float eta = _IoR;
+				float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, eta);
+				if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
+					if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect reflection, return 0
+					return _Color * F;
+				} else {
+					if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect refraction, return 0
+					float factor = cosThetaT < 0.0 ? 1.0/eta : eta;
+					return _Color * factor * factor * (1.0 - F);
+				}
+			}
+
 			[shader("closesthit")]
 			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
 				rayPayload.distance = RayTCurrent();
-				
-				// stop if we have reached max recursion depth
-				/*if(rayPayload.depth + 1 >= gMaxDepth) {
-					return;
-				}*/
 
 				// compute vertex data on ray/triangle intersection
 				IntersectionVertex currentvertex;
@@ -99,46 +109,83 @@
 				// get fresnel factor, it will be used as a probability of a refraction (vs reflection)
 				float refrProb = FresnelShlick(cosine, currentIoR);
 				// compute refraction vector
-				float3 refractionDir = ComputeRefractionDirection(rayDir, worldNormal, currentIoR);				
+				float3 refractionDir = ComputeRefractionDirection(rayDir, worldNormal, currentIoR);
+				float3 reflectionDir = reflect(rayDir, worldNormal);
 
+				float3 newDir = refractionDir;
 				// change refraction to reflection based on fresnel
 				if(nextRand(rayPayload.randomSeed) < refrProb) {
-					refractionDir = reflect(rayDir, worldNormal);
+					newDir = reflectionDir;
 				}
 
 				// perturb refraction/reflection to get frosted glass effect
-				refractionDir = normalize(refractionDir + randomVector * _Roughness);
-								
-				/*RayDesc rayDesc;
-				rayDesc.Origin = worldPos;
-				rayDesc.Direction = refractionDir;
-				rayDesc.TMin = 0.001;
-				rayDesc.TMax = 100;
-
-				// Create and init the ray payload
-				RayPayload scatterRayPayload;
-				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
-				scatterRayPayload.randomSeed = rayPayload.randomSeed;
-				scatterRayPayload.depth = rayPayload.depth + 1;
-				scatterRayPayload.withinGlassDepth = max(0, rayPayload.withinGlassDepth + (enteringGlass ? 1 : -1));
+				newDir = normalize(newDir + randomVector * _Roughness);
 				
-				// shoot refraction/reflection ray
-				// must not discard backfaces, if we are within glass
-				TraceRay(_RaytracingAccelerationStructure, 
-					scatterRayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-					RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
-				
-				rayPayload.color = rayPayload.depth == 0 ? 
-					scatterRayPayload.color :
-					_Color * scatterRayPayload.color;*/
-
 				rayPayload.withinGlassDepth = max(0, rayPayload.withinGlassDepth + (enteringGlass ? 1 : -1));
 
 				rayPayload.pos = worldPos;
-				rayPayload.dir = refractionDir;
+				rayPayload.dir = newDir;
 
 				if(rayPayload.depth > 0) {
 					rayPayload.color *= _Color;
+				}
+
+				//------------------------//
+				// define GPT class BSDF  //
+				//      (dielectric)      //
+				//------------------------//
+
+				float eta = _IoR;
+				rayPayload.geoFrame = normalToFrame(worldNormal);
+				rayPayload.shFrame = rayPayload.geoFrame;
+
+				float3 wi = -quatRotInv(rayDir, rayPayload.shFrame), wo = rayPayload.queriedWo;
+				float wiCosTheta = -dot(rayDir, worldNormal);
+
+				float2 sample1 = rayPayload.seed;
+				if(true || _Roughness < 0.01){
+					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
+					rayPayload.bsdf.components[0].type = EDeltaReflection;
+					rayPayload.bsdf.components[0].roughness = 0.0;
+					rayPayload.bsdf.components[1].type = EDeltaTransmission;
+					rayPayload.bsdf.components[1].roughness = 0.0;
+					rayPayload.bsdf.numComponents = 2;
+					float cosThetaT;
+					float F = fresnelDielectricExt(wiCosTheta, cosThetaT, eta);
+					if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
+						if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) rayPayload.bsdf.pdf = 0.0;// not close enough to ideal reflection
+						else rayPayload.bsdf.pdf = F;
+					} else {
+						if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) rayPayload.bsdf.pdf = 0.0;// not close enough to ideal refraction
+						else rayPayload.bsdf.pdf = 1.0-F;
+					}
+					// float cosThetaT;
+					F = fresnelDielectricExt(wiCosTheta, cosThetaT, eta);
+					if(sample1.x <= F){
+						rayPayload.bsdf.sampledType = EDeltaReflection;
+						rayPayload.bsdf.sampledWo = reflect(wi);
+						rayPayload.bsdf.eta = 1.0;
+						rayPayload.bsdf.sampledColor = evalDielectric(wi, rayPayload.bsdf.sampledWo);
+						rayPayload.bsdf.sampledPdf = F;
+					} else {
+						rayPayload.bsdf.sampledType = EDeltaTransmission;
+						rayPayload.bsdf.sampledWo = refract(wi, eta);
+						rayPayload.bsdf.eta = cosThetaT ? eta : 1.0 / eta;
+						float factor = cosThetaT < 0 ? 1.0 / eta : eta;// ERadiance = true
+						rayPayload.bsdf.sampledColor = _Color * (factor * factor);
+						rayPayload.bsdf.sampledPdf = 1.0-F;
+					}
+				} else {
+					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdielectric.cpp
+					// todo rough dielectric as well
+					// alpha (Beckmann): root mean square slope of microfacets; default: 0.1
+					// setting this to _Roughness [0,1] limits the values to a mean (RMS) slope of 45°, but that's probably fine
+					rayPayload.bsdf.components[0].roughness = _Roughness; // (alphaU+alphaV)/2
+					rayPayload.bsdf.components[0].type = EGlossyReflection;
+					rayPayload.bsdf.components[1].roughness = _Roughness;
+					rayPayload.bsdf.components[1].type = EGlossyTransmission;
+					rayPayload.bsdf.numComponents = 2;
+					rayPayload.bsdf.eta = _IoR;
 				}
 
 			}

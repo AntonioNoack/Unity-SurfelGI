@@ -39,9 +39,9 @@ float4 normalToQuaternion(float3 v1) {
     return normalToQuaternion(v0,v1,v2);
 }
 
-float4 normalToQuaternionZ(float3 v2) {
+float4 normalToFrame(float3 v2) {
     float3 v1 = dot(v2.xy, v2.xy) > 0.01 ? 
-        normalize(float3(v2.y, -v2.x, 0)) : float3(0,0,1);
+        normalize(float3(v2.y, -v2.x, 0)) : float3(1,0,0);
     float3 v0 = cross(v1, v2);
     return normalToQuaternion(v0,v1,v2);
 }
