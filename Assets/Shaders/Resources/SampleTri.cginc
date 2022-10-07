@@ -6,6 +6,8 @@
 
 bool FindEmissiveTriangle(float relativeIndex, out float3 rayOrigin, out float3 rayDirection, out float3 color, inout uint randomSeed) {	
 
+	if(_LightAccuArea <= 0.0) return false;
+
 	uint numTriangles, stride;
 	g_Triangles.GetDimensions(numTriangles, stride);
 

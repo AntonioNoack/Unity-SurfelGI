@@ -2,18 +2,29 @@
 #define MATERIAL_CGINC
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/conductor.cpp
-float3 Conductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float3 Conductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	// perfectly smooth conductor
+	if(measure != EDiscrete || 
+		Frame_cosTheta(rec.wi) <= 0.0 || 
+		Frame_cosTheta(rec.wo) <= 0.0 ||
+		abs(dot(reflect(rec.wi), rec.wo)-1.0) > DeltaEpsilon
+	) return 0;
 	float eta = 1.5;
 	float k = 0.0;
 	return bsdf.color * fresnelConductorExact(Frame_cosTheta(rec.wi), eta, k);
 }
 
-float Conductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float Conductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != EDiscrete || 
+		Frame_cosTheta(rec.wi) <= 0.0 || 
+		Frame_cosTheta(rec.wo) <= 0.0 ||
+		abs(dot(reflect(rec.wi), rec.wo)-1.0) > DeltaEpsilon
+	) return 0;
 	return abs(dot(reflect(rec.wi), rec.wo)-1.0) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
 }
 
-float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed){
+float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
+	if(Frame_cosTheta(rec.wi) <= 0.0) return 0;
 	rec.sampledType = EDeltaReflection;
 	rec.wo = reflect(rec.wi);
 	pdf = 1.0;
@@ -23,7 +34,10 @@ float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, 
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
-float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	MicrofacetType type = Beckmann;
 	float eta = 1.5;
 	float k = 0.0;
@@ -42,7 +56,10 @@ float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
 	return F * model;
 }
 
-float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	MicrofacetType type = Beckmann;
 	float eta = 1.5;
 	float k = 0.0;
@@ -53,20 +70,21 @@ float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
 	return distrEval(type, alphaU, alphaV, exponentU, exponentV, H) * distrSmithG1(type, alphaU, alphaV, wi, H) / (4.0 * Frame_cosTheta(wi));
 }
 
-float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed){
+float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
+	if(Frame_cosTheta(rec.wi) <= 0) return 0;
 	float pdf0;
 	float eta = 1.5;
 	float k = 0.0;
 	MicrofacetType type = Beckmann;
-	float3 wi = rec.wi, wo = rec.wo;
+	float3 wi = rec.wi;
 	float alphaU = bsdf.roughness, alphaV = alphaU;
 	float exponentU = 0, exponentV = exponentU;
 	float3 m = distrSample(type, alphaU, alphaV, exponentU, exponentV, wi, seed, pdf0);
-	rec.wo = reflect(wi, m);
+	rec.wo = -reflect(wi, m);// the definition in mitsuba is the negative of the HLSL definition
 	rec.sampledType = EGlossyReflection;
 	float weight = distrSmithG1(type, alphaU, alphaV, reflect(wi), m);
 	if(weight > 0) {
-		pdf = pdf0 / (4.0 * dot(wo, m));
+		pdf = pdf0 / (4.0 * dot(rec.wo, m));
 		return bsdf.color * (pdf0 * fresnelConductorExact(dot(wi, m), eta, k));
 	} else {
 		pdf = 0;
@@ -75,15 +93,22 @@ float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float 
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp
-float3 Diffuse_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float3 Diffuse_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	return bsdf.color * INV_PI * Frame_cosTheta(rec.wo);
 }
 
-float Diffuse_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
+float Diffuse_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	return squareToCosineHemispherePdf(rec.wo);
 }
 
-float3 Diffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed){
+float3 Diffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
+	if(Frame_cosTheta(rec.wi) <= 0) return 0;
 	rec.sampledType = EDiffuseReflection;
 	rec.wo = squareToCosineHemisphere(seed);
 	pdf = squareToCosineHemispherePdf(rec.wo);
@@ -91,8 +116,10 @@ float3 Diffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, fl
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
-float3 RoughDiffuse_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
-	if(measure != ESolidAngle) return 0;
+float3 RoughDiffuse_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	float conversionFactor = INV_SQRT2;
 	float sigma = bsdf.roughness * conversionFactor;
 	float sigma2 = sigma*sigma;
@@ -124,12 +151,15 @@ float3 RoughDiffuse_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
 	return bsdf.color * (INV_PI * Frame_cosTheta(rec.wo) * (A + B * max(cosPhiDiff, 0.0) * sinAlpha * tanBeta));
 }
 
-float RoughDiffuse_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
-	if(measure != ESolidAngle) return 0;
+float RoughDiffuse_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+	if(measure != ESolidAngle || 
+		Frame_cosTheta(rec.wi) <= 0 || 
+		Frame_cosTheta(rec.wo) <= 0) return 0;
 	return squareToCosineHemispherePdf(rec.wo);
 }
 
-float3 RoughDiffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed){
+float3 RoughDiffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
+	if(Frame_cosTheta(rec.wi) <= 0) return 0;
 	rec.wo = squareToCosineHemisphere(seed);
 	rec.sampledType = EGlossyReflection;
 	return RoughDiffuse_eval(bsdf, rec, ESolidAngle) / squareToCosineHemispherePdf(rec.wo);

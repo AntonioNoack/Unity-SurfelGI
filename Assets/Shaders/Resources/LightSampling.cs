@@ -241,14 +241,15 @@ public class LightSampling : MonoBehaviour {
         lightAccuArea = accuArea;
         lightSampleStrength = totalEmission * 0.5f;
 
-        if(emissiveTriangles == null || emissiveTriangles.count != tris.Length){
+        if(emissiveTriangles == null || emissiveTriangles.count != Mathf.Max(1, tris.Length)){
             if(emissiveTriangles != null) emissiveTriangles.Release();
-            emissiveTriangles = new ComputeBuffer(tris.Length, UnsafeUtility.SizeOf<EmissiveTriangle>());
+            // size must not be zero, why ever 🙄
+            emissiveTriangles = new ComputeBuffer(Mathf.Max(1, tris.Length), UnsafeUtility.SizeOf<EmissiveTriangle>());
         }
 
         Debug.Log("sizeof(EmissiveTriangle) = "+UnsafeUtility.SizeOf<EmissiveTriangle>());
         // save all triangles to compute buffer
-        emissiveTriangles.SetData(tris);
+        if(tris.Length > 0) emissiveTriangles.SetData(tris);
 
         if(enableSky){
             var shader = skyToTris;

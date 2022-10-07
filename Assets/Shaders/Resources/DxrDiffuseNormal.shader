@@ -36,6 +36,7 @@
 			#pragma raytracing test
 					   
 			#include "RTLib.cginc"
+			#include "Distribution.cginc"
 
 			int _StartDepth;
 
@@ -72,31 +73,34 @@
 				float3 scatterRayDir = normalize(worldNormal + randomVector);
 				float3 _Color = worldNormal * 0.5 + 0.5;
 
-				/*RayDesc rayDesc;
-				rayDesc.Origin = worldPos;
-				rayDesc.Direction = scatterRayDir;
-				rayDesc.TMin = 0.001;
-				rayDesc.TMax = 100;
-
-				// Create and init the scattered payload
-				RayPayload scatterRayPayload;
-				scatterRayPayload.color = float3(0.0, 0.0, 0.0);
-				scatterRayPayload.randomSeed = rayPayload.randomSeed;
-				scatterRayPayload.depth = rayPayload.depth + 1;				
-
-				// shoot scattered ray
-				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, scatterRayPayload);
-				
-				rayPayload.color = rayPayload.depth == 0 ? 
-					scatterRayPayload.color :
-					_Color * scatterRayPayload.color;*/
-
 				rayPayload.pos = worldPos;
 				rayPayload.dir = scatterRayDir;
 
 				if(rayPayload.depth > 0){
 					rayPayload.color *= _Color;
 				}
+
+				// define GPT material parameters
+
+				// microfacet distribution; visible = true (distr of visible normals)
+				// there are multiple types... which one do we choose? Beckmann, GGX, Phong
+				// alphaU, alphaV = roughnesses in tangent and bitangent direction
+				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
+
+				// define geoFrame and shFrame;
+				// the function is defined to make y = up, but for Mitsuba, we need z = up, so we swizzle it
+				rayPayload.geoFrame = normalToFrame(worldNormal);
+				rayPayload.shFrame = rayPayload.geoFrame;
+
+				rayPayload.bsdf.roughness = 1.0;
+				rayPayload.bsdf.color = _Color;
+
+				// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
+				rayPayload.bsdf.components[0].type = EGlossyReflection;
+				rayPayload.bsdf.components[0].roughness = Infinity;// why?
+				rayPayload.bsdf.numComponents = 1;
+				rayPayload.bsdf.materialType = DIFFUSE;
+				
 			}			
 
 			ENDHLSL

@@ -34,12 +34,15 @@ float3 SampleSky(float3 dir) {
 #define D_EPSILON 1e-14
 // #define Epsilon 1e-4
 
-#define m_strictNormals true
+#define m_strictNormals false
 // depth to begin russian roulette
 #define m_rrDepth 5
 // min, max "recursive" depth
 #define m_minDepth 0
 #define m_maxDepth 8
+
+// If defined, uses only the central sample for the throughput estimate. Otherwise uses offset paths for estimating throughput too.
+// #define CENTRAL_RADIANCE
 
 // Specifies the roughness threshold for classifying materials as 'diffuse', in contrast to 'specular', 
 // for the purposes of constructing paths pairs for estimating pixel differences. This value should usually be somewhere between 0.0005 and 0.01. 
@@ -130,6 +133,7 @@ struct Intersection {
     BSDF bsdf;
     // idc
     float time;
+    uint randomSeed;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/integrator.h
@@ -140,7 +144,6 @@ struct RadianceQueryRecord {
     float alpha;
     float dist;
     int extra; // internal flag
-    uint seed;
 };
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/integrators/gpt/gpt.cpp
@@ -260,6 +263,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     // default values for bsdf
     rayPayload.bsdf.eta = 1.0;
     rayPayload.bsdf.numComponents = 0;
+    rayPayload.randomSeed = its.randomSeed;
     // rayPayload.bsdf.pdf = 1.0;
     // rayPayload.queriedWo = its.wo;
 
@@ -274,6 +278,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     its.isValid = !sky;
     its.geoFrame = rayPayload.geoFrame;
     its.shFrame = rayPayload.shFrame;
+    its.randomSeed = rayPayload.randomSeed;
     // wi is defined as being negative:
     // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/skdtree.h#L427
     its.wi = toLocal(its, -ray.d);
@@ -285,7 +290,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
         its.bsdf.type |= its.bsdf.components[i].type;
     }
 
-	return !sky;
+	return its.isValid;
 }
 
 bool rayIntersect(inout RadianceQueryRecord rec, Ray ray){
@@ -420,7 +425,7 @@ StructuredBuffer<Triangle> g_Triangles;
 
 #include "SampleTri.cginc"
 
-void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible){
+void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible) {
     // todo do we need to write more information?
     float relativeIndex = random.x * _LightAccuArea;
     emitterRadiance = 0;
@@ -454,7 +459,7 @@ bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
     rec.measure = ((rec.its.bsdf.components[0].type & ESmooth) != 0) ? ESolidAngle : EDelta;
     rec.d = ray.d;
     rec.dist = rec.its.t;
-    // todo is this correct
+    // todo is this correct?
     rec.pdf = 1.0; // rec.its.bsdf.sampledPdf;
     return true;
 }
@@ -491,11 +496,11 @@ float3 Le(Intersection its, float3 dir){
 }
 
 float nextSample1D(inout RadianceQueryRecord r){
-    return nextRand(r.seed);
+    return nextRand(r.its.randomSeed);
 }
 
 float2 nextSample2D(inout RadianceQueryRecord r){
-    return float2(nextRand(r.seed),nextRand(r.seed));
+    return float2(nextRand(r.its.randomSeed),nextRand(r.its.randomSeed));
 }
 
 bool testEnvironmentVisibility(Ray ray) {
@@ -704,6 +709,7 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	// Sample BSDF * cos(theta).
 	BSDFSampleResult result = (BSDFSampleResult) 0;
 	result.bRec.its = rayState.rRec.its;
+    result.bRec.wi = toLocal(rayState.rRec.its.shFrame, -rayState.ray.d);
     // extra sampler for some BSDFs; according to
     // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h, line 126,
     // this can improve the quality; all this does is generating random numbers
@@ -768,7 +774,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         }
     }
 
-    // todo remove this
+    // for debugging
     // out_veryDirect += Frame_n(main.rRec.its.shFrame)*.5+.5;
     // float f = dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi);
     // out_veryDirect += f*.5+.5;
@@ -793,6 +799,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         }
     }
 
+    // for debugging
     // out_veryDirect.y++;
 
     // Main path tracing loop.
@@ -804,7 +811,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         if (m_strictNormals) {
             if (dot(main.ray.d, Frame_n(main.rRec.its.geoFrame)) * Frame_cosTheta(main.rRec.its.wi) >= 0) {
                 // This is an impossible main path, and there are no more paths to shift.
-                // happens rarely; out_veryDirect.z++;
+                // happens rarely;
                 return true;
             }
 
@@ -1015,16 +1022,13 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         if (mainBsdfResult.pdf <= 0.0) {
             // Impossible base path.
             // e.g., can happen when there is no valid material
-            // remove after debugging
-            // out_veryDirect.x++;
             break;
         }
 
         const Vector mainWo = toWorld(main.rRec.its, mainBsdfResult.bRec.wo);
 
         // Prevent light leaks due to the use of shading normals.
-        float mainWoDotGeoN = dot(Frame_n(main.rRec.its.geoFrame), mainWo);
-        if (m_strictNormals && mainWoDotGeoN * Frame_cosTheta(mainBsdfResult.bRec.wo) <= 0) {
+        if (m_strictNormals && dot(Frame_n(main.rRec.its.geoFrame), mainWo) * Frame_cosTheta(mainBsdfResult.bRec.wo) <= 0) {
             break;
         }
 
@@ -1077,6 +1081,9 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             mainNextVertexType = VERTEX_TYPE_DIFFUSE;
 
         }
+
+        // todo remove
+        // out_veryDirect.g++;
 
         // Continue the shift.
         float mainBsdfPdf = mainBsdfResult.pdf;
@@ -1402,7 +1409,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                             // Could have used it, but so far there has been no need. It doesn't seem to be very useful.
                             weight = 1.0 / main.pdf;
                             mainContribution = main.throughput * mainEmitterRadiance;
-                            shiftedContribution = float3(0, 0, 0);
+                            shiftedContribution = 0;
 
                             // Disable the failure detection below since the failure was already handled.
                             shiftedRays[i].alive = true;
@@ -1418,7 +1425,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 // The offset path cannot be generated; Set offset PDF and offset throughput to zero.
                 weight = mainWeightNumerator / (D_EPSILON + mainWeightDenominator);
                 mainContribution = main.throughput * mainEmitterRadiance;
-                shiftedContribution = float3(0, 0, 0);
+                shiftedContribution = 0;
             }
 
             // Note: Using also the offset paths for the throughput estimate, like we do here, provides some advantage when a large reconstruction alpha is used,
@@ -1438,7 +1445,8 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
         // Stop if the base path hit the environment.
         main.rRec.type = ERadianceNoEmission;
-        if (!main.rRec.its.isValid || !(main.rRec.type & EIndirectSurfaceRadiance)) {
+        // second branch is uncommented, because it is always false
+        if (!main.rRec.its.isValid/* || !(main.rRec.type & EIndirectSurfaceRadiance)*/) {
             break;
         }
 
@@ -1523,7 +1531,7 @@ void SurfelGPT() {
     bool hasChanged = false;
 
     RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
-    rRec.seed = seed;
+    rRec.its.randomSeed = seed;
 
     for (int j = 0; j < samplesPerSurfel; j++) {
 

@@ -146,7 +146,7 @@
 
 				if(_ShowIllumination) {
 					ill /= ill.w;
-					return float4(HDR_to_LDR(ill.xyz), 1.0);
+					return float4(HDR_to_LDR(ill.xyz * _Exposure), 1.0);
 				}
 
 				float3 rayDir = normalize(quatRot(float3((uv - 0.5) * _CameraScale.xy, 1.0), _CameraRotation));

@@ -8,7 +8,6 @@
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
 		_BumpMap("Normal Map", 2D) = "bump" {}
-		_EnableLSRT("Enable LSRT", Range(0, 1)) = 0.0
 	}
 	SubShader {
 		
@@ -121,8 +120,6 @@
 				float3 reflection = normalize(reflectDir + roughness * randomVector);
 				if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 
-				float wiCosTheta = dot(rayDir, worldNormal);
-
 				rayPayload.pos = worldPos;
 				rayPayload.dir = scatterRayDir;
 
@@ -137,7 +134,6 @@
 				}
 
 				// define GPT material parameters
-				// todo best define materials, that are customized to Mitsuba...
 
 				// microfacet distribution; visible = true (distr of visible normals)
 				// there are multiple types... which one do we choose? Beckmann, GGX, Phong
@@ -149,7 +145,6 @@
 				rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
 				rayPayload.shFrame = normalToFrame(worldNormal);
 
-				MicrofacetType type = Beckmann;
 				float alphaU = roughness, alphaV = roughness;
 				// what is a good value for the exponent?
 				float exponentU = 100.0, exponentV = exponentU; // used by Phong model
@@ -157,13 +152,9 @@
 				rayPayload.bsdf.roughness = roughness;
 				rayPayload.bsdf.color = color;
 
-				float3 wi = -quatRotInv(rayDir, rayPayload.shFrame);
-				float cosThetaWi = -dot(rayDir, worldNormal);
-				if(_Metallic > 0.5){
-					// conductor
-					float eta = 1.5;
-					float k = 0.0;
-					if(roughness > 0.001) {
+				if(_Metallic > nextRand(rayPayload.randomSeed)){
+					// metallic, conductor material
+					if(roughness > 0.01) {
 						// rough conductor
 						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
 						rayPayload.bsdf.components[0].type = EGlossyReflection;
@@ -180,20 +171,20 @@
 					}
 				} else {
 					// diffuse material
-					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
 					if(roughness < 0.01){
+						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp
 						rayPayload.bsdf.components[0].type = EDiffuseReflection;
 						rayPayload.bsdf.components[0].roughness = Infinity;
 						rayPayload.bsdf.numComponents = 1;
 						rayPayload.bsdf.materialType = ROUGH_DIFFUSE;
 					} else {
+						// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
 						rayPayload.bsdf.components[0].type = EGlossyReflection;
 						rayPayload.bsdf.components[0].roughness = Infinity;// why?
 						rayPayload.bsdf.numComponents = 1;
 						rayPayload.bsdf.materialType = DIFFUSE;
 					}
 				}
-
 			}
 
 			ENDHLSL
@@ -228,8 +219,6 @@
 
 			float _EnableRayDifferentials;
 			float3 _CameraPos;
-
-			float _EnableLSRT;
 
 			float bdrfDensityB(float dot, float roughness) {// basic bdrf density: how likely a ray it to hit with that normal on that surface roughness
 				// abs(d)*d is used instead of d*d to give backside-rays 0 probability
