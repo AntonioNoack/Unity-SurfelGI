@@ -72,6 +72,8 @@
 				// transform normal to world space
 				float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
 				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
+				float3 worldTangent = normalize(mul(objectToWorld, currentvertex.tangentOS));
+				float3 worldBitangent = normalize(cross(worldNormal, worldTangent));
 
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
@@ -124,10 +126,11 @@
 				float eta = _IoR;
 				rayPayload.bsdf.eta = _IoR;
 				rayPayload.bsdf.color = _Color;
-				rayPayload.geoFrame = normalToFrame(worldNormal);
+				rayPayload.bsdf.roughness = _Roughness;
+				rayPayload.geoFrame = tbnToFrame(worldTangent, worldBitangent, worldNormal);
 				rayPayload.shFrame = rayPayload.geoFrame;
 
-				if(true || _Roughness < 0.01){
+				if(_Roughness < 0.01){
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
 					rayPayload.bsdf.components[0].type = EDeltaReflection;
 					rayPayload.bsdf.components[0].roughness = 0.0;
@@ -136,7 +139,6 @@
 					rayPayload.bsdf.numComponents = 2;
 				} else {
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdielectric.cpp
-					// todo rough dielectric as well
 					// alpha (Beckmann): root mean square slope of microfacets; default: 0.1
 					// setting this to _Roughness [0,1] limits the values to a mean (RMS) slope of 45°, but that's probably fine
 					rayPayload.bsdf.components[0].roughness = _Roughness; // (alphaU+alphaV)/2

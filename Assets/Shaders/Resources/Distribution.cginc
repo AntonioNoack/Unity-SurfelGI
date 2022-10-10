@@ -36,6 +36,13 @@ float3 refract(float3 v, float n){
 	return refract(v, float3(0,0,1), n);
 }
 
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp#L774
+float refract(float3 wi, float3 n, float eta, float cosThetaT){
+	if(cosThetaT < 0) eta = 1.0 / eta;
+	return n * (dot(wi, n) * eta + cosThetaT) - wi * eta;
+}
+
+
 float Frame_sinTheta2(const float3 v) {// sin(theta)²
 	float c = Frame_cosTheta(v);
     return 1.0-c*c;
@@ -161,7 +168,8 @@ Float distrEval(
 	MicrofacetType m_type,
 	float m_alphaU, float m_alphaV, 
 	float m_exponentU, float m_exponentV,
-	const float3 m ) {
+	const float3 m
+) {
 	if (Frame_cosTheta(m) <= 0)
 		return 0.0;
 
@@ -532,6 +540,10 @@ Float fresnelDielectricExt(Float cosThetaI_, out Float cosThetaT_, Float eta) {
 	return 0.5 * (Rs * Rs + Rp * Rp);
 }
 
+Float fresnelDielectricExt(Float cosThetaI_, Float eta) {
+	Float cosThetaT_;
+	return fresnelDielectricExt(cosThetaI_, cosThetaT_, eta);
+}
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/core/warp.h
 Float squareToCosineHemispherePdf(const Vector d){ return INV_PI * Frame_cosTheta(d); }

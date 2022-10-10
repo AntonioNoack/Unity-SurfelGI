@@ -18,7 +18,6 @@ int _SPP, _RPS;
 
 [shader("raygeneration")]
 void PixelGI() {
-	// start one ray per pixel
 
 	// current pixel
 	uint2 dispatchIdx = DispatchRaysIndex().xy;
@@ -85,7 +84,7 @@ void PixelGI() {
 	}
 
 	// store result
-	_DxrTarget[dispatchIdx] = float4(color, samplesPerPixel);	
+	_DxrTarget[dispatchIdx] = float4(color, samplesPerPixel);
 }
 
 SamplerState _LinearClamp;

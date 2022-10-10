@@ -46,4 +46,8 @@ float4 normalToFrame(float3 v2) {
     return normalToQuaternion(v0,v1,v2);
 }
 
+float4 tbnToFrame(float3 v0, float3 v1, float3 v2) {
+    return normalToQuaternion(v0,v1,v2);
+}
+
 #endif // COMMON_CGING
