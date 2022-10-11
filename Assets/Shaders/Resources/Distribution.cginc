@@ -27,17 +27,37 @@ float3 Frame_n(const Frame f){
 	return quatRot(float3(0,0,1), f); // z component; column
 }
 
-float3 reflect(float3 v){
+float3 reflect1(float3 v){
 	// return reflect(v, float3(0,0,1));
 	return float3(-v.xy,v.z);
 }
 
-float3 refract(float3 v, float n){
-	return refract(v, float3(0,0,1), n);
+float3 reflect1(float3 wi, float3 m){
+	return 2.0 * dot(wi, m) * m - wi;
+}
+
+/*float3 refract1(float3 v, float n){
+	return refract1(v, float3(0,0,1), n);
+}*/
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp
+float3 refract1(float3 wi, float3 n, float eta){
+	if(eta == 1.0) return -wi;
+	float cosThetaI = dot(wi, n);
+	if(cosThetaI > 0) eta = 1.0 / eta;
+	float cosThetaTSqr = 1.0 - (1.0 - cosThetaI*cosThetaI) * (eta*eta);
+	if(cosThetaTSqr <= 0) return 0;
+	return n * (cosThetaI * eta - sign(cosThetaI) * sqrt(cosThetaTSqr)) - wi * eta;
+}
+
+// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
+float3 refract1Dielectric(float3 wi, float cosThetaT, float eta){
+	float scale = -(cosThetaT < 0.0 ? 1.0 / eta : eta);
+	return float3(scale*wi.xy, cosThetaT);
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp#L774
-float refract(float3 wi, float3 n, float eta, float cosThetaT){
+float refract1(float3 wi, float3 n, float eta, float cosThetaT){
 	if(cosThetaT < 0) eta = 1.0 / eta;
 	return n * (dot(wi, n) * eta + cosThetaT) - wi * eta;
 }

@@ -36,7 +36,7 @@ float3 SampleSky(float3 dir) {
 #define m_rrDepth 5
 // min, max "recursive" depth
 #define m_minDepth 0
-#define m_maxDepth 16
+#define m_maxDepth 32
 
 // If defined, uses only the central sample for the throughput estimate. Otherwise uses offset paths for estimating throughput too.
 // #define CENTRAL_RADIANCE
@@ -535,16 +535,16 @@ HalfVectorShiftResult halfVectorShift(Vector3 tangentSpaceMainWi, Vector3 tangen
         // Get the non-normalized half vector.
         Vector3 tangentSpaceHalfVectorNonNormalizedMain;
         if (Frame_cosTheta(tangentSpaceMainWi) < 0) {
-            tangentSpaceHalfVectorNonNormalizedMain =  - (tangentSpaceMainWi * mainEta + tangentSpaceMainWo);
+            tangentSpaceHalfVectorNonNormalizedMain = -(tangentSpaceMainWi * mainEta + tangentSpaceMainWo);
         } else {
-            tangentSpaceHalfVectorNonNormalizedMain =  - (tangentSpaceMainWi + tangentSpaceMainWo * mainEta);
+            tangentSpaceHalfVectorNonNormalizedMain = -(tangentSpaceMainWi + tangentSpaceMainWo * mainEta);
         }
 
         // Get the normalized half vector.
         Vector3 tangentSpaceHalfVector = normalize(tangentSpaceHalfVectorNonNormalizedMain);
 
         // Refract to get the outgoing direction.
-        Vector3 tangentSpaceShiftedWo = refract(tangentSpaceShiftedWi, tangentSpaceHalfVector, shiftedEta);
+        Vector3 tangentSpaceShiftedWo = refract1(tangentSpaceShiftedWi, tangentSpaceHalfVector, shiftedEta);
 
         // Refuse to shift between transmission and full internal reflection.
         // This shift would not be invertible: reflections always shift to other reflections.
@@ -571,7 +571,7 @@ HalfVectorShiftResult halfVectorShift(Vector3 tangentSpaceMainWi, Vector3 tangen
     } else {
         // Reflection.
         Vector3 tangentSpaceHalfVector = normalize(tangentSpaceMainWi + tangentSpaceMainWo);
-        Vector3 tangentSpaceShiftedWo = reflect(tangentSpaceShiftedWi, tangentSpaceHalfVector);
+        Vector3 tangentSpaceShiftedWo = reflect1(tangentSpaceShiftedWi, tangentSpaceHalfVector);
 
         float WoDotH = dot(tangentSpaceShiftedWo, tangentSpaceHalfVector) / dot(tangentSpaceMainWo, tangentSpaceHalfVector);
         float jacobian = abs(WoDotH);
@@ -839,6 +839,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 				float3 emitterRadiance;
                 bool mainEmitterVisible;
 				sampleEmitterDirectVisible(dRec, lightSample, emitterRadiance, mainEmitterVisible);
+
                 Spectrum mainEmitterRadiance = emitterRadiance * dRec.pdf;
 
                 // const Emitter * emitter = static_cast < const Emitter *  > (dRec.object);
@@ -1078,9 +1079,6 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             mainNextVertexType = VERTEX_TYPE_DIFFUSE;
 
         }
-
-        // todo remove
-        // out_veryDirect.g++;
 
         // Continue the shift.
         float mainBsdfPdf = mainBsdfResult.pdf;

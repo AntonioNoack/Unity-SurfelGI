@@ -186,6 +186,7 @@ struct IntersectionVertex {
 	float3 positionOS;
 	// Object space normal of the vertex
 	float3 normalOS;
+	float3 geoNormalOS;
 	// Object space normal of the vertex
 	float3 tangentOS;
 	// UV coordinates
@@ -231,6 +232,7 @@ void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionV
 	// Interpolate all the data
 	outVertex.positionOS = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.positionOS, v1.positionOS, v2.positionOS, barycentricCoordinates);
 	outVertex.normalOS   = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.normalOS, v1.normalOS, v2.normalOS, barycentricCoordinates);
+	outVertex.geoNormalOS = normalize(cross(v1.positionOS-v0.positionOS, v2.positionOS-v0.positionOS));
 	outVertex.tangentOS  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.tangentOS, v1.tangentOS, v2.tangentOS, barycentricCoordinates);
 	outVertex.texCoord0  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord0, v1.texCoord0, v2.texCoord0, barycentricCoordinates);
 	// outVertex.texCoord1  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord1, v1.texCoord1, v2.texCoord1, barycentricCoordinates);

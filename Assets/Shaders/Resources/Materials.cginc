@@ -7,7 +7,7 @@ float3 Conductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	if(measure != EDiscrete || 
 		Frame_cosTheta(rec.wi) <= 0.0 || 
 		Frame_cosTheta(rec.wo) <= 0.0 ||
-		abs(dot(reflect(rec.wi), rec.wo)-1.0) > DeltaEpsilon
+		abs(dot(reflect1(rec.wi), rec.wo)-1.0) > DeltaEpsilon
 	) return 0;
 	float eta = 1.5;
 	float k = 0.0;
@@ -18,15 +18,15 @@ float Conductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	if(measure != EDiscrete || 
 		Frame_cosTheta(rec.wi) <= 0.0 || 
 		Frame_cosTheta(rec.wo) <= 0.0 ||
-		abs(dot(reflect(rec.wi), rec.wo)-1.0) > DeltaEpsilon
+		abs(dot(reflect1(rec.wi), rec.wo)-1.0) > DeltaEpsilon
 	) return 0;
-	return abs(dot(reflect(rec.wi), rec.wo)-1.0) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
+	return abs(dot(reflect1(rec.wi), rec.wo)-1.0) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
 }
 
 float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
 	if(Frame_cosTheta(rec.wi) <= 0.0) return 0;
 	rec.sampledType = EDeltaReflection;
-	rec.wo = reflect(rec.wi);
+	rec.wo = reflect1(rec.wi);
 	pdf = 1.0;
 	float eta = 1.5;
 	float k = 0.0;
@@ -80,9 +80,9 @@ float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float 
 	float alphaU = bsdf.roughness, alphaV = alphaU;
 	float exponentU = 0, exponentV = exponentU;
 	float3 m = distrSample(type, alphaU, alphaV, exponentU, exponentV, wi, seed, pdf0);
-	rec.wo = -reflect(wi, m);// the definition in mitsuba is the negative of the HLSL definition
+	rec.wo = reflect1(wi, m);
 	rec.sampledType = EGlossyReflection;
-	float weight = distrSmithG1(type, alphaU, alphaV, reflect(wi), m);
+	float weight = distrSmithG1(type, alphaU, alphaV, reflect1(wi), m);
 	if(weight > 0) {
 		pdf = pdf0 / (4.0 * dot(rec.wo, m));
 		return bsdf.color * (pdf0 * fresnelConductorExact(dot(wi, m), eta, k));
@@ -170,10 +170,10 @@ float3 evalDielectric(float3 wi, float3 wo, float3 color, float eta){// returns 
 	float cosThetaT;
 	float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, eta);
 	if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0) {
-		if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect reflection, return 0
+		if(abs(dot(reflect1(wi), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect reflection, return 0
 		return color * F;
 	} else {
-		if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect refraction, return 0
+		if(abs(dot(refract1Dielectric(wi, cosThetaT, eta), wo)-1.0) > DeltaEpsilon) return 0; // if not close enough to perfect refraction, return 0
 		float factor = cosThetaT < 0.0 ? 1.0/eta : eta;
 		return color * (factor * factor * (1.0 - F));
 	}
@@ -185,10 +185,10 @@ float3 Dielectric_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
 	float3 wi = rec.wi, wo = rec.wo;
 	float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, eta);
 	if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
-		if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal reflection
+		if(abs(dot(reflect1(wi), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal reflection
 		return F * bsdf.color;
 	} else {
-		if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal refraction
+		if(abs(dot(refract1Dielectric(wi, cosThetaT, eta), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal refraction
 		float factor = cosThetaT < 0 ? 1.0 / eta : eta;
 		return bsdf.color * (factor * factor) * (1.0 - F);
 	}
@@ -199,10 +199,10 @@ float Dielectric_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure){
 	float3 wi = rec.wi, wo = rec.wo;
 	float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, bsdf.eta);
 	if(Frame_cosTheta(wi) * Frame_cosTheta(wo) >= 0){
-		if(abs(dot(reflect(wi), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal reflection
+		if(abs(dot(reflect1(wi), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal reflection
 		return F;
 	} else {
-		if(abs(dot(refract(wi, cosThetaT), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal refraction
+		if(abs(dot(refract1Dielectric(wi, cosThetaT, bsdf.eta), wo)-1.0) > DeltaEpsilon) return 0;// not close enough to ideal refraction
 		return 1.0-F;
 	}
 }
@@ -214,12 +214,12 @@ float3 Dielectric_sample(inout BSDF bsdf, inout BSDFSamplingRecord rec, out floa
 	float F = fresnelDielectricExt(Frame_cosTheta(wi), cosThetaT, eta);
 	if(seed.x <= F){
 		rec.sampledType = EDeltaReflection;
-		rec.wo = reflect(wi);
+		rec.wo = reflect1(wi);
 		pdf = F;
 		return evalDielectric(wi, rec.wo, bsdf.color, eta);
 	} else {
 		rec.sampledType = EDeltaTransmission;
-		rec.wo = refract(wi, eta);
+		rec.wo = refract1Dielectric(wi, cosThetaT, eta);
 		rec.eta = cosThetaT < 0 ? eta : 1.0 / eta;
 		float factor = cosThetaT < 0 ? 1.0 / eta : eta;// ERadiance = true
 		pdf = 1.0-F;
@@ -227,7 +227,6 @@ float3 Dielectric_sample(inout BSDF bsdf, inout BSDFSamplingRecord rec, out floa
 	}
 }
 
-// todo implement and unlock in glass shader
 float3 RoughDielectric_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	if(measure != ESolidAngle || Frame_cosTheta(rec.wi) == 0) return 0;
 	MicrofacetType type = Beckmann;
@@ -297,7 +296,7 @@ float3 RoughDielectric_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float
 	if(nextRand(rec.its.randomSeed) > F){
 		sampleReflection = false;
 		temporaryPdf *= 1.0-F;
-		rec.wo = -reflect(rec.wi, m);// mirrored because def difference
+		rec.wo = reflect1(rec.wi, m);
 		rec.eta = 1;
 		rec.sampledType = EGlossyReflection;
 		if(Frame_cosTheta(rec.wi) * Frame_cosTheta(rec.wo) <= 0)
@@ -307,7 +306,7 @@ float3 RoughDielectric_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float
 	} else {
 		temporaryPdf *= F;
 		if(cosThetaT == 0) return 0;
-		rec.wo = refract(rec.wi, m, bsdf.eta, cosThetaT);
+		rec.wo = refract1(rec.wi, m, bsdf.eta, cosThetaT);
 		rec.eta = cosThetaT < 0 ? bsdf.eta : 1.0 / bsdf.eta;
 		rec.sampledType = EGlossyTransmission;
 		if(Frame_cosTheta(rec.wi) * Frame_cosTheta(rec.wo) >= 0)
