@@ -74,6 +74,7 @@
 				float3 worldNormal = normalize(mul(objectToWorld, currentvertex.normalOS));
 				float3 worldTangent = normalize(mul(objectToWorld, currentvertex.tangentOS));
 				float3 worldBitangent = normalize(cross(worldNormal, worldTangent));
+				float3 geoWorldNormal = normalize(mul(objectToWorld, currentvertex.geoNormalOS));
 
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
@@ -123,12 +124,11 @@
 				//      (dielectric)      //
 				//------------------------//
 
-				float eta = _IoR;
 				rayPayload.bsdf.eta = _IoR;
 				rayPayload.bsdf.color = _Color;
 				rayPayload.bsdf.roughness = _Roughness;
-				rayPayload.geoFrame = tbnToFrame(worldTangent, worldBitangent, worldNormal);
-				rayPayload.shFrame = rayPayload.geoFrame;
+				rayPayload.geoFrame = normalToFrame(geoWorldNormal);
+				rayPayload.shFrame =  tbnToFrame(worldTangent, worldBitangent, worldNormal);
 
 				if(_Roughness < 0.01){
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
@@ -137,6 +137,7 @@
 					rayPayload.bsdf.components[1].type = EDeltaTransmission;
 					rayPayload.bsdf.components[1].roughness = 0.0;
 					rayPayload.bsdf.numComponents = 2;
+					rayPayload.bsdf.materialType = DIELECTRIC;
 				} else {
 					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdielectric.cpp
 					// alpha (Beckmann): root mean square slope of microfacets; default: 0.1
@@ -146,6 +147,7 @@
 					rayPayload.bsdf.components[1].roughness = _Roughness;
 					rayPayload.bsdf.components[1].type = EGlossyTransmission;
 					rayPayload.bsdf.numComponents = 2;
+					rayPayload.bsdf.materialType = ROUGH_DIELECTRIC;
 				}
 
 			}

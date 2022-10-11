@@ -96,8 +96,8 @@
 				// done check that the order & signs are correct: looks correct :3
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
-				float3 surfaceWorldNormal = normalize(mul(objectToWorld, objectNormal));
-				
+				float3 surfaceWorldNormal = normalize(mul(objectToWorld, vertex.geoNormalOS));
+				// worldNormal = surfaceWorldNormal; // set this to make every mesh look flat-shaded
 				
 				// todo respect metallic and glossiness maps
 								

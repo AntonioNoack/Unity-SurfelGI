@@ -69,7 +69,8 @@ public class PerPixelRT : MonoBehaviour {
         shader.Dispatch("PixelGI", cam.giTarget.width, cam.giTarget.height, 1, cam._camera);
     }
 
-    private void AccumulatePixelGI(DXRCamera cam, Vector3 deltaPos) {
+    public void AccumulatePixelGI(DXRCamera cam) {
+        Vector3 deltaPos = transform.position - cam.prevCameraPosition;
         var shader = accuMaterial;
         shader.SetVector("_DeltaCameraPosition", deltaPos);
         shader.SetTexture("_CurrentFrame", cam.giTarget);
@@ -82,11 +83,33 @@ public class PerPixelRT : MonoBehaviour {
         Graphics.Blit(cam.giTarget, accu2, shader);
     }
 
-    private void PreservePrevGBuffers(){
+    public void PreservePrevGBuffers(){
         Graphics.Blit(null, prevGBuff0, copyGBuffMat0);
         Graphics.Blit(null, prevGBuff1, copyGBuffMat1);
         Graphics.Blit(null, prevGBuff2, copyGBuffMat2);
         Graphics.Blit(null, prevGBuffD, copyGBuffMatD);
+    }
+
+    public void SwapAccumulationTextures(){
+        var temp = accu1;
+        accu1 = accu2;
+        accu2 = temp;
+    }
+
+    public void DisplayResultOnScreen(DXRCamera cam, RenderTexture destination){
+        Material displayMaterial = cam.displayMaterial;
+        displayMaterial.SetVector("_Duv", new Vector2(1f/(cam._camera.pixelWidth-1f), 1f/(cam._camera.pixelHeight-1f)));
+        displayMaterial.SetFloat("_DivideByAlpha", 0f);
+        displayMaterial.SetTexture("_SkyBox", cam.skyBox);
+        displayMaterial.SetTexture("_Accumulation", accu2);
+        displayMaterial.SetFloat("_Far", cam._camera.farClipPlane);
+        displayMaterial.SetFloat("_ShowIllumination", cam.showIllumination ? 1f : 0f);
+        displayMaterial.SetVector("_CameraPosition", transform.position);
+        displayMaterial.SetVector("_CameraRotation", DXRCamera.QuatToVec(transform.rotation));
+        displayMaterial.SetFloat("_Derivatives", 0f);
+        float zFactor2 = 1.0f / Mathf.Tan(cam._camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * cam._camera.pixelWidth) / cam._camera.pixelHeight, zFactor2));
+        Graphics.Blit(accu2, destination, displayMaterial);
     }
 
     public void RenderImage(DXRCamera cam, RenderTexture destination){
@@ -95,31 +118,14 @@ public class PerPixelRT : MonoBehaviour {
         UpdatePixelGI(cam);
 
         // accumulate current raytracing result
-        Vector3 pos = transform.position;
-        Vector3 deltaPos = pos - cam.prevCameraPosition;
-        AccumulatePixelGI(cam, deltaPos);
+        AccumulatePixelGI(cam);
 
         // display result on screen
-        Material displayMaterial = cam.displayMaterial;
-        displayMaterial.SetVector("_Duv", new Vector2(1f/(cam._camera.pixelWidth-1f), 1f/(cam._camera.pixelHeight-1f)));
-        displayMaterial.SetFloat("_DivideByAlpha", 0f);
-        displayMaterial.SetTexture("_SkyBox", cam.skyBox);
-        displayMaterial.SetTexture("_Accumulation", accu2);
-        displayMaterial.SetFloat("_Far", cam._camera.farClipPlane);
-        displayMaterial.SetFloat("_ShowIllumination", cam.showIllumination ? 1f : 0f);
-        displayMaterial.SetVector("_CameraPosition", pos);
-        displayMaterial.SetVector("_CameraRotation", DXRCamera.QuatToVec(transform.rotation));
-        displayMaterial.SetFloat("_Derivatives", 0f);
-        float zFactor2 = 1.0f / Mathf.Tan(cam._camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * cam._camera.pixelWidth) / cam._camera.pixelHeight, zFactor2));
-        Graphics.Blit(accu2, destination, displayMaterial);
+        DisplayResultOnScreen(cam, destination);
 
         PreservePrevGBuffers();
 
-        // switch accumulation textures
-        var temp = accu1;
-        accu1 = accu2;
-        accu2 = temp;
+        SwapAccumulationTextures();
 
     }
 }

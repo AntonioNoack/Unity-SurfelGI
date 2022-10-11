@@ -33,16 +33,16 @@ float4 normalToQuaternion(float3 v0, float3 v1, float3 v2) {
 }
 
 float4 normalToQuaternion(float3 v1) {
-    float3 v0 = dot(v1.xz, v1.xz) > 0.01 ? 
+    float3 v0 = dot(v1.xz, v1.xz) > 0.001 ? // else everything is on Y, so choose X or Z
         normalize(float3(v1.z, 0, -v1.x)) : float3(1,0,0);
-    float3 v2 = cross(v0, v1);
+    float3 v2 = normalize(cross(v0, v1));
     return normalToQuaternion(v0,v1,v2);
 }
 
 float4 normalToFrame(float3 v2) {
-    float3 v1 = dot(v2.xy, v2.xy) > 0.01 ? 
+    float3 v1 = dot(v2.xy, v2.xy) > 0.001 ? // else everything is on Z, so choose X or Y
         normalize(float3(v2.y, -v2.x, 0)) : float3(1,0,0);
-    float3 v0 = cross(v1, v2);
+    float3 v0 = normalize(cross(v1, v2));
     return normalToQuaternion(v0,v1,v2);
 }
 
