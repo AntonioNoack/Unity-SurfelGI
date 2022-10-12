@@ -112,7 +112,6 @@ void SurfelGPT() {
         if(!ok) continue;
 
         // update surfel by main and shiftedRays
-        // todo divide by color of first hit...
         // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
         // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
         float weight = mainRay.pdf;

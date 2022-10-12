@@ -1084,8 +1084,13 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         float mainBsdfPdf = mainBsdfResult.pdf;
         float mainPreviousPdf = main.pdf;
 
-        main.throughput *= mainBsdfResult.weight * mainBsdfResult.pdf;
-        main.pdf *= mainBsdfResult.pdf;
+        if(main.rRec.depth > 1) {
+            // first time is ignored ->
+            // instead of color, we are computing global illumination
+            main.throughput *= mainBsdfResult.weight * mainBsdfResult.pdf;
+            main.pdf *= mainBsdfResult.pdf;
+        }
+        // index of refraction for this ray
         main.eta *= mainBsdfResult.bRec.eta;
 
         // Compute the probability density of generating base path's direction using the implemented direct illumination sampling technique.

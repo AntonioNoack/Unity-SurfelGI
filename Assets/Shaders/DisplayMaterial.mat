@@ -66,7 +66,7 @@ Material:
     - _Cutoff: 0.5
     - _Derivatives: 0
     - _DetailNormalMapScale: 1
-    - _DivideByAlpha: 1
+    - _DivideByAlpha: 0
     - _DstBlend: 0
     - _Exposure: 1.0715193
     - _GlossMapScale: 1
