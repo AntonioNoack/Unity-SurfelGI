@@ -256,13 +256,12 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     RayPayload rayPayload = (RayPayload) 0;
     rayPayload.distance = ray.maxt;
     rayPayload.depth = 0;
+    rayPayload.gpt = true;
 
     // default values for bsdf
     rayPayload.bsdf.eta = 1.0;
     rayPayload.bsdf.numComponents = 0;
     rayPayload.randomSeed = its.randomSeed;
-    // rayPayload.bsdf.pdf = 1.0;
-    // rayPayload.queriedWo = its.wo;
 
     TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
@@ -409,6 +408,7 @@ bool testVisibility(float3 a, float3 b, float time) {
 	rayDesc.TMin = 0.01 * dist;
 	rayDesc.TMax = 0.99 * dist;
 	RayPayload rayPayload = (RayPayload) 0;
+    rayPayload.gpt = true;
 	rayPayload.distance = max(_Far, dist * 2.0); // set to infinity at start
 	TraceRay(_RaytracingAccelerationStructure,
 				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?

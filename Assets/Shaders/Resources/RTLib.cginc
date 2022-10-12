@@ -150,6 +150,8 @@ struct RayPayload {
 	float surfelSize;
 	int surfelId; // -1 = nothing
 
+	bool gpt;
+
 	Frame geoFrame; // rotation of triangle surface without normal mapping
 	Frame shFrame; // rotation of triangle surface with normal mapping
 	

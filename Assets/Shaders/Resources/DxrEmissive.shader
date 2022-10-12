@@ -54,9 +54,8 @@
 				float3 objectNormal = normalize(vertex.normalOS);
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal));
 				rayPayload.geoFrame = normalToFrame(worldNormal);
-				rayPayload.shFrame = rayPayload.geoFrame;
+				rayPayload.shFrame = normalToFrame(normalize(mul(objectToWorld, vertex.geoNormalOS)));
 
-				// rayPayload.emissive = _Color.xyz;
 				rayPayload.bsdf.roughness = 1.0;
 				rayPayload.bsdf.color = _Color.xyz;
 

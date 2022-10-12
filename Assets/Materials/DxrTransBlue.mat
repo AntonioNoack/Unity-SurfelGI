@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: DxrMetal
-  m_Shader: {fileID: 4800000, guid: 21aa23ed8bf7f4e4a860a71a81245e88, type: 3}
+  m_Name: DxrTransBlue
+  m_Shader: {fileID: 4800000, guid: 5296c00a38a71494ba51ca331c15cdfc, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -65,14 +65,14 @@ Material:
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
+    - _EnableLSRT: 0
     - _GlossMapScale: 1
-    - _Glossiness: 0.966
+    - _Glossiness: 0.777
     - _GlossyReflections: 1
-    - _Metallic: 1
+    - _Metallic: 0.057
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
-    - _Roughness: 0.22
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
@@ -80,6 +80,6 @@ Material:
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:
-    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Color: {r: 0.064257726, g: 0.3315655, b: 0.7169812, a: 0.54509807}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []
