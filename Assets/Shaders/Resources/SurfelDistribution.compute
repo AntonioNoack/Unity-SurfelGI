@@ -53,6 +53,8 @@ uint3 _DispatchOffset;
 Texture2D<half4> _Weights;
 float3 _CameraOffset;
 
+bool _EnableSurfelMovement;
+
 // adopted from https://stackoverflow.com/a/26127012/4979303
 float3 fibonacciSphere(int i, int n){
     const float phi = PI * (3.0 - sqrt(5.0));
@@ -169,6 +171,12 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
+SamplerState LinearSampler {
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Wrap;
+    AddressV = Wrap;
+};
+
 [numthreads(256,1,1)]
 void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
@@ -193,9 +201,44 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             float angleChange = acos(clamp(dot(newRelPos, oldRelPos) / sqrt(dot(newRelPos,newRelPos) * dot(oldRelPos,oldRelPos)), -1, 1));
             float angleChangeFactor = max(1.0 - 10.0 * angleChange * surfel.data.x, 0.0);
             float factor = sizeChangeFactor * angleChangeFactor;
+            
+            if(_EnableSurfelMovement){
+                // for testing it: move surfel along gradient
+                float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
+                // else hidden & no update required
+                // if the direction is too step, the following algorithm doesn't work well
+                if(cameraDir.z > 0.0 /*&& dot(surfelDir, cameraDir) < -0.3*/){ 
+                    cameraDir.xy *= _CameraUVScale;
+                    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
+                    _Weights.GetDimensions(mipLevel, width, height, numLevels);
+                    float2 uv = (cameraDir.xy / cameraDir.z * 0.5 + 0.5) * float2(width-1, height-1);
+                    if(uv.x > 0 && uv.x < (int) width-2 && uv.y > 0 && uv.y < (int) height-2){
+                        
+                        float2 gradient = float2(// to do should use linear interpolation
+                            // _Weights.Load(int3(uv.x+1,uv.y,0)).w - _Weights.Load(int3(uv.x-1,uv.y,0)).w,
+                            // _Weights.Load(int3(uv.x,uv.y+1,0)).w - _Weights.Load(int3(uv.x,uv.y-1,0)).w
+                            _Weights.Load(int3(uv.x+1,uv.y,0)).w - _Weights.Load(int3(uv.x,uv.y,0)).w,
+                            _Weights.Load(int3(uv.x,uv.y+1,0)).w - _Weights.Load(int3(uv.x,uv.y,0)).w
+                        ) * 10.0;// this factor just sets the maximum speed gradient to 0.1
+                        
+                        float l2 = dot(gradient,gradient);
+                        if(l2 > 1.0) gradient /= sqrt(l2);
+
+                        // move based on distance (and fov maybe)
+                        gradient *= surfelSize * 0.02;
+                        float3 movement = gradient.x * quatRot(float3(-1,0,0), _CameraRotation) + gradient.y * quatRot(float3(0,-1,0), _CameraRotation);
+                        movement -= surfelDir * dot(movement, surfelDir);// prevent surfels from moving away from the surface (if it was a plane)
+                        surfel.position.xyz += movement;
+
+                        factor *= max(1.0 - 2.0 * length(movement) / surfelSize, 0.0);
+                    }
+                }
+            }
+
             surfel.color *= factor;
             surfel.colorDx *= factor;
             surfel.colorDz *= factor;
+
             Surfels[index] = surfel;
         } else {
             Surfels[index] = InitSurfel(fibonacciSphere(index, length1));
@@ -203,7 +246,7 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
     }
 }
 
-// todo if the weight is > 1, or the surfel is off-screen (or behind things), we can "free" the surfel as well
+// to do if the surfel is off-screen (or behind things), we can "free" the surfel as well
 float freeSurfelScore(uint surfelIndex) {
     Surfel surfel = Surfels[surfelIndex];
     float3 worldPos = surfel.position.xyz;

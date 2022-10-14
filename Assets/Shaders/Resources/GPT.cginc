@@ -36,7 +36,7 @@ float3 SampleSky(float3 dir) {
 #define m_rrDepth 5
 // min, max "recursive" depth
 #define m_minDepth 0
-#define m_maxDepth 32
+#define m_maxDepth 12
 
 // If defined, uses only the central sample for the throughput estimate. Otherwise uses offset paths for estimating throughput too.
 // #define CENTRAL_RADIANCE
@@ -275,7 +275,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     its.geoFrame = rayPayload.geoFrame;
     its.shFrame = rayPayload.shFrame;
     its.randomSeed = rayPayload.randomSeed;
-    // wi is defined as being negative:
+    // wi is defined as being from the surface towards the ray origin:
     // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/skdtree.h#L427
     its.wi = toLocal(its, -ray.d);
     its.isEmitter = rayPayload.bsdf.materialType == AREA_LIGHT;
@@ -1110,7 +1110,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // Construct the offset paths and evaluate emitter hits.
         for (int i = 0; i < secondaryCount; i++) {
 
-            Spectrum shiftedEmitterRadiance = 0.0;
+            // Spectrum shiftedEmitterRadiance = 0.0;
             Spectrum mainContribution = 0.0;
             Spectrum shiftedContribution = 0.0;
             float weight = 0;
@@ -1130,8 +1130,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                     Spectrum shiftedEmitterRadiance = mainEmitterRadiance;
 
                     // Update throughput and pdf.
-                    shiftedRays[i].throughput *= shiftedBsdfValue;
-                    shiftedRays[i].pdf *= shiftedBsdfPdf;
+                    if(main.rRec.depth > 1){
+                        shiftedRays[i].throughput *= shiftedBsdfValue;
+                        shiftedRays[i].pdf *= shiftedBsdfPdf;
+                    }
 
                     // Power heuristic between light sample from base, BSDF sample from base, light sample from offset, BSDF sample from offset.
                     float shiftedWeightDenominator = (shiftedPreviousPdf * shiftedPreviousPdf) * ((shiftedLumPdf * shiftedLumPdf) + (shiftedBsdfPdf * shiftedBsdfPdf));
@@ -1161,8 +1163,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                     Spectrum shiftedEmitterRadiance = mainEmitterRadiance;
 
                     // Update throughput and pdf.
-                    shiftedRays[i].throughput *= shiftedBsdfValue;
-                    shiftedRays[i].pdf *= shiftedBsdfPdf;
+                    if(main.rRec.depth > 1){
+                        shiftedRays[i].throughput *= shiftedBsdfValue;
+                        shiftedRays[i].pdf *= shiftedBsdfPdf;
+                    }
 
                     shiftedRays[i].connection_status = RAY_CONNECTED;
 
@@ -1222,8 +1226,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                     float shiftedBsdfPdf = pdf(shiftedBSDF, bRec);
 
                                     // Update throughput and pdf.
-                                    shiftedRays[i].throughput *= shiftedBsdfValue * shiftResult.jacobian;
-                                    shiftedRays[i].pdf *= shiftedBsdfPdf * shiftResult.jacobian;
+                                    if(main.rRec.depth > 1){
+                                        shiftedRays[i].throughput *= shiftedBsdfValue * shiftResult.jacobian;
+                                        shiftedRays[i].pdf *= shiftedBsdfPdf * shiftResult.jacobian;
+                                    }
 
                                     shiftedRays[i].connection_status = RAY_RECENTLY_CONNECTED;
 
@@ -1299,8 +1305,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                             if (shiftResult.success) {
                                 // Invertible shift, success.
-                                shiftedRays[i].throughput *= shiftResult.jacobian;
-                                shiftedRays[i].pdf *= shiftResult.jacobian;
+                                if(main.rRec.depth > 1){// color -> gi
+                                    shiftedRays[i].throughput *= shiftResult.jacobian;
+                                    shiftedRays[i].pdf *= shiftResult.jacobian;
+                                }
                                 tangentSpaceOutgoingDirection = shiftResult.wo;
                             } else {
                                 // The shift is non-invertible so kill it.
@@ -1323,8 +1331,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                 if((mainBsdfResult.bRec.sampledType & EDelta) != 0)
                                     measure = EDiscrete;
 
-                                shiftedRays[i].throughput *= eval(shiftedBSDF, bRec, measure);
-                                shiftedRays[i].pdf *= pdf(shiftedBSDF, bRec, measure);
+                                if(main.rRec.depth > 1){
+                                    shiftedRays[i].throughput *= eval(shiftedBSDF, bRec, measure);
+                                    shiftedRays[i].pdf *= pdf(shiftedBSDF, bRec, measure);
+                                }
 
                                 if (shiftedRays[i].pdf == 0.0) {
                                     // Offset path is invalid!

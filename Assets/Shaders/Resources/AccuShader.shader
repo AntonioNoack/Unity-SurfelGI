@@ -87,7 +87,7 @@
 						
 						float4 previousFrame = tex2D(_Accumulation, uv2);
 						GetGBuffer1(uv2,spec1,depth1,col1,emm1);
-						half3 colorDifference = col1 - col0;
+						// half3 colorDifference = col1 - col0;
 						half3 specDifference = emm1 - emm0;
 						float prevWeight = saturate(1.0 - 10.0 * abs(spec0-spec1)) * 
 							// saturate(1.0 - 10.0 * dot(colorDifference, colorDifference)) *

@@ -116,14 +116,16 @@ public class PoissonReconstruction : MonoBehaviour {
         return bdx;
     }
 
+    public bool normalize = true;
     public RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
 
         if(bdx == null || bdx.width != src.width || bdx.height != src.height){
+            Debug.Log("Recreating buffers");
             Destroy();
             Create(src.width, src.height);
         }
 
-        if(true){
+        if(normalize){
             Graphics.Blit(src, src1, normMaterial);
             Graphics.Blit(dx, dx1, normMaterial);
             Graphics.Blit(dy, dy1, normMaterial);
@@ -137,11 +139,13 @@ public class PoissonReconstruction : MonoBehaviour {
                 Debug.Log("Blur Shader is missing!");
                 return src;
             }
+            Debug.Log("Creating blur materials");
             signedBlurMaterial = new Material(blurShader);
             unsignedBlurMaterial = new Material(blurShader);
         }
 
-        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1 || true){
+        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1){
+            Debug.Log("Creating masks");
             // create blur masks
             float sigma = 2.5f;
             unsignedBlurMask = new float[poissonBlurRadius * 2 + 1];

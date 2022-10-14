@@ -9,6 +9,7 @@
 *.user
 *.userosscache
 *.sln.docstates
+UserSettings/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -341,3 +342,7 @@ healthchecksdb
 /Temp
 /Assembly-CSharp.csproj
 /RayTracing.sln
+
+# Files, that I used personally for development
+Gradient.cpp
+SamplePdfEval.cpp

@@ -8,6 +8,7 @@
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
 		_BumpMap("Normal Map", 2D) = "bump" {}
+		_IsTrMarker("IsTrMarker(ignored)", Range(0.0, 0.1)) = 0.0
 	}
 	SubShader {
 		// if the material is fully opaque, you can set it to Opaque, otherwise use Transparent.
@@ -35,8 +36,8 @@
 			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
 			if(c.a < 0.5) discard;
 			o.Albedo = c.rgb;
-			o.Metallic = _Metallic;
-			o.Smoothness = _Glossiness;
+			o.Metallic = 1.0;
+			o.Smoothness = 1.0;// needs to be high, so the surfels are regularly updated
 			o.Alpha = c.a;
 		}
 		ENDCG

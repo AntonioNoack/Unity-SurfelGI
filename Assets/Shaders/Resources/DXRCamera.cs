@@ -22,6 +22,17 @@ public class DXRCamera : MonoBehaviour {
         public float3 max;
     };
 
+    public enum RenderMode {
+        SURFEL_WEIGHTS,
+        OLD_PIXEL_GI,
+        OLD_SURFEL_GI,
+        GPT_PIXEL_GI,
+        GPT_SURFEL_GI,
+        CUSTOM,
+    };
+
+    public RenderMode renderMode = RenderMode.SURFEL_WEIGHTS;
+
     public bool enablePathTracing = false;
     public bool enableLightSampling = false;
 
@@ -33,7 +44,6 @@ public class DXRCamera : MonoBehaviour {
     [LogarithmicRangeAttribute(0.001, 1000.0)]
     public float exposure = 2f;
 
-    public bool allowSkySurfels = false;
     public bool showIllumination = false;
     public bool allowStrayRays = false;
     public bool visualizeSurfels = false;
@@ -46,6 +56,7 @@ public class DXRCamera : MonoBehaviour {
     public RayTracingShader gptRTShader;
 
     public int maxNumSurfels = 64 * 1024;
+    public bool enableSurfelMovement = false;
 
     [HideInInspector]
     public Camera _camera;
@@ -91,7 +102,7 @@ public class DXRCamera : MonoBehaviour {
     public bool perPixelRT = false;
     public bool perPixelGPT = false;
 
-    private CommandBuffer cmdBuffer = null;
+    private CommandBuffer cmdBuffer;
 
     private ComputeBuffer countBuffer;
 
@@ -101,6 +112,8 @@ public class DXRCamera : MonoBehaviour {
     private float lightSampleStrength = 1f, lightAccuArea = 1f;
 
     private void Start() {
+
+        OnDestroy();
 
         _camera = GetComponent<Camera>();
 
@@ -163,7 +176,6 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_Density", surfelDensity);
         shader.SetFloat("_Far", _camera.farClipPlane);
         shader.SetInt("_FrameIndex", frameIndex);
-        shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         
         var transform = _camera.transform;
         shader.SetVector("_CameraPosition", transform.position);
@@ -178,6 +190,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
+        shader.SetFloat("_EnableSurfelMovement", enableSurfelMovement ? 1f : 0f);
 
         int kernel;
         if(hasPlacedSurfels) {// update surfels
@@ -275,10 +288,10 @@ public class DXRCamera : MonoBehaviour {
 	}
 
     private void DestroyTargets(){
-        giTarget.Release();
-        emissiveTarget.Release();
-        emissiveDxTarget.Release();
-        emissiveDyTarget.Release();
+        if(giTarget != null) giTarget.Release();
+        if(emissiveTarget != null) emissiveTarget.Release();
+        if(emissiveDxTarget != null) emissiveDxTarget.Release();
+        if(emissiveDyTarget != null) emissiveDyTarget.Release();
         giTarget = null;
         emissiveTarget = emissiveDxTarget = emissiveDyTarget = null;
         GetComponent<PerPixelRT>().Destroy();
@@ -314,8 +327,12 @@ public class DXRCamera : MonoBehaviour {
             int matCount = Mathf.Max(materials.Count, 1);
             RayTracingSubMeshFlags[] subMeshFlags = new RayTracingSubMeshFlags[matCount];
             // Assume all materials are opaque (anyhit shader is disabled) otherwise Material types (opaque, transparent) must be handled here.
-            for (int i = 0; i < matCount; i++) // todo mark as transparent if transparent
-                subMeshFlags[i] = RayTracingSubMeshFlags.Enabled | RayTracingSubMeshFlags.ClosestHitOnly;
+            for (int i = 0; i < matCount; i++){ // mark as transparent if transparent
+                if(materials[i].HasProperty("_IsTrMarker"))
+                    subMeshFlags[i] = RayTracingSubMeshFlags.Enabled;
+                else // closest hit only = any-hit shader is ignored; setting this might be unnecessary, but maybe it's faster
+                    subMeshFlags[i] = RayTracingSubMeshFlags.Enabled | RayTracingSubMeshFlags.ClosestHitOnly;
+            }
             rtas.AddInstance(r, subMeshFlags);
         }
         // build raytrasing scene
@@ -370,7 +387,6 @@ public class DXRCamera : MonoBehaviour {
         // shader.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
         shader.SetVector("_FieldOfViewFactor", new Vector2(fy*giTarget.width/giTarget.height, fy));
-        shader.SetFloat("_AllowSkySurfels", allowSkySurfels ? 1f : 0f);
         shader.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
         shader.SetFloat("_IdCutoff", 2f / surfelDensity);
 
@@ -457,7 +473,6 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_Far", _camera.farClipPlane);
         float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
-        shader.SetBool("_AllowSkySurfels", allowSkySurfels);
         shader.SetBool("_AllowStrayRays", allowStrayRays);
         shader.SetShaderPass("DxrPass");
         shader.Dispatch("SurfelPathTracing", surfels.count, 1, 1, null);
@@ -482,6 +497,20 @@ public class DXRCamera : MonoBehaviour {
 
         if(sleep > 0f){
             Thread.Sleep((int) (sleep * 1000));
+        }
+
+        switch(renderMode){
+            case RenderMode.SURFEL_WEIGHTS:
+                perPixelRT = false;
+                perPixelGPT = false;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = true;
+                // showIllumination;
+                // updateSurfels;
+                break;
+
         }
 
         if(sceneRTAS == null)

@@ -24,14 +24,13 @@
 		struct Input {
 			float2 uv_MainTex;
 		};
-        	
+        
 		float4 _Color;
 		float _Metallic, _Glossiness;
 		sampler2D _MainTex;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
-			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
-			o.Albedo = c.rgb;
+			o.Albedo = (tex2D(_MainTex, IN.uv_MainTex) * _Color).xyz;
 			o.Metallic = _Metallic;
 			o.Smoothness = _Glossiness;
 			o.Alpha = 1.0;

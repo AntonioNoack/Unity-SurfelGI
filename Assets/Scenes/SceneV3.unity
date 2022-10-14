@@ -2114,7 +2114,7 @@ MonoBehaviour:
   surfelProcMaterial: {fileID: 2100000, guid: fac0ec78882c92c44819b0eec43fb38c, type: 2}
   surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
   perPixelRT: 0
-  perPixelGPT: 1
+  perPixelGPT: 0
   useProceduralSurfels: 1
   updateSurfels: 1
   lightSamplingRatio: 1
@@ -2122,7 +2122,7 @@ MonoBehaviour:
   raysPerSample: 2
   useDerivatives: 0
   surfelPlacementIterations: 1
-  useOfficalGPT: 0
+  useOfficalGPT: 1
 --- !u!114 &963194232
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2170,6 +2170,7 @@ MonoBehaviour:
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
   addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
   normMaterial: {fileID: 2100000, guid: a90049f8ec77c984e9fab397033bc361, type: 2}
+  normalize: 1
 --- !u!114 &963194234
 MonoBehaviour:
   m_ObjectHideFlags: 0
