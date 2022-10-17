@@ -62,9 +62,10 @@
 
 			float4 _Color;
 			Texture2D _MainTex;
+			float4 _MainTex_ST;
 			SamplerState sampler_MainTex;
 
-			#define GetColor() _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color
+			#define GetColor() _MainTex.SampleLevel(sampler_MainTex, TRANSFORM_TEX(vertex.texCoord0, _MainTex), lod) * _Color
 
 			#include "DXRDiffuse.cginc"
 

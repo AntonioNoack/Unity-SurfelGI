@@ -18,6 +18,7 @@
 
 			// for testing, because _DetailNormalMap is not working
 			Texture2D _BumpMap;
+			float4 _BumpMap_ST;
 			SamplerState sampler_BumpMap;
 			float _DetailNormalMapScale;
 
@@ -38,7 +39,7 @@
 				float3 objectNormal = normalize(vertex.normalOS);
 				float3 objectTangent = normalize(vertex.tangentOS);
 				float3 objectBitangent = normalize(cross(objectNormal, objectTangent));
-				float3 objectNormal1 = UnpackNormal(_BumpMap.SampleLevel(sampler_BumpMap, vertex.texCoord0, lod));
+				float3 objectNormal1 = UnpackNormal(_BumpMap.SampleLevel(sampler_BumpMap, TRANSFORM_TEX(vertex.texCoord0, _BumpMap), lod));
 				float2 objectNormal2 = objectNormal1.xy * _DetailNormalMapScale;
 				// done check that the order & signs are correct: looks correct :3
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
