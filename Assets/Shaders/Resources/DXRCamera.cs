@@ -27,7 +27,9 @@ public class DXRCamera : MonoBehaviour {
         OLD_PIXEL_GI,
         OLD_SURFEL_GI,
         GPT_PIXEL_GI,
+        GPT_PIXEL_COLOR,
         GPT_SURFEL_GI,
+        GPT_SURFEL_COLOR,
         CUSTOM,
     };
 
@@ -508,9 +510,43 @@ public class DXRCamera : MonoBehaviour {
                 enableLightSampling = false;
                 visualizeSurfels = true;
                 // showIllumination;
-                // updateSurfels;
                 break;
-
+            case RenderMode.GPT_PIXEL_GI:
+                perPixelRT = false;
+                perPixelGPT = true;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = true;
+                break;
+            case RenderMode.GPT_PIXEL_COLOR:
+                perPixelRT = false;
+                perPixelGPT = true;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = false;
+                break;
+            case RenderMode.GPT_SURFEL_GI:
+                perPixelRT = false;
+                perPixelGPT = false;
+                useOfficalGPT = true;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = true;
+                break;
+            case RenderMode.GPT_SURFEL_COLOR:
+                perPixelRT = false;
+                perPixelGPT = false;
+                useOfficalGPT = true;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = false;
+                break;
         }
 
         if(sceneRTAS == null)

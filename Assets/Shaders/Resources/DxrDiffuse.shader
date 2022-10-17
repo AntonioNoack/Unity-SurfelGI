@@ -2,8 +2,12 @@
 	Properties {
 		_Color ("Color", Color) = (1, 1, 1, 1)
 		_MainTex ("Albedo", 2D) = "white" { }
-		_Metallic ("Metallic", Range(0, 1)) = 0.0
-		_Glossiness ("Smoothness", Range(0, 1)) = 0.5
+		_Metallic ("Metallic (white)", Range(0, 1)) = 0.0
+		_Metallic2 ("Metallic (black)", Range(0, 1)) = 0.0
+		_MetallicGlossMap ("Metallic Mask", 2D) = "white" {}
+		_Glossiness ("Smoothness (white)", Range(0, 1)) = 0.5
+		_Glossiness2 ("Smoothness (black)", Range(0, 1)) = 0.0
+		_SpecGlossMap ("Smoothness Mask", 2D) = "white" {}
 		// [Normal] _DetailNormalMap ("Normal Map", 2D) = "bump" {}
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
@@ -23,16 +27,21 @@
 
 		struct Input {
 			float2 uv_MainTex;
+			float2 uv_MetallicGlossMap;
+			float2 uv_SpecGlossMap;
 		};
         
 		float4 _Color;
 		float _Metallic, _Glossiness;
+		float _Metallic2, _Glossiness2;
 		sampler2D _MainTex;
+		sampler2D _MetallicGlossMap;
+		sampler2D _SpecGlossMap;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			o.Albedo = (tex2D(_MainTex, IN.uv_MainTex) * _Color).xyz;
-			o.Metallic = _Metallic;
-			o.Smoothness = _Glossiness;
+			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
+			o.Smoothness = lerp(_Glossiness2, _Glossiness, tex2D(_SpecGlossMap, IN.uv_SpecGlossMap).x);
 			o.Alpha = 1.0;
 		}
 		ENDCG
@@ -55,9 +64,8 @@
 			Texture2D _MainTex;
 			SamplerState sampler_MainTex;
 
-			float _EnableRayDifferentials;
-
 			#define GetColor() _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color
+			
 			#include "DXRDiffuse.cginc"
 
 			ENDHLSL

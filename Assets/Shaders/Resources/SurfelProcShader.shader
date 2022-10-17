@@ -37,6 +37,7 @@ Shader "Custom/SurfelProcShader" {
                 float invSize: TEXCOORD5;
                 float3 surfelNormal: TEXCOORD6; // in world space
                 float3 localPos : TEXCOORD7;
+                float2 surfelData: TEXCOORD8;
             };
       
             sampler2D _CameraGBufferTexture0;
@@ -82,6 +83,7 @@ Shader "Custom/SurfelProcShader" {
                 o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
                 o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
+                o.surfelData = surfel.data.yz;
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, localPos).xyz;
                 o.localPos = localPos;
@@ -89,17 +91,18 @@ Shader "Custom/SurfelProcShader" {
             }
 
             float4 frag (v2f i) : SV_Target {
+
                 float2 uv = i.screenPos.xy / i.screenPos.w;
+
+                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+                if(rawDepth == 0.0) discard; // sky surfels are ignored
+
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
                 half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
                 half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
                 UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
                 float specular = SpecularStrength(data.specularColor);
-                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
-
-                if(!_AllowSkySurfels && rawDepth == 0.0) {
-                    return float4(1,1,1,1);// GI in the sky is 1
-                }
+                float smoothness = data.smoothness;
 
                 float depth = LinearEyeDepth(rawDepth);
                 
@@ -113,29 +116,12 @@ Shader "Custom/SurfelProcShader" {
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
                 // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
+                float3 localPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
-                float3 Albedo;
-                float closeness;
-                float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
-                if(rawDepth == 0.0 && dist > 3.0) {// sky
+                #include "SurfelWeight.cginc"
 
-                    // disc like closeness
-                    dist = length(i.localPos.xz);
-                    closeness = max(1.0/(1.0+10.0*dist)-0.16667, 0.0);
-                    
-                } else {
-                    closeness = /*0.001 + 
-                        0.999 * */
-                        // todo use linear falloff for linear transitions
-                        saturate(1.0/(1.0+20.0*dist)-0.1667) *
-                        // saturate(1.0 - 2.0 * sqrt(dist)) *
-                        // step(dist, 1.0) *
-                        saturate(dot(i.surfelNormal, normal)); // todo does this depend on the roughness maybe? :)
-                }
-
-                if(!(closeness > 0.0 && closeness <= 1.0 && i.color.w > 0.0)) discard;
-                return i.color * (closeness / i.color.w);
+                if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
+                return i.color * (weight / i.color.w);
             }
             
             ENDCG

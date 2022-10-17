@@ -7,7 +7,7 @@ struct Surfel {// 6 * 4 floats
     float4 color; // color
     float4 colorDx; // color gradient by local coordinates; x axis
     float4 colorDz; // color gradient by local coordinates; z axis
-    float4 data; // angle-dependence, metallic, roughness; maybe material id in the future :)
+    float4 data; // angle-dependence, specular, roughness; maybe material id in the future :)
 };
 
 struct AABB {// handled on GPU only -> layout doesn't matter

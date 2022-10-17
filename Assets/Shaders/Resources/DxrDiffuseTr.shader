@@ -2,8 +2,12 @@
 	Properties {
 		_Color ("Color", Color) = (1, 1, 1, 1)
 		_MainTex ("Albedo", 2D) = "white" { }
-		_Metallic ("Metallic", Range(0, 1)) = 0.0
-		_Glossiness ("Smoothness", Range(0, 1)) = 0.5
+		_Metallic ("Metallic (white)", Range(0, 1)) = 0.0
+		_Metallic2 ("Metallic (black)", Range(0, 1)) = 0.0
+		_MetallicGlossMap ("Metallic Mask", 2D) = "white" {}
+		_Glossiness ("Smoothness (white)", Range(0, 1)) = 0.5
+		_Glossiness2 ("Smoothness (black)", Range(0, 1)) = 0.0
+		_SpecGlossMap ("Smoothness Mask", 2D) = "white" {}
 		// [Normal] _DetailNormalMap ("Normal Map", 2D) = "bump" {}
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		// [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
@@ -26,17 +30,19 @@
 
 		struct Input {
 			float2 uv_MainTex;
+			float2 uv_MetallicGlossMap;
 		};
         	
 		float4 _Color;
 		float _Metallic, _Glossiness;
-		sampler2D _MainTex;
+		float _Metallic2, _Glossiness2;
+		sampler2D _MainTex, _MetallicGlossMap;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
 			if(c.a < 0.5) discard;
 			o.Albedo = c.rgb;
-			o.Metallic = 1.0;
+			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
 			o.Smoothness = 1.0;// needs to be high, so the surfels are regularly updated
 			o.Alpha = c.a;
 		}
@@ -59,6 +65,7 @@
 			SamplerState sampler_MainTex;
 
 			#define GetColor() _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color
+
 			#include "DXRDiffuse.cginc"
 
 			[shader("anyhit")]

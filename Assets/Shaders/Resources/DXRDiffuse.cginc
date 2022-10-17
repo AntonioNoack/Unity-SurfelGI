@@ -1,11 +1,20 @@
 #ifndef DXRDIFFUSE_CGING
 #define DXRDIFFUSE_CGING
 			
-			float _Metallic;
+			float _Metallic, _Metallic2;
 			Texture2D _MetallicGlossMap;
+			float4 _MetallicGlossMap_ST;
+			SamplerState sampler_MetallicGlossMap;
 
-			float _Glossiness;
+			float _Glossiness, _Glossiness2;
 			Texture2D _SpecGlossMap;
+			float4 _SpecGlossMap_ST;
+			SamplerState sampler_SpecGlossMap;
+
+			#define TRANSFORM_TEX(tex, name) (tex.xy * name##_ST.xy + name##_ST.zw)
+
+			#define GetMetallic() lerp(_Metallic2, _Metallic, _MetallicGlossMap.SampleLevel(sampler_MetallicGlossMap, TRANSFORM_TEX(vertex.texCoord0, _MetallicGlossMap), lod).x)
+			#define GetRoughness() 1.0 - lerp(_Glossiness2, _Glossiness, _SpecGlossMap.SampleLevel(sampler_SpecGlossMap, TRANSFORM_TEX(vertex.texCoord0, _SpecGlossMap), lod).x)
 
 			// for testing, because _DetailNormalMap is not working
 			Texture2D _BumpMap;
@@ -44,7 +53,9 @@
 
 				rayPayload.pos = rayOrigin + RayTCurrent() * rayDir;
 
-				float roughness = 1.0 - _Glossiness;
+				float roughness = GetRoughness(); // 1.0 - _Glossiness
+				float metallic = GetMetallic(); // _Metallic
+
 				if(!rayPayload.gpt){
 					// get random vector
 					float3 randomVector;int i=0;
@@ -57,7 +68,7 @@
 					// perturb reflection direction to get rought metal effect 
 					float3 reflectDir = reflect(rayDir, worldNormal);
 					float3 reflection = normalize(reflectDir + roughness * randomVector);
-					if(_Metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
+					if(metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
 					rayPayload.dir = scatterRayDir;
 
 					// occlusion by surface
@@ -91,7 +102,7 @@
 					rayPayload.bsdf.roughness = roughness;
 					rayPayload.bsdf.color = color;
 
-					if(_Metallic > nextRand(rayPayload.randomSeed)){
+					if(metallic > nextRand(rayPayload.randomSeed)){
 						// metallic, conductor material
 						if(roughness > 0.01) {
 							// rough conductor

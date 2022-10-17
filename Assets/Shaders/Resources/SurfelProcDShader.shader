@@ -42,6 +42,7 @@ Shader "Custom/Surfel2ProcShader" {
                 float4 colorDz: TEXCOORD9;
                 int surfelId: TEXCOORD10;
                 float4 surfelRot: TEXCOORD11;
+                float2 surfelData: TEXCOORD12;
             };
       
             sampler2D _CameraGBufferTexture0;
@@ -94,6 +95,7 @@ Shader "Custom/Surfel2ProcShader" {
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 o.surfelRot = surfel.rotation;
                 o.surfelId = surfelId;
+                o.surfelData = surfel.data.yz; // specular, smoothness
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, localPos).xyz;
                 o.localPos = localPos;
@@ -111,22 +113,21 @@ Shader "Custom/Surfel2ProcShader" {
             f2t frag (v2f i) {
 
                 float2 uv = i.screenPos.xy / i.screenPos.w;
+
+                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+                if(rawDepth == 0.0) discard;// sky surfels are ignored
+
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
                 half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
                 half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
                 UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
                 float specular = SpecularStrength(data.specularColor);
-                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+                float smoothness = data.smoothness;
 
                 f2t result;
                 result.v = 1;
                 result.dx = 0;
                 result.dy = 0;
-
-                if(!_AllowSkySurfels && rawDepth == 0.0) {
-                    // GI in the sky is 1
-                    return result;
-                }
 
                 float depth = LinearEyeDepth(rawDepth);
                 
@@ -139,47 +140,21 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 lookDir0 = float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0);
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
                 float3 worldPos = _WorldSpaceCameraPos + depth * lookDir;
-                float3 localPos = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
+                float3 localPosition = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
 
-                float3 Albedo;
-                float weight;
-                float dist = dot(localPos, localPos);
+                #include "SurfelWeight.cginc"
                 
-                weight = // 0.001 + 0.999 * 
-                    saturate(1.0/(1.0+20.0*dist)-0.1667) *
-                    saturate(dot(i.surfelNormal, normal)); // todo make it depend on metallic and roughness; sharpness depends on roughness
-                    // don't forget to adjust it in shader without gradients as well!!
-                
-                // if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
-                // result.v = i.color * weight;
-
-                float3 estColor = weight * (i.color.xyz + localPos.x * i.colorDx.xyz + localPos.z * i.colorDz.xyz);
+                // estimated color for easy gradient calculation
+                float3 estColor = weight * (i.color.xyz + localPosition.x * i.colorDx.xyz + localPosition.z * i.colorDz.xyz);
                 float3 colorDx = ddx(estColor);
                 float3 colorDy = ddy(estColor);
-
-                // result.v = weight * estColor;
-                // result.dx = weight * colorDx;
-                // result.dy = weight * colorDy;
 
                 result.v  = float4(estColor, weight);
                 result.dx = float4(colorDx.xyz, weight);
                 result.dy = float4(colorDy.xyz, weight);
-                // result.dx = colorDx;// + ddx(weight) * float4(i.color.xyz, 0.0);
-                // result.dy = colorDy;// + ddy(weight) * float4(i.color.xyz, 0.0);
-                // result.dx = weight * i.colorDx;
-                // result.dy = weight * i.colorDz;
-                // result.dx = float4(100.0 * ddx(weight),0,0,1);
-
-                // result.dx = float4(localPos.xz*.5+.5,0,1); // surface test
-                // result.id = weight < _IdCutoff ? i.surfelId : 0;
+               
                 return result;
 
-                //Albedo = float3(weight,weight,weight);
-                //#ifndef UNITY_INSTANCING_ENABLED
-                //Albedo.yz = 0;
-                //#endif
-                //result.v = float4(Albedo,1.0); return result;
-                
             }
             
             ENDCG

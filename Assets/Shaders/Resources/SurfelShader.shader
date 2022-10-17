@@ -42,6 +42,7 @@ Shader "Custom/SurfelShader" {
                 float invSize: TEXCOORD5;
                 float3 surfelNormal: TEXCOORD6; // in world space
                 float3 localPos : TEXCOORD7;
+                float2 surfelData: TEXCOORD8;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
             
@@ -94,17 +95,18 @@ Shader "Custom/SurfelShader" {
             }
 
             float4 frag (v2f i) : SV_Target {
+
                 float2 uv = i.screenPos.xy / i.screenPos.w;
+                
+                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+                if(rawDepth == 0.0) discard; // sky surfels are ignored
+
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
                 half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
                 half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
                 UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
                 float specular = SpecularStrength(data.specularColor);
-                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
-
-                if(!_AllowSkySurfels && rawDepth == 0.0) {
-                    return float4(1,1,1,1);// GI in the sky is 1
-                }
+                float smoothness = data.smoothness;
 
                 float depth = LinearEyeDepth(rawDepth);
                 
@@ -116,41 +118,16 @@ Shader "Custom/SurfelShader" {
                 // calculate surface world position from depth x direction
                 float3 lookDir0 = mul((float3x3) UNITY_MATRIX_V, float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0));
                 float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
-                // float3 surfaceWorldPosition = WorldPosFromDepth(depth, uv);
+                
                 float3 surfaceWorldPosition = _WorldSpaceCameraPos + depth * lookDir;
-                float3 surfaceLocalPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
+                float3 localPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
-                float3 Albedo;
-                // Albedo = color;
-                // Albedo = normal*.5+.5;
-                // Albedo = normalize(surfaceLocalPosition)*.5+.5;
-                // Albedo = lookDir;
-                // Albedo = frac(log2(depth));
-                // Albedo = frac(surfaceWorldPosition);
-                float closeness;
-                float dist = dot(surfaceLocalPosition, surfaceLocalPosition);
-                if(rawDepth == 0.0 && dist > 3.0) {
+                #include "SurfelWeight.cginc"
+                
+                if(weight <= 0.0) discard;
 
-                    // disc like closeness
-                    dist = length(i.localPos.xz);
-                    closeness = max(1.0/(1.0+10.0*dist)-0.16667, 0.0);
-                    // return float4(closeness,closeness,closeness,1);
-                    
-                } else {
-                    closeness = /*0.001 + 
-                        0.999 * */
-                        saturate(1.0/(1.0+20.0*dist)-0.1667) *
-                        saturate(dot(i.surfelNormal, normal)*25.0-24.0);
-                }
-
-                if(_VisualizeSurfels > 0.0) return float4(1,1,1,1)*closeness;
-                // if(closeness <= 0.0) discard; // without it, we get weird artefacts from too-far-away-surfels
-                return i.color * (closeness / i.color.w);
-                Albedo = float3(closeness,closeness,closeness);
-                #ifndef UNITY_INSTANCING_ENABLED
-                Albedo.yz = 0;
-                #endif
-                return float4(Albedo,1.0);
+                if(_VisualizeSurfels > 0.0) return float4(1,1,1,1)*weight;
+                return i.color * (weight / i.color.w);
                 
             }
             

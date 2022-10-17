@@ -100,11 +100,11 @@ bool uvsOnScreen(float2 uv){
 }
 
 // how much a surface depends on the angle
-float CalcAngleDepedence(float3 specular, float smoothness){
+float CalcAngleDependence(float3 specular, float smoothness){
     return max(specular.r,max(specular.g,specular.b)) * smoothness + 0.1;
 }
 
-float CalcAngleDepedence(float specular, float smoothness){
+float CalcAngleDependence(float specular, float smoothness){
     return specular * smoothness + 0.1;
 }
 
@@ -114,6 +114,8 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
 
     float3 diffuse  = data0.rgb;
     float3 specular = data1.rgb;
+    
+    // https://github.com/TwoTailsGames/Unity-Built-in-Shaders/blob/master/CGIncludes/UnityStandardUtils.cginc, SpecularStrength()
     float specular1 = max(specular.r,max(specular.g,specular.b));
 
     float smoothness = data1.a;
@@ -133,7 +135,7 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
     surfel.colorDz = 0;
 
     surfel.data = float4(
-        CalcAngleDepedence(specular1, smoothness),
+        CalcAngleDependence(specular1, smoothness),
         specular1, smoothness,
         0 // padding for now
     );
