@@ -24,8 +24,13 @@ SamplerState _LinearClamp;
 #define Point3 float3
 #define Spectrum float3
 
+float3 _SunDir;
+#define SUN_SHARPNESS 0.999
+
 float3 SampleSky(float3 dir) {
-    return _SkyBox.SampleLevel(_LinearClamp, dir, 0).rgb;
+    float sunRange = SUN_SHARPNESS;
+    float sunEffect = max(dot(dir,_SunDir)-sunRange, 0.0)/(1.0-sunRange);
+    return _SkyBox.SampleLevel(_LinearClamp, dir, 0).rgb + sunEffect * float3(10.0,10.0,9.5);
 }
 
 #define D_EPSILON 1e-14
@@ -423,31 +428,61 @@ StructuredBuffer<Triangle> g_Triangles;
 #include "SampleTri.cginc"
 
 void sampleEmitterDirectVisible(inout DirectSamplingRecord rec, float2 random, out float3 emitterRadiance, out bool mainEmitterVisible) {
-    // todo do we need to write more information?
-    float relativeIndex = random.x * _LightAccuArea;
-    emitterRadiance = 0;
-    rec.pdf = 0;
+    
+    float skyProbability = 0.5;
 
-    // make seed depend on more parameters, maybe on random
-    uint index = DispatchRaysIndex().x;
-    uint randomSeed = initRand(index ^ 0xffff + DispatchRaysIndex().y, _FrameIndex ^ (int) (random.x * 0xffffff));
+    uint numTriangles, stride;
+	g_Triangles.GetDimensions(numTriangles, stride);
+    if(numTriangles == 0) skyProbability = 1.0;
 
-    if(FindEmissiveTriangle(relativeIndex, rec.p, rec.d, emitterRadiance, randomSeed)){
-        // check visibility
-        // what is the start position? rec.ref, which is being set in the constructor of DirectSamplingRecord
-        mainEmitterVisible = testVisibility(rec.ref, rec.p, 0.0);
-        if(mainEmitterVisible){
-            // todo is this the correct probability?
-            rec.pdf = 0.1;
+    float rand = nextRand(rec.its.randomSeed);
+    if(rand < skyProbability) {
+
+        float sunProbability = skyProbability * 0.5 * dot2(_SunDir);// the last term is a check whether the sun is defined (if defined, length will be 1, else length will be 0)
+        if(rand < sunProbability) {
+            // sample sun
+            rec.d = normalize(_SunDir + nextRandS3(rec.its.randomSeed) * (1.0 - SUN_SHARPNESS));
+            rec.pdf = sunProbability;
+        } else {
+            // sample sky
+            rec.d = nextRandS3(rec.its.randomSeed);
+            rec.pdf = skyProbability - sunProbability;
+        }
+        
+        rec.p = rec.ref + 0.5 * _Far * rec.d;
+        emitterRadiance = SampleSky(rec.d);
+
+    } else {
+
+        // todo do we need to write more information?
+        float relativeIndex = random.x * _LightAccuArea;
+        emitterRadiance = 0;
+        rec.pdf = 0;
+
+        // make seed depend on more parameters, maybe on random
+        uint index = DispatchRaysIndex().x;
+        mainEmitterVisible = false;
+
+        if(!FindEmissiveTriangle(relativeIndex, rec.p, rec.d, emitterRadiance, rec.its.randomSeed)){
+            rec.pdf = 1.0 - skyProbability;
             return;
         }
     }
-    mainEmitterVisible = false;
+
+    // check visibility
+    // what is the start position? rec.ref, which is being set in the constructor of DirectSamplingRecord
+    mainEmitterVisible = testVisibility(rec.ref, rec.p, 0.0);
+    if(!mainEmitterVisible){
+        rec.pdf = 0;
+    }
+    
+    emitterRadiance *= rec.pdf;
+    
 }
 
 // Environment(Emitter).fillDirectSamplingRecord
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/emitter.h, line 600
-bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray){
+bool fillDirectSamplingRecord(inout DirectSamplingRecord rec, Ray ray) {
     // ensure the ray is valid
     rec.p = rec.its.p;
     rec.n = Frame_n(rec.its.shFrame);
@@ -505,7 +540,7 @@ bool testEnvironmentVisibility(Ray ray) {
     return testVisibility(ray.o, ray.o + _Far * normalize(ray.d), 0.0);
 }
 
-float3 evalEnvironment(Ray ray){
+float3 evalEnvironment(Ray ray) {
 	return SampleSky(ray.d);
 }
 

@@ -115,10 +115,9 @@ void SurfelGPT() {
         // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
         // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
         float weight = mainRay.pdf;
-        float3 color = mainRay.radiance + veryDirect;
-        // todo how can weight or color be negative???
-        // if(all(color >= 0.0) && weight >= 0) 
-            surfel.color += float4(color, weight); // is it correct to add veryDirect here?
+        float3 color = mainRay.radiance + veryDirect; // is it correct to add veryDirect here?
+
+        surfel.color += float4(color, weight);
         float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient) / distance;
         float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient) / distance;
 		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
@@ -223,18 +222,13 @@ void PixelGPT() {
         // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
         float weight = mainRay.pdf;
         float3 color = mainRay.radiance + veryDirect;
-        if(all(color >= 0.0) && weight >= 0){ // this should be always true; but it isn't; so it filters NaNs
+        // if(all(color >= 0.0) && weight >= 0){ // this should be always true; but it isn't; so it filters NaNs
             finalColor += float4(color, weight); // is it correct to add veryDirect here?
-        
             float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);// / distance;
             float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);// / distance;
-            /*float3 gradientDX = gradient1 * cosa + gradient2 * sina;
-            float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
-            surfel.colorDx += float4(gradientDX, weight);
-            surfel.colorDz += float4(gradientDZ, weight);*/
             finalColorDx += float4(gradient1, weight);
             finalColorDy += float4(gradient2, weight);
-        }
+        // }
     }
 
 	// store result

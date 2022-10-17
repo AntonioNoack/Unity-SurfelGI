@@ -72,13 +72,13 @@ float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 
 float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
 	if(Frame_cosTheta(rec.wi) <= 0) return 0;
-	float pdf0;
 	float eta = 1.5;
 	float k = 0.0;
 	MicrofacetType type = Beckmann;
 	float3 wi = rec.wi;
 	float alphaU = bsdf.roughness, alphaV = alphaU;
 	float exponentU = 0, exponentV = exponentU;
+	float pdf0;
 	float3 m = distrSample(type, alphaU, alphaV, exponentU, exponentV, wi, seed, pdf0);
 	rec.wo = reflect1(wi, m);
 	rec.sampledType = EGlossyReflection;
@@ -162,7 +162,8 @@ float3 RoughDiffuse_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pd
 	if(Frame_cosTheta(rec.wi) <= 0) return 0;
 	rec.wo = squareToCosineHemisphere(seed);
 	rec.sampledType = EGlossyReflection;
-	return RoughDiffuse_eval(bsdf, rec, ESolidAngle) / squareToCosineHemispherePdf(rec.wo);
+	pdf = squareToCosineHemispherePdf(rec.wo);
+	return RoughDiffuse_eval(bsdf, rec, ESolidAngle) / pdf;
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp

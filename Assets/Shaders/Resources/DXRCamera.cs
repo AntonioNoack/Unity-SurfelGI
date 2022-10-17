@@ -57,6 +57,8 @@ public class DXRCamera : MonoBehaviour {
     public RayTracingShader surfelTracingShader;
     public RayTracingShader gptRTShader;
 
+    public Light sun;
+
     public int maxNumSurfels = 64 * 1024;
     public bool enableSurfelMovement = false;
 
@@ -501,19 +503,46 @@ public class DXRCamera : MonoBehaviour {
             Thread.Sleep((int) (sleep * 1000));
         }
 
+        // todo modes with derivatives
         switch(renderMode){
             case RenderMode.SURFEL_WEIGHTS:
                 perPixelRT = false;
                 perPixelGPT = false;
+                enablePathTracing = false;
+                enableLightSampling = false;
                 useOfficalGPT = false;
                 useDerivatives = false;
                 enableLightSampling = false;
                 visualizeSurfels = true;
-                // showIllumination;
+                // showIllumination; doesn't matter
+                break;
+            case RenderMode.OLD_PIXEL_GI:
+                perPixelRT = true;
+                perPixelGPT = false;
+                enablePathTracing = false;
+                enableLightSampling = false;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                // showIllumination; can be both
+                break;
+            case RenderMode.OLD_SURFEL_GI:
+                perPixelRT = false;
+                perPixelGPT = false;
+                enablePathTracing = true;
+                enableLightSampling = false;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                // showIllumination; can be both
                 break;
             case RenderMode.GPT_PIXEL_GI:
                 perPixelRT = false;
                 perPixelGPT = true;
+                enablePathTracing = false;
+                enableLightSampling = false;
                 useOfficalGPT = false;
                 useDerivatives = false;
                 enableLightSampling = false;
@@ -523,6 +552,8 @@ public class DXRCamera : MonoBehaviour {
             case RenderMode.GPT_PIXEL_COLOR:
                 perPixelRT = false;
                 perPixelGPT = true;
+                enablePathTracing = false;
+                enableLightSampling = false;
                 useOfficalGPT = false;
                 useDerivatives = false;
                 enableLightSampling = false;
@@ -532,6 +563,8 @@ public class DXRCamera : MonoBehaviour {
             case RenderMode.GPT_SURFEL_GI:
                 perPixelRT = false;
                 perPixelGPT = false;
+                enablePathTracing = false;
+                enableLightSampling = false;
                 useOfficalGPT = true;
                 useDerivatives = false;
                 enableLightSampling = false;
@@ -541,6 +574,8 @@ public class DXRCamera : MonoBehaviour {
             case RenderMode.GPT_SURFEL_COLOR:
                 perPixelRT = false;
                 perPixelGPT = false;
+                enablePathTracing = false;
+                enableLightSampling = false;
                 useOfficalGPT = true;
                 useDerivatives = false;
                 enableLightSampling = false;
@@ -616,6 +651,7 @@ public class DXRCamera : MonoBehaviour {
                     shader.SetInt("_FrameIndex", frameIndex);
                     shader.SetInt("_SPP", samplesPerPixel);
                     shader.SetTexture("_SkyBox", skyBox);
+                    shader.SetVector("_SunDir", sun != null ? -sun.transform.forward : new Vector3(0,0,0));
                     if(useOfficalGPT){
                         shader.SetBuffer("_Surfels", surfels);
                         shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);

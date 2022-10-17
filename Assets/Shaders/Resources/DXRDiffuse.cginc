@@ -96,16 +96,12 @@
 					rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
 					rayPayload.shFrame = normalToFrame(worldNormal);
 
-					float alphaU = roughness, alphaV = roughness;
-					// what is a good value for the exponent?
-					float exponentU = 100.0, exponentV = exponentU; // used by Phong model
-
 					rayPayload.bsdf.roughness = roughness;
 					rayPayload.bsdf.color = color;
 
 					if(metallic > nextRand(rayPayload.randomSeed)){
 						// metallic, conductor material
-						if(roughness > 0.01) {
+						if(roughness > 0.001) {
 							// rough conductor
 							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
 							rayPayload.bsdf.components[0].type = EGlossyReflection;
@@ -122,16 +118,16 @@
 						}
 					} else {
 						// diffuse material
-						if(roughness < 0.01){
-							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp
-							rayPayload.bsdf.components[0].type = EDiffuseReflection;
-							rayPayload.bsdf.components[0].roughness = Infinity;
-							rayPayload.bsdf.numComponents = 1;
-							rayPayload.bsdf.materialType = ROUGH_DIFFUSE;
-						} else {
+						if(roughness > 0.001) {
 							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
 							rayPayload.bsdf.components[0].type = EGlossyReflection;
 							rayPayload.bsdf.components[0].roughness = Infinity;// why?
+							rayPayload.bsdf.numComponents = 1;
+							rayPayload.bsdf.materialType = ROUGH_DIFFUSE;
+						} else {
+							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp
+							rayPayload.bsdf.components[0].type = EDiffuseReflection;
+							rayPayload.bsdf.components[0].roughness = Infinity;
 							rayPayload.bsdf.numComponents = 1;
 							rayPayload.bsdf.materialType = DIFFUSE;
 						}
