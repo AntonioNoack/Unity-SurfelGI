@@ -269,8 +269,10 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     rayPayload.bsdf.numComponents = 0;
     rayPayload.randomSeed = its.randomSeed;
 
-    TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE,
-			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+    TraceRay(_RaytracingAccelerationStructure,
+            its.bsdf.eta > 1.0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // cull faces if not within glass-like material
+			RAYTRACING_OPAQUE_FLAG,
+            0, 1, 0, rayDesc, rayPayload);
 
     its.p = ray.o + ray.d * rayPayload.distance;
     its.t = rayPayload.distance;
@@ -766,6 +768,12 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
     rayIntersect(main.rRec, main.ray);
     main.ray.mint = Epsilon;
     main.ray.maxt = _Far;
+
+    if(main.rRec.its.isEmitter){
+        main.radiance = main.rRec.its.bsdf.color;
+        main.pdf = 1.0;
+        return true;
+    }
 
     if (!main.rRec.its.isValid) {
         // First hit is not in the scene so can't continue. Also there there are no paths to shift.

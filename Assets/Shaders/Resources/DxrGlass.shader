@@ -7,6 +7,8 @@
 	SubShader {
 		Tags { "RenderType" = "Opaque" }
 		LOD 100
+		// disable backface culling
+		Cull Off
 
 		// basic pass for GBuffer
 		CGPROGRAM

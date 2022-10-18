@@ -107,7 +107,7 @@ void SurfelGPT() {
 			shiftedRays[i].rRec = rRec;
 		}
 
-        float3 veryDirect = 0;
+        float3 veryDirect = float3(0,0,0);
         bool ok = evaluate(mainRay, shiftedRays, 4, veryDirect);
         if(!ok) continue;
 

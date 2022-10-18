@@ -66,7 +66,8 @@
 			SamplerState sampler_MainTex;
 
 			#define GetColor() _MainTex.SampleLevel(sampler_MainTex, TRANSFORM_TEX(vertex.texCoord0, _MainTex), lod) * _Color
-			
+			// #define GetColor() float4(frac(TRANSFORM_TEX(vertex.texCoord0, _MetallicGlossMap)), 0.0, 1.0)
+
 			#include "DXRDiffuse.cginc"
 
 			ENDHLSL

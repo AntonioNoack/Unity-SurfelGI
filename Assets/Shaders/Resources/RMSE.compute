@@ -1,0 +1,48 @@
+
+#pragma kernel RMSEKernel
+
+// textures to compare, e.g., Src1 = result, Src2 = baseline
+RWTexture2D<float4> Src1;
+RWTexture2D<float4> Src2;
+
+// 32th of the size
+RWStructuredBuffer<float> Dst;
+ 
+groupshared float tmp[1024];
+
+#define dot2(x) dot(x,x)
+
+[numthreads(32,32,1)]
+void RMSEKernel (uint3 id : SV_DispatchThreadID) {
+    // todo compare rgb values
+    // todo first step: load and compute square error for each pixel
+    uint2 uv = id.xy;
+    uint2 size;
+    Src1.GetDimensions(size.x, size.y);
+    uint2 localId2 = uv & 31;
+    uint localId = localId2.x + (localId2.y << 5);
+    tmp[localId] = 0;// ensure all out-of-bounds entries are zero
+    if(all(uv < size)) {
+        // calculate error
+        float3 delta = Src1[uv]-Src2[uv];
+        float sqError = dot2(delta);
+        // save to shared memory
+        tmp[localId] = sqError;
+        int step = 1;
+        int mask = 1;
+        // reduce error in shared memory in log2(N) time
+        while(step < 1024){
+            GroupMemoryBarrierWithGroupSync();
+            if((localId & mask) == 0) tmp[localId] += tmp[localId + step];
+            else break;// is this fine for the barrier? only a few nodes need to continue work
+            step = step << 1;// 1, 2, 4, 8, 16, ... = 2^i
+            mask = mask | step;// 1, 3, 7, 15, 31, ... = 2*step-1
+        }
+        if(localId == 0) {
+            float result = tmp[0];
+            uv = uv >> 5;
+            int index = uv.x + uv.y * ((size.x + 31) >> 5);
+            Result[index] = result;
+        }
+    }
+}

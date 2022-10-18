@@ -57,19 +57,19 @@
 				float roughness = GetRoughness(); // 1.0 - _Glossiness
 				float metallic = GetMetallic(); // _Metallic
 
-				if(!rayPayload.gpt){
+				if(!rayPayload.gpt) {
+
 					// get random vector
-					float3 randomVector;int i=0;
-					do {
-						randomVector = float3(nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed)) * 2-1;
-					} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
+					float3 randomVector = nextRandS3(rayPayload.randomSeed);
 
 					// get random scattered ray dir along surface normal
-					float3 scatterRayDir = normalize(worldNormal + randomVector);
-					// perturb reflection direction to get rought metal effect 
-					float3 reflectDir = reflect(rayDir, worldNormal);
-					float3 reflection = normalize(reflectDir + roughness * randomVector);
-					if(metallic > nextRand(rayPayload.randomSeed)) scatterRayDir = reflection;
+					float3 scatterRayDir = worldNormal + randomVector;
+					
+					// perturb reflection direction to get rought metal effect
+					if(metallic > nextRand(rayPayload.randomSeed)) {
+						scatterRayDir = reflect(rayDir, worldNormal) + roughness * randomVector;
+					}
+					scatterRayDir = normalize(scatterRayDir);
 					rayPayload.dir = scatterRayDir;
 
 					// occlusion by surface

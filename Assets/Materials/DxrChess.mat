@@ -79,10 +79,10 @@ Material:
     - _DstBlend: 0
     - _EnableLSRT: 0
     - _GlossMapScale: 1
-    - _Glossiness: 0.497
+    - _Glossiness: 0.149
     - _Glossiness2: 1
     - _GlossyReflections: 1
-    - _Metallic: 1
+    - _Metallic: 0
     - _Metallic2: 1
     - _Mode: 0
     - _OcclusionStrength: 1

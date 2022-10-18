@@ -55,7 +55,7 @@
 				float lod = 0;
 				float3 color = (_MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color).xyz;
 				rayPayload.color *= color;
-				rayPayload.dir = -WorldRayDirection();
+				rayPayload.dir = float3(0,0,0);
 
 				// define emission for GPT
 				

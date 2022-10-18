@@ -24,8 +24,10 @@ public class DXRCamera : MonoBehaviour {
 
     public enum RenderMode {
         SURFEL_WEIGHTS,
-        OLD_PIXEL_GI,
-        OLD_SURFEL_GI,
+        PT_PIXEL_GI,
+        PT_PIXEL_COLOR,
+        PT_SURFEL_GI,
+        PT_SURFEL_COLOR,
         GPT_PIXEL_GI,
         GPT_PIXEL_COLOR,
         GPT_SURFEL_GI,
@@ -528,7 +530,7 @@ public class DXRCamera : MonoBehaviour {
                 visualizeSurfels = true;
                 // showIllumination; doesn't matter
                 break;
-            case RenderMode.OLD_PIXEL_GI:
+            case RenderMode.PT_PIXEL_GI:
                 perPixelRT = true;
                 perPixelGPT = false;
                 enablePathTracing = false;
@@ -537,9 +539,20 @@ public class DXRCamera : MonoBehaviour {
                 useDerivatives = false;
                 enableLightSampling = false;
                 visualizeSurfels = false;
-                // showIllumination; can be both
+                showIllumination = true;
                 break;
-            case RenderMode.OLD_SURFEL_GI:
+            case RenderMode.PT_PIXEL_COLOR:
+                perPixelRT = true;
+                perPixelGPT = false;
+                enablePathTracing = false;
+                enableLightSampling = false;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = false;
+                break;
+            case RenderMode.PT_SURFEL_GI:
                 perPixelRT = false;
                 perPixelGPT = false;
                 enablePathTracing = true;
@@ -548,7 +561,18 @@ public class DXRCamera : MonoBehaviour {
                 useDerivatives = false;
                 enableLightSampling = false;
                 visualizeSurfels = false;
-                // showIllumination; can be both
+                showIllumination = true;
+                break;
+            case RenderMode.PT_SURFEL_COLOR:
+                perPixelRT = false;
+                perPixelGPT = false;
+                enablePathTracing = true;
+                enableLightSampling = false;
+                useOfficalGPT = false;
+                useDerivatives = false;
+                enableLightSampling = false;
+                visualizeSurfels = false;
+                showIllumination = false;
                 break;
             case RenderMode.GPT_PIXEL_GI:
                 perPixelRT = false;
