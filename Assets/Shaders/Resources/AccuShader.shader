@@ -22,6 +22,7 @@
 			sampler2D _CurrentFrame;
 			sampler2D _Accumulation;
 			int _FrameIndex;
+			float _Discard;
 			float _UseMotionVectors;
 
 			float3 _DeltaCameraPosition;
@@ -68,7 +69,8 @@
 
 				float2 uv = i.uv;
 
-				if(_UseMotionVectors > 0.5) {
+				if(_Discard) return tex2D(_CurrentFrame, uv);
+				else if(_UseMotionVectors > 0.5) {
 
 					float4 currentFrame = tex2D(_CurrentFrame, uv);
 

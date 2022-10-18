@@ -5,10 +5,12 @@ float3 _CameraPosition;
 float4 _CameraRotation;
 float3 _CameraOffset;
 float2 _CameraUVSize;
+float _Near;
 float _Far;
-bool _AllowStrayRays;
 
 int _FrameIndex;
+int _SPP;
+int _RPS;
 
 #pragma max_recursion_depth 2 // system maximum according to Unity, isn't mentioned on the docs tho
 // https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
@@ -21,6 +23,9 @@ float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 	bool foundLight = false;
 	bool foundSurface = true;
 
+	rayPayload.withinGlassDepth = 0;
+	rayPayload.color = float3(1,1,1);
+
 	for(int i=rayPayload.depth;i<maxRaysPerSample;i++) {
 
 		rayPayload.depth = i;
@@ -30,6 +35,7 @@ float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 			rayDesc.TMax = _Far;
 		}
 
+		rayPayload.distance = _Far;
 		TraceRay(_RaytracingAccelerationStructure,
 			rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
@@ -64,6 +70,21 @@ float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 
 }
 
+// miss shader, used when we don't hit any geometry
+TextureCube _SkyBox;
+SamplerState _LinearClamp;
+[shader("miss")]
+void SurfelPTMiss(inout RayPayload rayPayload : SV_RayPayload) {
+	// todo this looks like SDR... how do we get HDR colors?
+	if(rayPayload.depth > 0){
+		float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+		rayPayload.color *= color;
+	}
+	rayPayload.distance = _Far;
+	rayPayload.dir = 0;
+}
+
+
 [shader("raygeneration")]
 void SurfelPathTracing() {
 
@@ -93,20 +114,20 @@ void SurfelPathTracing() {
 	if(!(cameraDir.z > 0.0 && all(abs(cameraDir.xy) < _CameraUVSize * uvTolerance) && 
 		// test whether the surfel can be visible from the camera; the sky has no GBuffer information in Unity -> skip this test
 		dot(worldDir, worldNormal) < 0.0)) return;
-
-	// init random seed from current pixel location and frame index
-	uint seed = initRand(index, _FrameIndex);
 	
 	// init ray decriptor
 	RayDesc rayDesc;
 
-	int samplesPerSurfel = 10;//max(1, 8 - (int) surfel.color.w);
-	int maxRaysPerSample = 15;
+	int samplesPerSurfel = _SPP;
+	int maxRaysPerSample = _RPS;
 
 	// Create and init the ray payload
 	RayPayload rayPayload = (RayPayload) 0;
 	rayPayload.surfelRotation = surfel.rotation;
 	rayPayload.surfelSize = surfelSize;
+
+	// init random seed from current pixel location and frame index
+	rayPayload.randomSeed = initRand(index, _FrameIndex);
 
 	float cosa, sina, distance;
 	float3 ray1Pos, ray2Pos;
@@ -116,6 +137,7 @@ void SurfelPathTracing() {
 	);
 
 	bool hasChanged = false;
+	bool supportTransparency = true;
 	for(int j=0;j<samplesPerSurfel;j++){
 
 		// go back a step
@@ -123,29 +145,19 @@ void SurfelPathTracing() {
 		rayDesc.Origin = surfelPos - startDist * worldDir;
 		rayDesc.Direction = normalize(surfelPos - _CameraPosition);
 		rayDesc.TMin = startDist * 0.5;
-		rayDesc.TMax = startDist * 2.0;
-		rayPayload.color = float3(1,1,1);
-		rayPayload.depth = 0;
-		rayPayload.distance = 0.0;
-		rayPayload.randomSeed = seed;
-		rayPayload.withinGlassDepth = 0;
+		rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
 
 		float3 nextSurfacePos, ignored;
 		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
 		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
 		
-		rayPayload.color = float3(1,1,1);
-		rayPayload.withinGlassDepth = 0;
 		SetupGradientRayStart(rayDesc, ray1Pos, nextSurfacePos);
-
+		if(supportTransparency) rayDesc.TMax = _Far;
 		float3 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
-		rayPayload.color = float3(1,1,1);
-		rayPayload.withinGlassDepth = 0;
 		SetupGradientRayStart(rayDesc, ray2Pos, nextSurfacePos);
-
+		if(supportTransparency) rayDesc.TMax = _Far;
 		float3 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
-
 
 		surfel.color += color;
 			
@@ -166,16 +178,80 @@ void SurfelPathTracing() {
 	}
 }
 
-// miss shader, used when we don't hit any geometry
-TextureCube _SkyBox;
-SamplerState _LinearClamp;
-[shader("miss")]
-void SurfelPTMiss(inout RayPayload rayPayload : SV_RayPayload) {
-	// todo this looks like SDR... how do we get HDR colors?
-	if(rayPayload.depth > 0){
-		float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
-		rayPayload.color *= color;
-	}
-	rayPayload.distance = _Far;
-	rayPayload.dir = 0;
+// texture to store raytracing result
+RWTexture2D<float4> _ColorTarget;
+RWTexture2D<float4> _ColorDxTarget;
+RWTexture2D<float4> _ColorDyTarget;
+
+[shader("raygeneration")]
+void PixelPathTracing() {
+
+    // current pixel
+	uint2 dispatchIdx = DispatchRaysIndex().xy;
+	// target resolution
+	uint2 launchDim = DispatchRaysDimensions().xy;
+	
+	// get random uv inside current pixel
+	// this gives us anti-aliasing for free
+	// + float2(nextRand(seed), nextRand(seed))
+	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+
+    // current surfel
+    uint2 index = DispatchRaysIndex().xy;
+
+    // we know the surface, but we do not know the local BDRF .
+    // we need to trace the first ray, even if we know where it ends
+
+    float3 surfelPos = _CameraPosition;
+
+    RayPayload rayPayload = (RayPayload) 0;
+	RayDesc rayDesc = (RayDesc) 0;
+
+	// init random seed from current pixel location and frame index
+    rayPayload.randomSeed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
+
+	int samplesPerSurfel = _SPP;
+	int maxRaysPerSample = _RPS;
+
+    float4 finalColor = float4(0,0,0,0);
+    float4 finalColorDx = float4(0,0,0,0);
+    float4 finalColorDy = float4(0,0,0,0);
+
+    for (int j = 0; j < _SPP; j++) {
+
+		// go back a step
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = rayDir;
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		float3 nextSurfacePos, ignored;
+		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
+		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		float4 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		float4 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+
+		finalColor += color;
+		if(colorD1.w > 0) finalColorDx += float4(colorD1.xyz - color.xyz, 1.0);
+		if(colorD2.w > 0) finalColorDy += float4(colorD2.xyz - color.xyz, 1.0);
+
+    }
+
+	// store result
+	_ColorTarget[index] = finalColor;
+	_ColorDxTarget[index] = finalColorDx;
+	_ColorDyTarget[index] = finalColorDy;
+
 }

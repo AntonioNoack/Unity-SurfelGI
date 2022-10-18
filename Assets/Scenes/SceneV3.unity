@@ -2188,14 +2188,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  renderMode: 0
+  renderMode: 1
   enablePathTracing: 0
   enableLightSampling: 0
   surfelDensity: 3
-  sleep: 0.0114
-  exposure: 1.0715193
+  sleep: 0
+  exposure: 1
   showIllumination: 1
-  allowStrayRays: 0
   visualizeSurfels: 0
   hasPlacedSurfels: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
@@ -2207,6 +2206,9 @@ MonoBehaviour:
   _camera: {fileID: 0}
   giTarget: {fileID: 0}
   prevCameraPosition: {x: 0, y: 0, z: 0}
+  emissiveTarget: {fileID: 0}
+  emissiveDxTarget: {fileID: 0}
+  emissiveDyTarget: {fileID: 0}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}
   frameIndex: 0
   skyResolution: 512
@@ -2214,6 +2216,8 @@ MonoBehaviour:
   skyBoxCamera: {fileID: 1974688716}
   needsSkyBoxUpdate: 0
   resetSurfels: 0
+  resetPixelGI: 1
+  resetEmissiveTriangles: 1
   disableSurfaceUpdates: 0
   surfelBoundsMaterial: {fileID: 2100000, guid: 3871aded97caef042867487db6f66b87, type: 2}
   cubeMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
@@ -2226,7 +2230,7 @@ MonoBehaviour:
   updateSurfels: 1
   lightSamplingRatio: 1
   samplesPerPixel: 1
-  raysPerSample: 2
+  raysPerSample: 10
   useDerivatives: 0
   surfelPlacementIterations: 1
   useOfficalGPT: 1
@@ -2295,7 +2299,6 @@ MonoBehaviour:
   copyGBuffMat1: {fileID: 2100000, guid: ff7672f1e884a644485a1e70831cd675, type: 2}
   copyGBuffMat2: {fileID: 2100000, guid: 6aa67cace0a317a4c866a10f65ebafdc, type: 2}
   copyGBuffMatD: {fileID: 2100000, guid: 68c0e304975d3ee4ca5a9feb07ac550f, type: 2}
-  rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0

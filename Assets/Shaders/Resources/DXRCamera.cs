@@ -47,7 +47,6 @@ public class DXRCamera : MonoBehaviour {
     public float exposure = 2f;
 
     public bool showIllumination = false;
-    public bool allowStrayRays = false;
     public bool visualizeSurfels = false;
 
     public bool hasPlacedSurfels = false;
@@ -76,7 +75,8 @@ public class DXRCamera : MonoBehaviour {
     private Vector4 prevCameraRotation;
 
     // summed global illumination
-    private RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget;
+    [HideInInspector]
+    public RenderTexture emissiveTarget, emissiveDxTarget, emissiveDyTarget;
 
     // scene structure for raytracing
     [HideInInspector]
@@ -98,6 +98,9 @@ public class DXRCamera : MonoBehaviour {
     public bool needsSkyBoxUpdate = false;
     
     public bool resetSurfels = true;
+    public bool resetPixelGI = true;
+    public bool resetEmissiveTriangles = true;
+
     public bool disableSurfaceUpdates = false;
     public Material surfelBoundsMaterial;
 
@@ -174,7 +177,10 @@ public class DXRCamera : MonoBehaviour {
         }
 
         if(disableSurfaceUpdates && hasPlacedSurfels) return;
-        if(resetSurfels) hasPlacedSurfels = false;
+        if(resetSurfels) {
+            hasPlacedSurfels = false;
+            resetSurfels = false;
+        }
 
         shader.SetFloat("_Time", Time.time);
         shader.SetFloat("_Density", surfelDensity);
@@ -466,6 +472,10 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void SurfelPathTracing(){
+        InitPathTracing(true).Dispatch("SurfelPathTracing", surfels.count, 1, 1, null);
+    }
+    
+    public RayTracingShader InitPathTracing(bool needsSurfels){
         var shader = surfelTracingShader;
         shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
         shader.SetInt("_FrameIndex", frameIndex);
@@ -473,13 +483,15 @@ public class DXRCamera : MonoBehaviour {
         shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
         shader.SetVector("_CameraOffset", CalcCameraOffset());
         shader.SetTexture("_SkyBox", skyBox);
-        shader.SetBuffer("_Surfels", surfels);
+        if(needsSurfels) shader.SetBuffer("_Surfels", surfels);
+        shader.SetInt("_SPP", samplesPerPixel);
+        shader.SetInt("_RPS", raysPerSample);
+        shader.SetFloat("_Near", _camera.nearClipPlane);
         shader.SetFloat("_Far", _camera.farClipPlane);
         float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
-        shader.SetBool("_AllowStrayRays", allowStrayRays);
         shader.SetShaderPass("DxrPass");
-        shader.Dispatch("SurfelPathTracing", surfels.count, 1, 1, null);
+        return shader;
     }
 
     public float lightSamplingRatio = 1f;
@@ -592,123 +604,116 @@ public class DXRCamera : MonoBehaviour {
         Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
 
         var perPixelRT1 = GetComponent<PerPixelRT>();
-        if(perPixelRT) {
-            perPixelRT1.RenderImage(this, destination);
-        } else {
-
-            if(perPixelGPT) useOfficalGPT = false;
         
-            if(!perPixelGPT){
-                EnsureSurfels();
-                if(updateSurfels) {
-                    // for faster surfel-coverage, we can use multiple iterations
-                    bool uds = useDerivatives;
-                    for(int i=0,l=surfelPlacementIterations;i<l;i++){
-                        useDerivatives = false;
-                        AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
-                        DistributeSurfels();// todo surfels could move along their gradient to more evenly fill the scene
-                    }
-                    useDerivatives = uds;
-                    AccumulateSurfelEmissions();
-                } else {
-                    AccumulateSurfelEmissions();
-                }
 
-                if(updateSurfels && surfelTracingShader != null) {
-                    if(enablePathTracing) SurfelPathTracing();
+        if(perPixelGPT) useOfficalGPT = false;
+        
+        if(!perPixelGPT && !perPixelRT){
+            EnsureSurfels();
+            if(updateSurfels) {
+                // for faster surfel-coverage, we can use multiple iterations
+                bool uds = useDerivatives;
+                for(int i=0,l=surfelPlacementIterations;i<l;i++){
+                    useDerivatives = false;
+                    AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
+                    DistributeSurfels();
                 }
+                useDerivatives = uds;
+                AccumulateSurfelEmissions();
+            } else {
+                AccumulateSurfelEmissions();
             }
 
-            var lightSampling = GetComponent<LightSampling>();
-            var poissonReconstr = GetComponent<PoissonReconstruction>();
-            if(lightSampling != null){
-                lightSampling.surfels = surfels;
-                lightSampling.sceneRTAS = sceneRTAS;
-                lightSampling.lightAccuArea = lightAccuArea;
-                lightSampling.lightSampleStrength = lightSampleStrength / (surfels?.count ?? 1);
-                lightSampling.skyBox = skyBox;
-                if(enableLightSampling && !perPixelGPT) {
-                    lightSampling.RenderImage(_camera);
-                }
-                if(useOfficalGPT || perPixelGPT){
-                    var shader = gptRTShader;
+            if(updateSurfels && surfelTracingShader != null) {
+                if(enablePathTracing) SurfelPathTracing();
+            }
+        }
+
+        var lightSampling = GetComponent<LightSampling>();
+        var poissonReconstr = GetComponent<PoissonReconstruction>();
+        
+        lightSampling.surfels = surfels;
+        lightSampling.sceneRTAS = sceneRTAS;
+        lightSampling.lightAccuArea = lightAccuArea;
+        lightSampling.lightSampleStrength = lightSampleStrength / (surfels?.count ?? 1);
+        lightSampling.skyBox = skyBox;
+
+        if(enableLightSampling && !perPixelGPT && !perPixelRT) {
+            lightSampling.RenderImage(_camera);
+        }
+
+        if(perPixelRT){
+            perPixelRT1.UpdatePixelGI(this);
+            perPixelRT1.AccumulatePixelGI(this);
+         } else if(useOfficalGPT || perPixelGPT){
+            var shader = gptRTShader;
                    
-                    // light sampling is being used via sampleEmitterDirectVisible()
-                    lightSampling.enableSky = false;// handled separately in GPT
-                    if(lightSampling.emissiveTriangles == null)
-                        lightSampling.CollectEmissiveTriangles(_camera); // to do can be cached, if the scene is static
-                    shader.SetShaderPass("DxrPass");
-                    shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
-                    shader.SetFloat("_LightAccuArea", lightSampling.lightAccuArea);
-                    shader.SetBuffer("g_Triangles", lightSampling.emissiveTriangles);
-
-                    shader.SetVector("_CameraPosition", transform.position);
-                    shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-                    float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-                    shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
-                    shader.SetFloat("_Near", _camera.nearClipPlane);
-                    shader.SetFloat("_Far", _camera.farClipPlane);
-                    shader.SetInt("_FrameIndex", frameIndex);
-                    shader.SetInt("_SPP", samplesPerPixel);
-                    shader.SetTexture("_SkyBox", skyBox);
-                    shader.SetVector("_SunDir", sun != null ? -sun.transform.forward : new Vector3(0,0,0));
-                    if(useOfficalGPT){
-                        shader.SetBuffer("_Surfels", surfels);
-                        shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);
-                        AccumulateSurfelEmissions(); // because we updated the surfels
-                    }
-                    if(perPixelGPT){// per Pixel GPT
-                        shader.SetTexture("_ColorDxTarget", emissiveDxTarget);
-                        shader.SetTexture("_ColorDyTarget", emissiveDyTarget);
-                        if(useDerivatives && poissonReconstr.enabled){
-                            shader.SetTexture("_ColorTarget", emissiveTarget);
-                            shader.SetVector("_CameraOffset", CalcCameraOffset());
-                            shader.Dispatch("PixelGPT", emissiveTarget.width, emissiveTarget.height, 1, _camera);
-                        } else {
-                            shader.SetTexture("_ColorTarget", giTarget);
-                            shader.SetVector("_CameraOffset", CalcCameraOffset());
-                            shader.Dispatch("PixelGPT", giTarget.width, giTarget.height, 1, _camera);
-
-                            // accumulate current raytracing result
-                            perPixelRT1.AccumulatePixelGI(this);
-
-                            // display result on screen
-                            perPixelRT1.DisplayResultOnScreen(this, destination);
-
-                            perPixelRT1.PreservePrevGBuffers();
-
-                            perPixelRT1.SwapAccumulationTextures();
-                            PreservePrevTransform();
-                            frameIndex++;
-                            return;
-                        }
-                    }
-                }
+            // light sampling is being used via sampleEmitterDirectVisible()
+            lightSampling.enableSky = false;// handled separately in GPT
+            if(lightSampling.emissiveTriangles == null || resetEmissiveTriangles) {
+                lightSampling.CollectEmissiveTriangles(_camera); // can be cached, if the scene is static
+                resetEmissiveTriangles = false;
             }
+            shader.SetShaderPass("DxrPass");
+            shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
+            shader.SetFloat("_LightAccuArea", lightSampling.lightAccuArea);
+            shader.SetBuffer("g_Triangles", lightSampling.emissiveTriangles);
 
-            var accu = emissiveTarget;
-            if(useDerivatives && poissonReconstr != null && poissonReconstr.enabled){
-                accu = poissonReconstr.poissonReconstruct(emissiveTarget, emissiveDxTarget, emissiveDyTarget );
+            shader.SetVector("_CameraPosition", transform.position);
+            shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+            shader.SetVector("_CameraOffset", CalcCameraOffset());
+            float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            shader.SetVector("_CameraUVSize", new Vector2((float) giTarget.width / giTarget.height * tan, tan));
+            shader.SetFloat("_Near", _camera.nearClipPlane);
+            shader.SetFloat("_Far", _camera.farClipPlane);
+            shader.SetInt("_FrameIndex", frameIndex);
+            shader.SetInt("_SPP", samplesPerPixel);
+            shader.SetInt("_RPS", raysPerSample);
+            shader.SetTexture("_SkyBox", skyBox);
+            shader.SetVector("_SunDir", sun != null ? -sun.transform.forward : new Vector3(0,0,0));
+            if(useOfficalGPT){
+                shader.SetBuffer("_Surfels", surfels);
+                shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);
+                AccumulateSurfelEmissions(); // because we updated the surfels
             }
+            if(perPixelGPT){// per Pixel GPT
+                shader.SetTexture("_ColorTarget", emissiveTarget);
+                shader.SetTexture("_ColorDxTarget", emissiveDxTarget);
+                shader.SetTexture("_ColorDyTarget", emissiveDyTarget);
+                shader.Dispatch("PixelGPT", emissiveTarget.width, emissiveTarget.height, 1, _camera);
+            }
+        }
 
-            // display result on screen
-            displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
-            displayMaterial.SetFloat("_DivideByAlpha", 1f);
-            displayMaterial.SetTexture("_SkyBox", skyBox);
-            displayMaterial.SetFloat("_Exposure", exposure);
-            displayMaterial.SetTexture("_Accumulation", accu);
-            displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
-            displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
-            displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
-            displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-            displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
-            displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
-            displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
-            displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-            float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
-            Graphics.Blit(null, destination, displayMaterial);
-            
+        var accu = emissiveTarget;
+        if(perPixelRT || perPixelGPT){
+            accu = perPixelRT1.AccumulatePixelGI(this);
+        }
+
+        if(useDerivatives && poissonReconstr != null && poissonReconstr.enabled){
+            accu = poissonReconstr.poissonReconstruct(accu, emissiveDxTarget, emissiveDyTarget);
+        }
+
+        // display result on screen
+        displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
+        displayMaterial.SetFloat("_DivideByAlpha", 1f);
+        displayMaterial.SetTexture("_SkyBox", skyBox);
+        displayMaterial.SetFloat("_Exposure", exposure);
+        displayMaterial.SetTexture("_Accumulation", accu);
+        displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
+        displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
+        displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
+        displayMaterial.SetFloat("_Far", _camera.farClipPlane);
+        displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
+        displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+        displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
+        displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
+        float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
+        Graphics.Blit(null, destination, displayMaterial);
+
+        if(perPixelRT || perPixelGPT){
+            perPixelRT1.PreservePrevGBuffers();
+            perPixelRT1.SwapAccumulationTextures();
         }
 
         PreservePrevTransform();

@@ -12,9 +12,6 @@ public class PerPixelRT : MonoBehaviour {
     public Material copyGBuffMat0, copyGBuffMat1, copyGBuffMat2, copyGBuffMatD;
     private RenderTexture prevGBuff0, prevGBuff1, prevGBuff2, prevGBuffD;
 
-    // raytracing shader
-    public RayTracingShader rayTracingShader;
-
     // textures for accumulation
     private RenderTexture accu1, accu2;
 
@@ -54,33 +51,29 @@ public class PerPixelRT : MonoBehaviour {
         prevGBuff0 = prevGBuff1 = prevGBuff2 = prevGBuffD = null;
     }
 
-    private void UpdatePixelGI(DXRCamera cam) {
-        var shader = rayTracingShader;
-        shader.SetAccelerationStructure("_RaytracingAccelerationStructure", cam.sceneRTAS);
-        shader.SetInt("_FrameIndex", cam.frameIndex);
-        shader.SetInt("_SPP", cam.samplesPerPixel);
-        shader.SetInt("_RPS", cam.raysPerSample);
-        shader.SetVector("_CameraPosition", transform.position);
-        shader.SetVector("_CameraRotation", DXRCamera.QuatToVec(transform.rotation));
-        shader.SetVector("_CameraOffset", cam.CalcCameraOffset());
-        shader.SetTexture("_SkyBox", cam.skyBox);
-        shader.SetTexture("_DxrTarget", cam.giTarget);
-        shader.SetShaderPass("DxrPass");
-        shader.Dispatch("PixelGI", cam.giTarget.width, cam.giTarget.height, 1, cam._camera);
+    public void UpdatePixelGI(DXRCamera cam) {
+        var shader = cam.InitPathTracing(false);
+        shader.SetTexture("_ColorTarget", cam.emissiveTarget);
+        shader.SetTexture("_ColorDxTarget", cam.emissiveDxTarget);
+        shader.SetTexture("_ColorDyTarget", cam.emissiveDyTarget);
+        shader.Dispatch("PixelPathTracing", cam.emissiveTarget.width, cam.emissiveTarget.height, 1, cam._camera);
     }
 
-    public void AccumulatePixelGI(DXRCamera cam) {
+    public RenderTexture AccumulatePixelGI(DXRCamera cam) {
         Vector3 deltaPos = transform.position - cam.prevCameraPosition;
         var shader = accuMaterial;
         shader.SetVector("_DeltaCameraPosition", deltaPos);
-        shader.SetTexture("_CurrentFrame", cam.giTarget);
+        shader.SetTexture("_CurrentFrame", cam.emissiveTarget);
         shader.SetTexture("_Accumulation", accu1);
         shader.SetInt("_FrameIndex", cam.frameIndex);
         shader.SetTexture("prevGBuff0", prevGBuff0);
         shader.SetTexture("prevGBuff1", prevGBuff1);
         shader.SetTexture("prevGBuff2", prevGBuff2);
         shader.SetTexture("prevGBuffD", prevGBuffD);
-        Graphics.Blit(cam.giTarget, accu2, shader);
+        shader.SetFloat("_Discard", cam.resetPixelGI ? 1f : 0f);
+        Graphics.Blit(null, accu2, shader);
+        cam.resetPixelGI = false;
+        return accu2;
     }
 
     public void PreservePrevGBuffers(){
@@ -96,36 +89,4 @@ public class PerPixelRT : MonoBehaviour {
         accu2 = temp;
     }
 
-    public void DisplayResultOnScreen(DXRCamera cam, RenderTexture destination){
-        Material displayMaterial = cam.displayMaterial;
-        displayMaterial.SetVector("_Duv", new Vector2(1f/(cam._camera.pixelWidth-1f), 1f/(cam._camera.pixelHeight-1f)));
-        displayMaterial.SetFloat("_DivideByAlpha", 0f);
-        displayMaterial.SetTexture("_SkyBox", cam.skyBox);
-        displayMaterial.SetTexture("_Accumulation", accu2);
-        displayMaterial.SetFloat("_Far", cam._camera.farClipPlane);
-        displayMaterial.SetFloat("_ShowIllumination", cam.showIllumination ? 1f : 0f);
-        displayMaterial.SetVector("_CameraPosition", transform.position);
-        displayMaterial.SetVector("_CameraRotation", DXRCamera.QuatToVec(transform.rotation));
-        displayMaterial.SetFloat("_Derivatives", 0f);
-        float zFactor2 = 1.0f / Mathf.Tan(cam._camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        displayMaterial.SetVector("_CameraScale", new Vector2((zFactor2 * cam._camera.pixelWidth) / cam._camera.pixelHeight, zFactor2));
-        Graphics.Blit(accu2, destination, displayMaterial);
-    }
-
-    public void RenderImage(DXRCamera cam, RenderTexture destination){
-
-        // start path tracer
-        UpdatePixelGI(cam);
-
-        // accumulate current raytracing result
-        AccumulatePixelGI(cam);
-
-        // display result on screen
-        DisplayResultOnScreen(cam, destination);
-
-        PreservePrevGBuffers();
-
-        SwapAccumulationTextures();
-
-    }
 }

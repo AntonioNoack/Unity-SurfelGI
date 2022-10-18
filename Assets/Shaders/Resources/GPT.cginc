@@ -11,6 +11,7 @@ float4 _CameraRotation;
 float2 _CameraUVSize;
 float _Far;
 int _FrameIndex;
+int _RPS;
 
 #pragma max_recursion_depth 1
 
@@ -41,7 +42,7 @@ float3 SampleSky(float3 dir) {
 #define m_rrDepth 5
 // min, max "recursive" depth
 #define m_minDepth 0
-#define m_maxDepth 12
+#define m_maxDepth _RPS
 
 // If defined, uses only the central sample for the throughput estimate. Otherwise uses offset paths for estimating throughput too.
 // #define CENTRAL_RADIANCE
@@ -97,8 +98,8 @@ enum ERadianceQuery: int {
 };
 
 #define EMeasure bool
-const bool EDiscrete = false;
-const bool ESolidAngle = true;
+#define EDiscrete false
+#define ESolidAngle true
 
 enum VertexType {
     VERTEX_TYPE_GLOSSY, ///< "Specular" vertex that requires the half-vector duplication shift.
