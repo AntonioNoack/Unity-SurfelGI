@@ -37,6 +37,8 @@ public class DXRCamera : MonoBehaviour {
 
     public RenderMode renderMode = RenderMode.SURFEL_WEIGHTS;
 
+    public bool testSaving = false;
+
     public bool enablePathTracing = false;
     public bool enableLightSampling = false;
 
@@ -734,6 +736,27 @@ public class DXRCamera : MonoBehaviour {
         float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
         Graphics.Blit(null, destination, displayMaterial);
+
+        if(testSaving){
+            testSaving = false;
+            // test loading and saving images
+            var baselinePath = "baseline-bath.png";
+            var img = RMSE.LoadImage(baselinePath);
+            if(img == null) {
+                // todo calculate baseline
+                RMSE.SaveImage(baselinePath, RMSE.ToTexture2D(destination));
+            } else {
+                var r = GetComponent<RMSE>();
+                var b = RMSE.ToRenderTexture(img);
+                float e = r.Compute(destination, b);
+                r.Destroy();
+                if(b == RenderTexture.active) {
+                    RenderTexture.active = destination;
+                }
+                b.Release();
+                Debug.Log("Difference: "+e);
+            }
+        }
 
         if(perPixelRT || perPixelGPT){
             perPixelRT1.PreservePrevGBuffers();

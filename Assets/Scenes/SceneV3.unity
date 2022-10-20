@@ -2065,6 +2065,7 @@ GameObject:
   - component: {fileID: 963194234}
   - component: {fileID: 963194232}
   - component: {fileID: 963194233}
+  - component: {fileID: 963194235}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -2189,6 +2190,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   renderMode: 1
+  testSaving: 0
   enablePathTracing: 0
   enableLightSampling: 0
   surfelDensity: 3
@@ -2299,6 +2301,19 @@ MonoBehaviour:
   copyGBuffMat1: {fileID: 2100000, guid: ff7672f1e884a644485a1e70831cd675, type: 2}
   copyGBuffMat2: {fileID: 2100000, guid: 6aa67cace0a317a4c866a10f65ebafdc, type: 2}
   copyGBuffMatD: {fileID: 2100000, guid: 68c0e304975d3ee4ca5a9feb07ac550f, type: 2}
+--- !u!114 &963194235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 94dfabb509711534f8f0c470c3fccd38, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  shader: {fileID: 7200000, guid: c4f48ab326ea2de4c82034b2052d2acd, type: 3}
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0
