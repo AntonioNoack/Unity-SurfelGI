@@ -3,6 +3,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using Unity.Mathematics; // float4x3, float3
 using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
+using System; // invalid operation exception
 using System.Threading; // sleep for manual fps limit (reduce heat in summer)
 using System.Collections.Generic; // list
 
@@ -63,6 +64,7 @@ public class DXRCamera : MonoBehaviour {
     public Light sun;
 
     public int maxNumSurfels = 64 * 1024;
+    public float minSurfelWeight = 0.05f;
     public bool enableSurfelMovement = false;
 
     [HideInInspector]
@@ -159,7 +161,7 @@ public class DXRCamera : MonoBehaviour {
             surfelBounds = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxNumSurfels, UnsafeUtility.SizeOf<AABB>());
             RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
             // include all layers
-             settings.layerMask = 255;
+            settings.layerMask = 255;
             // enable automatic updates
             settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Manual;
             // include all renderer types
@@ -205,24 +207,28 @@ public class DXRCamera : MonoBehaviour {
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
         shader.SetFloat("_EnableSurfelMovement", enableSurfelMovement ? 1f : 0f);
+        shader.SetFloat("_MinSurfelWeight", minSurfelWeight);
 
         int kernel;
         if(hasPlacedSurfels) {// update surfels
 
             kernel = shader.FindKernel("DiscardSmallAndLargeSurfels");
-            PrepareDistribution(shader, kernel, depthTex);
+            if(kernel < 0) error("Kernel DiscardSmallAndLargeSurfels is missing");
+            PrepareDistribution(shader, kernel);
             shader.SetBuffer(kernel, "Surfels", surfels);
             Dispatch(shader, kernel, surfels.count, 1, 1);
             
             kernel = shader.FindKernel("SpawnSurfelsInGaps");
-            PrepareDistribution(shader, kernel, depthTex);
+            if(kernel < 0) error("Kernel SpawnSurfelsInGaps is missing");
+            PrepareDistribution(shader, kernel);
             shader.SetBuffer(kernel, "Surfels", surfels);
             Dispatch(shader, kernel, CeilDiv(giTarget.width, 16), CeilDiv(giTarget.height, 16), 1);
             
         } else {// init surfels
 
             kernel = shader.FindKernel("InitSurfelDistribution");
-            PrepareDistribution(shader, kernel, depthTex);
+            if(kernel < 0) error("Kernel InitSurfelDistribution is missing");
+            PrepareDistribution(shader, kernel);
             shader.SetBuffer(kernel, "Surfels", surfels);
             Dispatch(shader, kernel, surfels.count, 1, 1);
 
@@ -249,26 +255,36 @@ public class DXRCamera : MonoBehaviour {
         }
     }
 
-    private int PrepareDistribution(ComputeShader shader, int kernel, Texture depthTex){
+    private int PrepareDistribution(ComputeShader shader, int kernel){
         
         var t0 = Shader.GetGlobalTexture("_CameraGBufferTexture0");
         var t1 = Shader.GetGlobalTexture("_CameraGBufferTexture1");
         var t2 = Shader.GetGlobalTexture("_CameraGBufferTexture2");
-        if(t0 == null || t1 == null || t2 == null){
+        var t3 = Shader.GetGlobalTexture("_CameraDepthTexture");
+        if(t0 == null || t1 == null || t2 == null || t3 == null){
             Debug.Log("Missing GBuffers");
             return -1;
         }
 
+        if(t0.width != t1.width || t0.width != t2.width || t0.width != t3.width) error("Widths are inconsistent");
+        if(t0.height != t1.height || t0.height != t2.height || t0.height != t3.height) error("Heights are inconsistent");
+
         shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
         shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
         shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
-        shader.SetTexture(kernel, "_CameraDepthTexture", depthTex);
+        shader.SetTexture(kernel, "_CameraDepthTexture", t3);
 
         if(emissiveTarget != null) {
             shader.SetTexture(kernel, "_Weights", emissiveTarget);
         }
 
         return kernel;
+    }
+
+    private static void error(string message){
+        // C# is stupid... why is there no such thing?
+        // throw new InvalidStateException(message);
+        throw new InvalidOperationException(message);
     }
 
     private void EnableMotionVectors(){

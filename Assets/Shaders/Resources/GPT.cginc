@@ -908,7 +908,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                 // There values are probably needed soon for the Jacobians.
                 float mainDistanceSquared = lengthSquared(main.rRec.its.p - dRec.p);
-                float mainOpposingCosine = dot(dRec.n, (main.rRec.its.p - dRec.p)) / sqrt(mainDistanceSquared);
+                float mainOpposingCosine = dot(dRec.n, (main.rRec.its.p - dRec.p)) / max(sqrt(mainDistanceSquared), D_EPSILON);
 
                 // Power heuristic weights for the following strategies: light sample from base, BSDF sample from base.
                 float mainWeightNumerator = main.pdf * dRec.pdf;
@@ -1002,7 +1002,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
 
                                     // Sample the BSDF.
                                     float shiftedDistanceSquared = lengthSquared(dRec.p - shiftedRays[i].rRec.its.p);
-                                    Vector emitterDirection = (dRec.p - shiftedRays[i].rRec.its.p) / sqrt(shiftedDistanceSquared);
+                                    Vector emitterDirection = (dRec.p - shiftedRays[i].rRec.its.p) / max(sqrt(shiftedDistanceSquared), D_EPSILON);
                                     float shiftedOpposingCosine = -dot(dRec.n, emitterDirection);
 
                                     BSDFSamplingRecord bRec = (BSDFSamplingRecord) 0;
@@ -1294,7 +1294,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                                 shiftedDRec.p = mainDRec.p;
                                                 shiftedDRec.n = mainDRec.n;
                                                 shiftedDRec.dist = length(mainDRec.p - shiftedRays[i].rRec.its.p);
-                                                shiftedDRec.d = (mainDRec.p - shiftedRays[i].rRec.its.p) / shiftedDRec.dist;
+                                                shiftedDRec.d = (mainDRec.p - shiftedRays[i].rRec.its.p) / max(shiftedDRec.dist, D_EPSILON);
                                                 shiftedDRec.ref = mainDRec.ref;
                                                 shiftedDRec.refN = Frame_n(shiftedRays[i].rRec.its.shFrame);
                                                 // shiftedDRec.object = mainDRec.object;
@@ -1455,13 +1455,13 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         if (shiftedRays[i].alive) {
                             // Evaluate radiance difference using power heuristic between BSDF samples from base and offset paths.
                             // Note: No MIS with light sampling since we don't use it for this connection type.
-                            weight = main.pdf / (shiftedRays[i].pdf * shiftedRays[i].pdf + main.pdf * main.pdf);
+                            weight = main.pdf / max(shiftedRays[i].pdf * shiftedRays[i].pdf + main.pdf * main.pdf, D_EPSILON);
                             mainContribution = main.throughput * mainEmitterRadiance;
                             shiftedContribution = shiftedRays[i].throughput * shiftedEmitterRadiance; // Note: Jacobian baked into .throughput.
                         } else {
                             // Handle the failure without taking MIS with light sampling, as we decided not to use it in the half-vector-duplication case.
                             // Could have used it, but so far there has been no need. It doesn't seem to be very useful.
-                            weight = 1.0 / main.pdf;
+                            weight = 1.0 / max(main.pdf, D_EPSILON);
                             mainContribution = main.throughput * mainEmitterRadiance;
                             shiftedContribution = 0;
 
@@ -1510,7 +1510,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             index boundaries. Stop with at least some probability to avoid
             getting stuck (e.g. due to total internal reflection) */
 
-            float q = min(max3(main.throughput / main.pdf) * main.eta * main.eta, (float)0.95f);
+            float q = min(max3(main.throughput / max(main.pdf, D_EPSILON)) * main.eta * main.eta, (float)0.95f);
             if (nextSample1D(main.rRec) >= q)
                 break;
 

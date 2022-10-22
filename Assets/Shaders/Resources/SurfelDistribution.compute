@@ -46,14 +46,14 @@ float3 _PrevCameraPosition;
 
 float4 _ZBufferParams;
 
-bool _AllowSkySurfels;
-
 uint3 _DispatchOffset;
 
 Texture2D<half4> _Weights;
 float3 _CameraOffset;
 
 bool _EnableSurfelMovement;
+
+float _MinimumSurfelWeight;
 
 // adopted from https://stackoverflow.com/a/26127012/4979303
 float3 fibonacciSphere(int i, int n){
@@ -79,19 +79,9 @@ float calculateSize(float distance, float dot) {
 
 Surfel InitSkySurfel(float3 worldDir) {
     float distance = _Far * 0.5;
-    Surfel surfel;
+    Surfel surfel = (Surfel) 0;
     surfel.position.xyz = _CameraPosition + worldDir * distance;
-    surfel.rotation = 0;
-    surfel.position = 0;
-    if(_AllowSkySurfels){
-        surfel.rotation = normalToQuaternion(worldDir);
-        // surface area of a sphere: 4*pi*r²
-        surfel.position.w = calculateSize(distance, 1.0);
-    }
     surfel.color = 1;// sky has GI = 1
-    surfel.colorDx = 0;
-    surfel.colorDz = 0;
-    surfel.data = 0;
     return surfel;
 }
 
@@ -211,10 +201,10 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
                 // if the direction is too step, the following algorithm doesn't work well
                 if(cameraDir.z > 0.0 /*&& dot(surfelDir, cameraDir) < -0.3*/){ 
                     cameraDir.xy *= _CameraUVScale;
-                    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
-                    _Weights.GetDimensions(mipLevel, width, height, numLevels);
+                    uint width = 0, height = 0;
+                    _Weights.GetDimensions(width, height);
                     float2 uv = (cameraDir.xy / cameraDir.z * 0.5 + 0.5) * float2(width-1, height-1);
-                    if(uv.x > 0 && uv.x < (int) width-2 && uv.y > 0 && uv.y < (int) height-2){
+                    if(uv.x > 0 && uv.x < (int) width-1 && uv.y > 0 && uv.y < (int) height-1){
                         
                         float2 gradient = float2(// to do should use linear interpolation
                             // _Weights.Load(int3(uv.x+1,uv.y,0)).w - _Weights.Load(int3(uv.x-1,uv.y,0)).w,
@@ -257,7 +247,7 @@ float freeSurfelScore(uint surfelIndex) {
         /* [-1,0], better alignment is better */ max(1.0 - dot(dir, _CameraDirection), 0.0);
 }
 
-void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
+void SpawnSurfel(int2 uvi, inout uint seed){
     
     // spawn new surfel
 
@@ -269,30 +259,32 @@ void SpawnSurfel(uint3 dispatchIdx, int3 uv, inout uint seed){
     float bestFreeScore = freeSurfelScore(freeIndex);
     freeIndex++;
     for(uint l=freeIndex+15;freeIndex<l;freeIndex++){
-            float score = freeSurfelScore(freeIndex);
-            if(score > bestFreeScore){
-                bestFreeScore = score;
-                bestFreeIndex = freeIndex;
-            }
+        float score = freeSurfelScore(freeIndex);
+        if(score > bestFreeScore){
+            bestFreeScore = score;
+            bestFreeIndex = freeIndex;
         }
-        freeIndex = bestFreeIndex;
+    }
+    freeIndex = bestFreeIndex;
 
-        // distribute surfel onto pixel
+    // distribute surfel onto pixel
 
-        float3 cameraDir = float3(uv.xy - _CameraOffset.xy, _CameraOffset.z);
-	    float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
+    float3 cameraDir = float3(uvi - _CameraOffset.xy, _CameraOffset.z);
+	float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
+    
+    uint width = 0, height = 0;
+    _Weights.GetDimensions(width, height);
+    float2 uv = float2(uvi) / float2(width-1, height-1);
 
-        float rawDepth = _CameraDepthTexture.Load(uv).r;
-        if(rawDepth > 0.0) {
-            float2 tmpUV = cameraDir.xy/cameraDir.z;
-            float cameraDirZ = sqrt(1.0 + dot(tmpUV,tmpUV));
-            float4 data0 = _CameraGBufferTexture0.Load(uv);
-            float4 data1 = _CameraGBufferTexture1.Load(uv);
-            float4 data2 = _CameraGBufferTexture2.Load(uv);
-            Surfels[freeIndex] = InitSurfel2(rawDepth, worldDir, cameraDirZ, data0, data1, data2);
-        } else if(_AllowSkySurfels) {
-            Surfels[freeIndex] = InitSkySurfel(worldDir);
-        }
+    float rawDepth = _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
+    if(rawDepth > 0.0) {
+        float2 tmpUV = cameraDir.xy/cameraDir.z;
+        float cameraDirZ = sqrt(1.0 + dot(tmpUV,tmpUV));
+        float4 data0 = _CameraGBufferTexture0.SampleLevel(_PointClampSampler, uv, 0);
+        float4 data1 = _CameraGBufferTexture1.SampleLevel(_PointClampSampler, uv, 0);
+        float4 data2 = _CameraGBufferTexture2.SampleLevel(_PointClampSampler, uv, 0);
+        Surfels[freeIndex] = InitSurfel2(rawDepth, worldDir, cameraDirZ, data0, data1, data2);
+    }
 }
 
 [numthreads(16,16,1)]
@@ -302,7 +294,41 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
     // idea from https://media.contentapi.ea.com/content/dam/ea/seed/presentations/cedec2018-towards-effortless-photorealism-through-real-time-raytracing.pdf
     // which seems to be also used in "global illumination based on surfels", Siggraph 2021 EA
 
-    int  tileSizeX = 16;
+    float lowestWeight = _MinimumSurfelWeight;
+
+    int tileSizeX = 16;
+    int tileSizeY = 16;
+    uint width = 0, height = 0;
+    _Weights.GetDimensions(width, height);
+
+    uint w, h;
+    _CameraDepthTexture.GetDimensions(w, h);
+    width = min(w, width);
+    height = min(h, height);
+
+    uint x0 = dispatchIdx.x * tileSizeX, x1 = min(x0 + tileSizeX, width);
+    uint y0 = dispatchIdx.y * tileSizeY, y1 = min(y0 + tileSizeY, height);
+    uint bestX = x0, bestY = y0;
+    
+    for(uint y=y0;y<y1;y++){
+        for(uint x=x0;x<x1;x++){
+            float2 uv = float2(x, y) / float2(width-1, height-1);
+            float weight = _Weights.SampleLevel(_PointClampSampler, uv, 0).w;
+            float depth = _CameraDepthTexture.SampleLevel(_PointClampSampler, uv, 0).r;
+            if(depth > 0.0 && weight < lowestWeight) {
+                lowestWeight = weight;
+                bestX = x;
+                bestY = y;
+            }
+        }
+    }
+
+    //if(lowestWeight < _MinimumSurfelWeight) {
+        uint seed = initRand(dispatchIdx.x + (dispatchIdx.y << 16), _FrameIndex);
+        SpawnSurfel(int2(bestX, bestY), seed);
+    //}
+
+   /*   int  tileSizeX = 16;
     int  tileSizeY = 16;
     uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
     _Weights.GetDimensions(mipLevel, width, height, numLevels);
@@ -315,18 +341,16 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
         for(uint x=x0;x<x1;x++){
             int3  uvi = int3(x, y, 0);
             float weight = _Weights.Load(uvi).w;
-            float depth = _AllowSkySurfels ? 1.0 : _CameraDepthTexture.Load(uvi).r;
+            float depth = 1.0;// : _CameraDepthTexture.Load(uvi).r;
             if(depth > 0.0 && weight < 0.01) {
                 // lowestWeight = weight;
                 // bestX = x;
                 // bestY = y;
-                SpawnSurfel(dispatchIdx, uvi, seed);
+                SpawnSurfel(uvi.xy, seed);
                 // to do spawned surfels need to be added into the consideration for next surfels
                 return;
             }
         }
-    }
+    }*/
 
-    // todo never spawn surfels with a size of less than 1 pixel
-    
 }
