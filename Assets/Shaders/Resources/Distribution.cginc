@@ -600,5 +600,16 @@ Vector squareToCosineHemisphere(const Point2 sample1) {
 	return Vector(p.x, p.y, max(z, 1e-10));
 }
 
+float3 squareToSphere(const Point2 sample1) {
+	float r = frac(sample1.x * 1000.0);
+	r = pow(r, 1.0/3.0); // for even distribution
+	float phi = sample1.x * M_PI * 2;
+	float theta = acos(1.0 - 2.0 * sample1.y);
+	float x = r * sin(phi) * cos(theta);
+	float y = r * sin(phi) * sin(theta);
+	float z = r * cos(phi);
+	return float3(x, y, z);
+}
+
 
 #endif // DISTR_CGINC

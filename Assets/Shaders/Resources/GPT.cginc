@@ -29,6 +29,7 @@ float3 _SunDir;
 #define SUN_SHARPNESS 0.999
 
 float3 SampleSky(float3 dir) {
+    // return float3(1,1,1);
     float sunRange = SUN_SHARPNESS;
     float sunEffect = max(dot(dir,_SunDir)-sunRange, 0.0)/(1.0-sunRange);
     return _SkyBox.SampleLevel(_LinearClamp, dir, 0).rgb + sunEffect * float3(10.0,10.0,9.5);
@@ -308,7 +309,6 @@ void sendTrace(inout Intersection its, inout Ray ray){
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/shape.h
 BSDF getBSDF(inout Intersection its, inout Ray ray) {
     // ray matching is guranteed
-    // if(ray != its.ray) sendTrace(its, ray);
     return its.bsdf;
 }
 
@@ -419,7 +419,7 @@ bool testVisibility(float3 a, float3 b, float time) {
     rayPayload.gpt = true;
 	rayPayload.distance = max(_Far, dist * 2.0); // set to infinity at start
 	TraceRay(_RaytracingAccelerationStructure,
-				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // todo is this correct?
+				RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,// | RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 				RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
     return rayPayload.distance >= dist;
 }

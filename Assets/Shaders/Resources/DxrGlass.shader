@@ -83,11 +83,7 @@
 				// get intersection world position
 				float3 worldPos = rayOrigin + RayTCurrent() * rayDir;
 
-				// get random vector
-				float3 randomVector;int i=0;
-				do {
-					randomVector = float3(nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed)) * 2-1;
-				} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
+				float3 randomVector = nextRandS3(rayPayload.randomSeed);
 
 				// get index of refraction (IoR)
 				// IoR for front faces = AirIor / MaterialIoR

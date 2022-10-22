@@ -222,13 +222,11 @@ void PixelGPT() {
         // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
         float weight = mainRay.pdf;
         float3 color = mainRay.radiance + veryDirect;
-        // if(all(color >= 0.0) && weight >= 0){ // this should be always true; but it isn't; so it filters NaNs
-            finalColor += float4(color, weight); // is it correct to add veryDirect here?
-            float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);// / distance;
-            float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);// / distance;
-            finalColorDx += float4(gradient1, weight);
-            finalColorDy += float4(gradient2, weight);
-        // }
+        finalColor += float4(color, weight); // is it correct to add veryDirect here?
+        float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);// / distance;
+        float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);// / distance;
+        finalColorDx += float4(gradient1, weight);
+        finalColorDy += float4(gradient2, weight);
     }
 
 	// store result

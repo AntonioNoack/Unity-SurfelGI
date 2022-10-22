@@ -1,6 +1,13 @@
 #ifndef MATERIAL_CGINC
 #define MATERIAL_CGINC
 
+// can be disabled, and then the translated functions from Mitsuba will be used;
+// they produced black spots though, probably because of some error...
+#define USE_SIMPLE_CONDUCTORS
+// not yet implemented:
+// #define USE_SIMPLE_DIFFUSE
+// #define USE_SIMPLE_DIELECTRIC
+
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/conductor.cpp
 float3 Conductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	// perfectly smooth conductor
@@ -9,9 +16,13 @@ float3 Conductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 		Frame_cosTheta(rec.wo) <= 0.0 ||
 		abs(dot(reflect1(rec.wi), rec.wo)-1.0) > DeltaEpsilon
 	) return 0;
+#ifdef USE_SIMPLE_CONDUCTORS
+	return bsdf.color;// * pow(1 - Frame_cosTheta(rec.wi), 5.0);
+#else
 	float eta = 1.5;
 	float k = 0.0;
 	return bsdf.color * fresnelConductorExact(Frame_cosTheta(rec.wi), eta, k);
+#endif
 }
 
 float Conductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
@@ -20,7 +31,7 @@ float Conductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 		Frame_cosTheta(rec.wo) <= 0.0 ||
 		abs(dot(reflect1(rec.wi), rec.wo)-1.0) > DeltaEpsilon
 	) return 0;
-	return abs(dot(reflect1(rec.wi), rec.wo)-1.0) < 0.01 ? 1.0 : 0.0; // set pdf to 0 if dir != reflectDir
+	return 1.0; // set pdf to 0 if dir != reflectDir
 }
 
 float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
@@ -28,9 +39,17 @@ float3 Conductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, 
 	rec.sampledType = EDeltaReflection;
 	rec.wo = reflect1(rec.wi);
 	pdf = 1.0;
+#ifdef USE_SIMPLE_CONDUCTORS
+	return bsdf.color;// * pow(1 - Frame_cosTheta(rec.wi), 5.0);
+#else
 	float eta = 1.5;
 	float k = 0.0;
 	return bsdf.color * fresnelConductorExact(Frame_cosTheta(rec.wi), eta, k);
+#endif
+}
+
+float simpleDistr(float roughness, float cosTheta){
+	return max(0, 1+(abs(cosTheta)*cosTheta-1)/max(roughness, D_EPSILON));
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
@@ -38,6 +57,9 @@ float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) 
 	if(measure != ESolidAngle || 
 		Frame_cosTheta(rec.wi) <= 0 || 
 		Frame_cosTheta(rec.wo) <= 0) return 0;
+#ifdef USE_SIMPLE_CONDUCTORS
+	return bsdf.color * simpleDistr(bsdf.roughness, Frame_cosTheta(rec.wo));
+#else
 	MicrofacetType type = Beckmann;
 	float eta = 1.5;
 	float k = 0.0;
@@ -54,12 +76,16 @@ float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) 
 	// total amount of reflection
 	float model = D * G / (4.0 * Frame_cosTheta(wi));
 	return F * model;
+#endif
 }
 
 float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	if(measure != ESolidAngle || 
 		Frame_cosTheta(rec.wi) <= 0 || 
 		Frame_cosTheta(rec.wo) <= 0) return 0;
+#ifdef USE_SIMPLE_CONDUCTORS
+	return simpleDistr(bsdf.roughness, Frame_cosTheta(rec.wo));
+#else
 	MicrofacetType type = Beckmann;
 	float eta = 1.5;
 	float k = 0.0;
@@ -68,10 +94,17 @@ float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	float exponentU = 0, exponentV = exponentU;
 	float3 H = normalize(wo + wi);		
 	return distrEval(type, alphaU, alphaV, exponentU, exponentV, H) * distrSmithG1(type, alphaU, alphaV, wi, H) / (4.0 * Frame_cosTheta(wi));
+#endif
 }
 
 float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float pdf, float2 seed) {
 	if(Frame_cosTheta(rec.wi) <= 0) return 0;
+#ifdef USE_SIMPLE_CONDUCTORS
+	rec.wo = normalize(reflect1(rec.wi) + bsdf.roughness * squareToSphere(seed));
+	rec.sampledType = EGlossyReflection;
+	pdf = 1.0;
+	return bsdf.color;
+#else
 	float eta = 1.5;
 	float k = 0.0;
 	MicrofacetType type = Beckmann;
@@ -90,6 +123,7 @@ float3 RoughConductor_sample(BSDF bsdf, inout BSDFSamplingRecord rec, out float 
 		pdf = 0;
 		return 0;
 	}
+#endif
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp

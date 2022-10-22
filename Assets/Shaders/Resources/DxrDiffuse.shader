@@ -174,11 +174,7 @@
 				// trace into scene, according to probability distribution at surface
 				if(remainingDepth <= 1) return;
 
-				// get random vector
-				float3 randomVector;int i=0;
-				do {
-					randomVector = float3(nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed),nextRand(rayPayload.randomSeed)) * 2-1;
-				} while(i++ < 10 && dot(randomVector,randomVector) > 1.0);
+				float3 randomVector = nextRandS3(rayPayload.randomSeed);
 
 				// get random scattered ray dir along surface normal
 				// perturb reflection direction to get rought metal effect
