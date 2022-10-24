@@ -187,8 +187,8 @@ struct HalfVectorShiftResult {
 	/// Specifies the number of supported transport modes
 	ETransportModes = 2
 };*/
-bool ETransportRadiance = false;
-bool ETransportImportance = true;
+#define ETransportRadiance false
+#define ETransportImportance true
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h
 struct BSDFSamplingRecord {
@@ -327,7 +327,7 @@ float pdfEmitterDirect(DirectSamplingRecord rec){
 // - 1) encode the BSDF in RayPayload, 
 // - 2) trace another ray
 
-float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
+float3 eval(inout BSDF bsdf, BSDFSamplingRecord rec, bool measure) {
     switch(bsdf.materialType){
         case CONDUCTOR:
             return Conductor_eval(bsdf,rec,measure);
@@ -344,11 +344,11 @@ float3 eval(inout BSDF bsdf, inout BSDFSamplingRecord rec, bool measure) {
         case AREA_LIGHT:
             return bsdf.color;
         default:
-            return 0;
+            return float3(0,0,0);
     }
 }
 
-float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
+float pdf(inout BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
     switch(bsdf.materialType){
         case CONDUCTOR:
             return Conductor_pdf(bsdf,rec,measure);
@@ -365,7 +365,7 @@ float pdf(inout BSDF bsdf, inout BSDFSamplingRecord rec, EMeasure measure) {
         case AREA_LIGHT:
             return 0.0;
         default:
-            return 0;
+            return 0.0;
     }
 }
 
@@ -805,9 +805,9 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
     }
 
     // If no intersection of an offset ray could be found, its offset paths can not be generated.
-    for (int i = 0; i < secondaryCount; i++) {
-        if (!shiftedRays[i].rRec.its.isValid) {
-            shiftedRays[i].alive = false;
+    for (int j = 0; j < secondaryCount; j++) {
+        if (!shiftedRays[j].rRec.its.isValid) {
+            shiftedRays[j].alive = false;
             // can be used to debug how successful the first shifted rays are;
             // in the original GPT, these rays were well defined to be at 1px offset, however with surfels,
             // they can have varying directions and origins

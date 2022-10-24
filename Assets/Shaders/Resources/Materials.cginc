@@ -79,7 +79,7 @@ float3 RoughConductor_eval(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) 
 #endif
 }
 
-float3 RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
+float RoughConductor_pdf(BSDF bsdf, BSDFSamplingRecord rec, EMeasure measure) {
 	if(measure != ESolidAngle || 
 		Frame_cosTheta(rec.wi) <= 0 || 
 		Frame_cosTheta(rec.wo) <= 0) return 0;

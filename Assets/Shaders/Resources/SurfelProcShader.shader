@@ -38,6 +38,7 @@ Shader "Custom/SurfelProcShader" {
                 float3 surfelNormal: TEXCOORD6; // in world space
                 float3 localPos : TEXCOORD7;
                 float2 surfelData: TEXCOORD8;
+                int surfelId: TEXCOORD9;
             };
       
             sampler2D _CameraGBufferTexture0;
@@ -68,6 +69,7 @@ Shader "Custom/SurfelProcShader" {
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 #if defined(SHADER_API_D3D11)
                     int surfelId = instanceId + _InstanceIDOffset;
+                    o.surfelId = surfelId;
                     Surfel surfel = (Surfel) 0;
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId];
@@ -119,6 +121,8 @@ Shader "Custom/SurfelProcShader" {
                 float3 localPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
                 #include "SurfelWeight.cginc"
+
+                // weight *= (i.surfelId & 255) / 255.0;
 
                 if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
                 return i.color * (weight / i.color.w);

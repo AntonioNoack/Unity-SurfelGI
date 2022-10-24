@@ -51,18 +51,99 @@ uint3 _DispatchOffset;
 Texture2D<half4> _Weights;
 float3 _CameraOffset;
 
-bool _EnableSurfelMovement;
-
 float _MinimumSurfelWeight;
+float _EnableSurfelMovement;
 
-// adopted from https://stackoverflow.com/a/26127012/4979303
-float3 fibonacciSphere(int i, int n){
-    const float phi = PI * (3.0 - sqrt(5.0));
-    float i2 = float(i);
-    float y = 1.0 - 2.0 * i2 / float(n-1);
-    float theta = phi * i2;
-    float radius = sqrt(max(1.0 - y * y, 0.0));
-    return float3(cos(theta) * radius, y, sin(theta) * radius);
+float2 OctWrap(float2 v) {
+    return (1.0 - abs(v.yx)) * (v.xy >= 0.0 ? 1.0 : -1.0);
+}
+ 
+float2 OctahedronNormalEncode(float3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    if(n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * (n.xy >= 0.0 ? 1.0 : -1.0);
+    return n.xy * 0.5 + 0.5;
+}
+
+// https://knarkowicz.wordpress.com/2014/04/16/octahedron-normal-vector-encoding/
+float3 OctahedronNormalDecode(float2 f) {
+    f = f * 2.0 - 1.0;
+    // https://twitter.com/Stubbesaurus/status/937994790553227264
+    float3 n = float3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = saturate(-n.z);
+    n.xy += n.xy >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
+float2 Hilbert(int f, int j) {
+    // http://bit-player.org/2013/mapping-the-hilbert-curve
+    // reformatted to be non-recursive
+    float2 p = float2(0.5,0.5);
+    for(int i=0;i<j;i++){
+        int t = (f >> (2*i)) & 3;
+        p *= 0.5;
+        if(t == 0) p = p.yx;
+        else if(t == 1) p.y += .5;
+        else if(t == 2) p += .5;
+        else p = float2(1.0-p.y,0.5-p.x);
+    }
+    return p;
+}
+
+int InvHilbert(float2 p, int j) {
+    // inversed
+    int idx = 0;
+    for(int i=j-1;i>=0;i--) {
+
+        // p is [0,1]
+        
+        int t;
+        if(p.x < 0.5 && p.y < 0.5) {
+            t = 0;
+            p = p.yx;
+        } else if(p.x < 0.5) {
+            t = 1;
+            p.y -= 0.5;
+        } else if(p.x >= 0.5 && p.y >= 0.5) {
+            t = 2;
+            p -= 0.5;
+        } else {
+            t = 3;
+            p = float2(0.5-p.y,1.0-p.x);
+        }
+
+        p *= 2.0;
+
+        idx += t << (2*i);
+
+    }
+    return idx;
+}
+
+int InvHilbert2(float2 dir, int n) {
+    return (int) ((InvHilbert(dir, 15) / float(1<<30)) * n + 0.5);
+}
+
+int InvHilbert3(float3 dir, int n){
+    return InvHilbert2(OctahedronNormalEncode(dir), n);
+}
+
+float _UseFibSphere;
+float _RespawnAtOrigin;
+
+// indexToNormal adopted from https://stackoverflow.com/a/26127012/4979303
+float3 indexToNormal(int i, int n) {
+    if(_UseFibSphere){
+        const float phi = PI * (3.0 - sqrt(5.0));
+        float i2 = float(i);
+        float y = 1.0 - 2.0 * i2 / float(n-1);
+        float theta = phi * i2;
+        float radius = sqrt(max(1.0 - y * y, 0.0));
+        return float3(cos(theta) * radius, y, sin(theta) * radius);
+    } else{
+        float f = (float(i) + 0.5)/float(n);
+        float2 f2 = Hilbert((int)(f*(1<<30)), 15);
+        return OctahedronNormalDecode(f2);
+    }
 }
 
 float linear01Depth(float z) {
@@ -159,7 +240,7 @@ void InitSurfelDistribution(uint3 dispatchIdx : SV_DispatchThreadID) {
     uint index = dispatchIdx.x + _DispatchOffset.x;
     uint length = Surfels.Length;
     if(index < length) {
-        Surfels[index] = InitSurfel(fibonacciSphere(index, length));
+        Surfels[index] = InitSurfel(indexToNormal(index, length));
     }
 }
 
@@ -233,13 +314,14 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
 
             Surfels[index] = surfel;
         } else {
-            Surfels[index] = InitSurfel(fibonacciSphere(index, length1));
+            Surfels[index] = InitSurfel(indexToNormal(index, length1));
         }
     }
 }
 
 // to do if the surfel is off-screen (or behind things), we can "free" the surfel as well
 float freeSurfelScore(uint surfelIndex) {
+    if(surfelIndex >= Surfels.Length) return -1;
     Surfel surfel = Surfels[surfelIndex];
     float3 worldPos = surfel.position.xyz;
     float3 dir = worldPos - _CameraPosition;
@@ -251,9 +333,22 @@ void SpawnSurfel(int2 uvi, inout uint seed){
     
     // spawn new surfel
 
+    float3 cameraDir = float3(uvi - _CameraOffset.xy, _CameraOffset.z);
+	float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
+
     // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
 	
-    uint freeIndex = ((uint) nextRandInt(seed) * 1505776939) % (Surfels.Length - 16);
+    // respawn at roughly this direction's original index if _RespawnAtOrigin
+    // not implemented for fib sphere
+    uint freeIndex;
+    if(_RespawnAtOrigin){
+        int index = InvHilbert3(worldDir, Surfels.Length);
+        freeIndex = (uint) clamp(index - 8, 0, Surfels.Length - 16);
+    } else {
+        freeIndex = abs(nextRandInt(seed) * 1505776939) % (Surfels.Length - 16);
+    }
+    
+    if(freeIndex + 16 >= Surfels.Length || freeIndex < 0) return;
 
     uint bestFreeIndex = freeIndex;
     float bestFreeScore = freeSurfelScore(freeIndex);
@@ -268,9 +363,6 @@ void SpawnSurfel(int2 uvi, inout uint seed){
     freeIndex = bestFreeIndex;
 
     // distribute surfel onto pixel
-
-    float3 cameraDir = float3(uvi - _CameraOffset.xy, _CameraOffset.z);
-	float3 worldDir = normalize(quatRot(cameraDir, _CameraRotation));
     
     uint width = 0, height = 0;
     _Weights.GetDimensions(width, height);
@@ -323,34 +415,9 @@ void SpawnSurfelsInGaps(uint3 dispatchIdx: SV_DispatchThreadID){
         }
     }
 
-    //if(lowestWeight < _MinimumSurfelWeight) {
+    if(lowestWeight < _MinimumSurfelWeight) {
         uint seed = initRand(dispatchIdx.x + (dispatchIdx.y << 16), _FrameIndex);
         SpawnSurfel(int2(bestX, bestY), seed);
-    //}
-
-   /*   int  tileSizeX = 16;
-    int  tileSizeY = 16;
-    uint width = 0, height = 0, mipLevel = 0, numLevels = 0;
-    _Weights.GetDimensions(mipLevel, width, height, numLevels);
-    uint x0 = dispatchIdx.x * tileSizeX, x1 = min(x0 + tileSizeX, width);
-    uint y0 = dispatchIdx.y * tileSizeY, y1 = min(y0 + tileSizeX, height);
-    // float lowestWeight = 1.0;
-    // uint bestX = x0, bestY = y0;
-    uint seed = initRand(dispatchIdx.x + (dispatchIdx.y << 16), _FrameIndex);
-    for(uint y=y0;y<y1;y++){
-        for(uint x=x0;x<x1;x++){
-            int3  uvi = int3(x, y, 0);
-            float weight = _Weights.Load(uvi).w;
-            float depth = 1.0;// : _CameraDepthTexture.Load(uvi).r;
-            if(depth > 0.0 && weight < 0.01) {
-                // lowestWeight = weight;
-                // bestX = x;
-                // bestY = y;
-                SpawnSurfel(uvi.xy, seed);
-                // to do spawned surfels need to be added into the consideration for next surfels
-                return;
-            }
-        }
-    }*/
+    }
 
 }

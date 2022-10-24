@@ -9,15 +9,6 @@ using System.Collections.Generic; // list
 
 public class DXRCamera : MonoBehaviour {
 
-    struct Surfel {
-        float4 position;
-        float4 rotation;
-        float4 color;
-        float4 colorDx;
-        float4 colorDy;
-        float4 data;
-    };
-
     struct AABB {
         public float3 min;
         public float3 max;
@@ -55,6 +46,15 @@ public class DXRCamera : MonoBehaviour {
     public bool visualizeSurfels = false;
 
     public bool hasPlacedSurfels = false;
+
+    // use fibonacci sphere as initial distribution; false = use hilbert mapping
+    // advantage: easy, disadvantage: horrible cache locality except at poles
+    public bool useFibSphere = false; 
+
+    // respawns surfels roughly where they were originally; probably causes temporal instability issues, if too many surfels are required locally
+    // advantage: should increase cache locality
+    public bool respawnSurfelsAtOrigin = false; 
+
     public ComputeShader surfelDistShader;
     private ComputeBuffer surfels;
     private GraphicsBuffer surfelBounds;
@@ -154,7 +154,7 @@ public class DXRCamera : MonoBehaviour {
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
 
             if(surfels != null) surfels.Release();
-            surfels = new ComputeBuffer(maxNumSurfels, UnsafeUtility.SizeOf<Surfel>());// 6 * 4 floats is the min size
+            surfels = new ComputeBuffer(maxNumSurfels, 6 * 4 * 4 + 16);// 6 * 4 floats is the min size
             hasPlacedSurfels = false;
             
             if(surfelBounds != null) surfelBounds.Release();
@@ -185,7 +185,7 @@ public class DXRCamera : MonoBehaviour {
         if(disableSurfaceUpdates && hasPlacedSurfels) return;
         if(resetSurfels) {
             hasPlacedSurfels = false;
-            resetSurfels = false;
+            // resetSurfels = false;
         }
 
         shader.SetFloat("_Time", Time.time);
@@ -207,7 +207,9 @@ public class DXRCamera : MonoBehaviour {
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
         shader.SetFloat("_EnableSurfelMovement", enableSurfelMovement ? 1f : 0f);
-        shader.SetFloat("_MinSurfelWeight", minSurfelWeight);
+        shader.SetFloat("_MinimumSurfelWeight", minSurfelWeight);
+        shader.SetFloat("_UseFibSphere", useFibSphere ? 1f : 0f);
+        shader.SetFloat("_RespawnAtOrigin", respawnSurfelsAtOrigin ? 1f : 0f);
 
         int kernel;
         if(hasPlacedSurfels) {// update surfels
@@ -299,18 +301,20 @@ public class DXRCamera : MonoBehaviour {
         giTarget.enableRandomWrite = true;
         giTarget.Create();
 
-        emissiveTarget = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Default);
+        emissiveTarget = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
         emissiveTarget.enableRandomWrite = true;
         emissiveTarget.Create();
         emissiveDxTarget = new RenderTexture(emissiveTarget);
-        emissiveDyTarget = new RenderTexture(emissiveTarget);
+        emissiveDxTarget.enableRandomWrite = true;
         emissiveDxTarget.Create();
+        emissiveDyTarget = new RenderTexture(emissiveTarget);
+        emissiveDyTarget.enableRandomWrite = true;
         emissiveDyTarget.Create();
 
         bool skyBoxMipmaps = false;
         // skybox mipmaps? could be useful for diffuse look at sky, but we currently don't know the ray spread
         // therefore, we couldn't calculate the correct mip level
-        skyBox = new Cubemap(skyResolution, TextureFormat.RGBAHalf, skyBoxMipmaps);
+        skyBox = new Cubemap(skyResolution, TextureFormat.RGBAFloat, skyBoxMipmaps);
         needsSkyBoxUpdate = true;
 
         GetComponent<PerPixelRT>().CreateTargets(giTarget);
@@ -329,7 +333,8 @@ public class DXRCamera : MonoBehaviour {
     }
 
     private void Update() {
-        if(_camera.pixelWidth != giTarget.width || _camera.pixelHeight != giTarget.height){
+        if(_camera.pixelWidth != giTarget.width || _camera.pixelHeight != giTarget.height) {
+            Debug.Log("Resizing");
             DestroyTargets();
             CreateTargets();
             frameIndex = 0;

@@ -149,6 +149,8 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 colorDx = ddx(estColor);
                 float3 colorDy = ddy(estColor);
 
+                // weight *= (i.surfelId & 255) / 255.0;
+
                 result.v  = float4(estColor, weight);
                 result.dx = float4(colorDx.xyz, weight);
                 result.dy = float4(colorDy.xyz, weight);

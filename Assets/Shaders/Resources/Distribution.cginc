@@ -57,7 +57,7 @@ float3 refract1Dielectric(float3 wi, float cosThetaT, float eta){
 }
 
 // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/libcore/util.cpp#L774
-float refract1(float3 wi, float3 n, float eta, float cosThetaT){
+float3 refract1(float3 wi, float3 n, float eta, float cosThetaT){
 	if(cosThetaT < 0) eta = 1.0 / eta;
 	return n * (dot(wi, n) * eta + cosThetaT) - wi * eta;
 }
