@@ -29,6 +29,7 @@
 			float2 uv_MainTex;
 			float2 uv_MetallicGlossMap;
 			float2 uv_SpecGlossMap;
+			float2 uv_BumpMap;
 		};
         
 		float4 _Color;
@@ -37,11 +38,13 @@
 		sampler2D _MainTex;
 		sampler2D _MetallicGlossMap;
 		sampler2D _SpecGlossMap;
+		sampler2D _BumpMap;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			o.Albedo = (tex2D(_MainTex, IN.uv_MainTex) * _Color).xyz;
 			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
 			o.Smoothness = lerp(_Glossiness2, _Glossiness, tex2D(_SpecGlossMap, IN.uv_SpecGlossMap).x);
+			o.Normal = UnpackNormal (tex2D (_BumpMap, IN.uv_BumpMap));
 			o.Alpha = 1.0;
 		}
 		ENDCG
@@ -195,8 +198,6 @@
 				rayDesc.Direction = scatterRayDir;
 				rayDesc.TMin = 0.01;
 				rayDesc.TMax = 1000.0;
-
-				rayPayload.depth++;
 				
 				float4 color0 = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod);
 				float3 color = color0.rgb * _Color.rgb;
@@ -205,8 +206,6 @@
 				// shoot scattered ray
 				// rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 				TraceRay(_RaytracingAccelerationStructure, RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
-
-				// todo differentials...
 
 			}
 

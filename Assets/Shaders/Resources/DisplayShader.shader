@@ -47,6 +47,7 @@
 			float _ShowIllumination;
 			float _VisualizeSurfels;
 			float _Derivatives;
+			int _PixelGIBlur;
 
 			float2 _Duv;
 
@@ -133,11 +134,17 @@
 					float b1 = lerp(0.5, 0.0, _SplitX);
 					float b2 = lerp(0.5, 1.0, _SplitX);
 					if(uv.x < b1){
-						ill.xyz = tex2Dlod(_AccuDx, float4(uv,0,0)).xyz;
+						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
+						ill.xyz *= _Exposure;
 						ill.xyz += ill.w * 0.5;
+						ill /= ill.w;
+						return float4(HDR_to_LDR(ill.xyz), 1.0);
 					} else if(uv.x > b2){
-						ill.xyz = tex2Dlod(_AccuDy, float4(uv,0,0)).xyz;
+						ill = tex2Dlod(_AccuDy, float4(uv,0,0));
+						ill.xyz *= _Exposure;
 						ill.xyz += ill.w * 0.5;
+						ill /= ill.w;
+						return float4(HDR_to_LDR(ill.xyz), 1.0);
 					}
 				}
 
@@ -159,8 +166,8 @@
 				// weighted gaussian blur as a first test
 				// this is effectively spatial caching
 				float4 sum = 0;
-				int di = 0;
-				if(di > 0){
+				int di = _PixelGIBlur;
+				if(di > 0 && rawDepth > 0.0){
 					float numSigmas = 2.5;
 					float sigma = numSigmas / float(di*di);
 					for(int j=-di;j<=di;j++){

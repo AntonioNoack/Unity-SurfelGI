@@ -47,8 +47,6 @@
 				float3 surfaceWorldNormal = normalize(mul(objectToWorld, vertex.geoNormalOS));
 				// worldNormal = surfaceWorldNormal; // set this to make every mesh look flat-shaded
 				
-				// todo respect metallic and glossiness maps
-				
 				float3 rayOrigin = WorldRayOrigin();
 				float3 rayDir = WorldRayDirection();
 
@@ -63,7 +61,7 @@
 					float3 randomVector = nextRandS3(rayPayload.randomSeed);
 
 					// get random scattered ray dir along surface normal
-					float3 scatterRayDir = worldNormal + randomVector;
+					float3 scatterRayDir = worldNormal + roughness * randomVector;
 					
 					// perturb reflection direction to get rought metal effect
 					if(metallic > nextRand(rayPayload.randomSeed)) {
@@ -73,15 +71,24 @@
 					rayPayload.dir = scatterRayDir;
 
 					// occlusion by surface
-					if(dot(scatterRayDir, surfaceWorldNormal) < 0.0){
+					if(dot(scatterRayDir, surfaceWorldNormal) <= 0.0){
 						rayPayload.dir = 0;
+						rayPayload.color = 0;
 					}
 				}
 
 				float4 color = GetColor();
+				// for debugging
+				// if(metallic < 0.5) color.rgb = worldNormal * .5+.5;
 				if(!rayPayload.gpt && rayPayload.depth > 0){
-					rayPayload.color *= color;
+					rayPayload.color *= color.rgb;
+					// rayPayload.color *= float3(frac(TRANSFORM_TEX(vertex.texCoord0, _MetallicGlossMap)*5.0), 1.0);
 				}
+
+				rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
+				// can break...
+				// rayPayload.shFrame = normalToFrame(worldNormal);
+				rayPayload.shFrame = rayPayload.geoFrame;
 
 				if(rayPayload.gpt){
 					// define GPT material parameters
@@ -93,11 +100,10 @@
 
 					// define geoFrame and shFrame;
 					// the function is defined to make y = up, but for Mitsuba, we need z = up, so we swizzle it
-					rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
-					rayPayload.shFrame = normalToFrame(worldNormal);
+				
 
 					rayPayload.bsdf.roughness = roughness;
-					rayPayload.bsdf.color = color;
+					rayPayload.bsdf.color = color.rgb;
 
 					if(metallic > nextRand(rayPayload.randomSeed)){
 						// metallic, conductor material

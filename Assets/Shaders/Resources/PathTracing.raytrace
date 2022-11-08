@@ -12,7 +12,7 @@ int _FrameIndex;
 int _SPP;
 int _RPS;
 
-#pragma max_recursion_depth 2 // system maximum according to Unity, isn't mentioned on the docs tho
+#pragma max_recursion_depth 1 // system maximum according to Unity, isn't mentioned on the docs tho
 // https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Experimental.Rendering.RayTracingShader-maxRecursionDepth.html
 // must not be surpassed, or Unity will crash (why? 😟)
 
@@ -46,15 +46,13 @@ float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 
 		// if we land outside the expected region, reject the sample
 		if(i == 0 && !(rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)) {
-			foundSurface = false;
-			break;
+			return float4(0,0,0,0);
 		}
 
-		float3 n = rayPayload.dir;
-		if(dot2(n) > 0.0){
+		if(dot2(rayPayload.dir) > 0.0){
 			// continue tracing
 			rayDesc.Origin = rayPayload.pos;
-			rayDesc.Direction = n;
+			rayDesc.Direction = rayPayload.dir;
 		} else {
 			// reached sky or emissive
 			foundLight = true;
@@ -63,10 +61,8 @@ float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 			
 	}
 
-	if(foundSurface){
-		if(!foundLight) rayPayload.color = 0;
-		return float4(rayPayload.color, 1.0);
-	} else return float4(0,0,0,0);
+	if(!foundLight) return float4(0,0,0,1);
+	else return float4(rayPayload.color, 1.0);
 
 }
 
@@ -125,9 +121,10 @@ void SurfelPathTracing() {
 	RayPayload rayPayload = (RayPayload) 0;
 	rayPayload.surfelRotation = surfel.rotation;
 	rayPayload.surfelSize = surfelSize;
+	rayPayload.gpt = false;
 
 	// init random seed from current pixel location and frame index
-	rayPayload.randomSeed = initRand(index, _FrameIndex);
+	uint srcSeed = initRand(index, _FrameIndex);
 
 	float cosa, sina, distance;
 	float3 ray1Pos, ray2Pos;
@@ -148,18 +145,23 @@ void SurfelPathTracing() {
 		rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
 
 		float3 nextSurfacePos, ignored;
+		rayPayload.randomSeed = srcSeed;
 		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
 		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		uint nextSeed = rayPayload.randomSeed;
 		
 		SetupGradientRayStart(rayDesc, ray1Pos, nextSurfacePos);
 		if(supportTransparency) rayDesc.TMax = _Far;
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
 		float3 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
 		SetupGradientRayStart(rayDesc, ray2Pos, nextSurfacePos);
 		if(supportTransparency) rayDesc.TMax = _Far;
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
 		float3 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
 		surfel.color += color;
+		hasChanged = true;
 			
 		float3 gradient1 = (colorD1 - color.xyz) / distance;
 		float3 gradient2 = (colorD2 - color.xyz) / distance;
@@ -170,7 +172,8 @@ void SurfelPathTracing() {
 
 		surfel.colorDx += float4(gradientDX, 1.0);
 		surfel.colorDz += float4(gradientDZ, 1.0);
-		hasChanged = true;
+		
+		srcSeed = nextSeed;// seed for next iteration
 
 	}
 	if(hasChanged) {
@@ -208,7 +211,7 @@ void PixelPathTracing() {
 	RayDesc rayDesc = (RayDesc) 0;
 
 	// init random seed from current pixel location and frame index
-    rayPayload.randomSeed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
+    uint srcSeed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
 
 	int samplesPerSurfel = _SPP;
 	int maxRaysPerSample = _RPS;
@@ -225,15 +228,18 @@ void PixelPathTracing() {
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
-		float3 nextSurfacePos, ignored;
-		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
+		float3 ignored;
+		rayPayload.randomSeed = srcSeed;
+		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
 		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		uint nextSeed = rayPayload.randomSeed;
 		
 		rayDesc.Origin = _CameraPosition;
 		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
 		float4 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
 
 		rayDesc.Origin = _CameraPosition;
@@ -241,11 +247,14 @@ void PixelPathTracing() {
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
 		float4 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
 
 		finalColor += color;
 		if(colorD1.w > 0) finalColorDx += float4(colorD1.xyz - color.xyz, 1.0);
 		if(colorD2.w > 0) finalColorDy += float4(colorD2.xyz - color.xyz, 1.0);
+
+		srcSeed = nextSeed;// seed for next iteration
 
     }
 

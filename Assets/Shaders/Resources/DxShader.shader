@@ -1,4 +1,4 @@
-﻿Shader "RayTracing/BlurShader" {
+﻿Shader "RayTracing/GradientShader" {
 	Properties { }
 	SubShader {
 		// No culling or depth
@@ -12,16 +12,9 @@
 
 			sampler2D _Src;
 			float2 _DeltaUV;
-			float _Weights[255]; // assumed maximum needed length; Unitys internal maximum is 1023
-			int _N;
 
 			float4 frag (v2f i) : SV_Target {
-				float4 sum = 0;
-				int n = min(_N, 127);
-				for(int j=-n;j<=n;j++) {
-					sum += _Weights[j + _N] * tex2D(_Src, i.uv + _DeltaUV * j);
-				}
-				return sum;
+				return (tex2D(_Src, i.uv + _DeltaUV) - tex2D(_Src, i.uv - _DeltaUV));
 			}
 
 			ENDCG

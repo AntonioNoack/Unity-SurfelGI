@@ -60,10 +60,10 @@ Shader "Custom/SurfelProcShader" {
 
             float _AllowSkySurfels;
             float _VisualizeSurfels;
+            float _VisualizeSurfelIds;
 
             // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/
             v2f vert (uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) {
-                
                 v2f o;
                 float3 localPos = _Vertices[vertexId];
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
@@ -121,8 +121,6 @@ Shader "Custom/SurfelProcShader" {
                 float3 localPosition = (surfaceWorldPosition - i.surfelWorldPos) * i.invSize;
 
                 #include "SurfelWeight.cginc"
-
-                // weight *= (i.surfelId & 255) / 255.0;
 
                 if(!(weight > 0.0 && weight <= 1.0 && i.color.w > 0.0)) discard;
                 return i.color * (weight / i.color.w);

@@ -15,7 +15,7 @@ public class PoissonReconstruction : MonoBehaviour {
     public int poissonBlurRadius = 25;
     public int numPoissonIterations = 10;
     public Shader blurShader;
-    public Material poissonMaterial, addMaterial, normMaterial;
+    public Material poissonMaterial, addMaterial, normMaterial, dxMaterial;
 
     private void blur(RenderTexture src, RenderTexture tmp, RenderTexture dst){
         blurX(src, tmp);
@@ -30,7 +30,8 @@ public class PoissonReconstruction : MonoBehaviour {
             Debug.LogWarning("src for kernel is null!");
             return;
         }
-        material.SetVector("_DeltaUV", new Vector2(dx / (src.width-1), dy / (src.height-1)));
+        material.SetVector("_DeltaUV", new Vector2(dx / (src.width-1f), dy / (src.height-1f)));
+        material.SetTexture("_Src", src);
         Graphics.Blit(src, dst, material);
     }
 
@@ -52,7 +53,7 @@ public class PoissonReconstruction : MonoBehaviour {
 
     private void poissonIterate(RenderTexture src, RenderTexture dst, RenderTexture dx, RenderTexture dy, RenderTexture blurred) {
         var shader = poissonMaterial;
-        float dxf = 1f/(src.width-1), dyf = 1f/(src.height-1);
+        float dxf = 1f/(src.width-1f), dyf = 1f/(src.height-1f);
         shader.SetVector("_Dx1", new Vector2(1*dxf, 0f));
         shader.SetVector("_Dx2", new Vector2(2*dxf, 0f));
         shader.SetVector("_Dy1", new Vector2(0f, 1*dyf));
@@ -97,6 +98,7 @@ public class PoissonReconstruction : MonoBehaviour {
         if(bdy != null) bdy.Release();
         if(res0 != null) res0.Release();
         if(blurred != null) blurred.Release();
+        createdSize = 0;
     }
 
     private void Create(int w, int h){
@@ -107,6 +109,7 @@ public class PoissonReconstruction : MonoBehaviour {
         src1 = Create2(w,h);
         dx1 = Create2(w,h);
         dy1 = Create2(w,h);
+        createdSize = 0;
     }
 
     private RenderTexture Create2(int w, int h){
@@ -117,6 +120,12 @@ public class PoissonReconstruction : MonoBehaviour {
     }
 
     public bool normalize = true;
+    public bool prepare = true;
+    public bool initialBlur = false;
+    public bool useFakeGradients = true;
+
+    private int createdSize = 0;
+
     public RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
 
         if(bdx == null || bdx.width != src.width || bdx.height != src.height){
@@ -127,14 +136,16 @@ public class PoissonReconstruction : MonoBehaviour {
 
         if(normalize){
             Graphics.Blit(src, src1, normMaterial);
-            Graphics.Blit(dx, dx1, normMaterial);
-            Graphics.Blit(dy, dy1, normMaterial);
+            if(!useFakeGradients){
+                Graphics.Blit(dx, dx1, normMaterial);
+                Graphics.Blit(dy, dy1, normMaterial);
+            }
             src = src1;
             dx = dx1;
             dy = dy1;
         }
 
-        if(signedBlurMaterial == null){
+        if(signedBlurMaterial == null || unsignedBlurMaterial == null){
             if(blurShader == null){
                 Debug.Log("Blur Shader is missing!");
                 return src;
@@ -142,14 +153,16 @@ public class PoissonReconstruction : MonoBehaviour {
             Debug.Log("Creating blur materials");
             signedBlurMaterial = new Material(blurShader);
             unsignedBlurMaterial = new Material(blurShader);
+            createdSize = 0;
         }
 
-        if(unsignedBlurMask == null || unsignedBlurMask.Length != poissonBlurRadius * 2 + 1){
-            Debug.Log("Creating masks");
+        if(createdSize != poissonBlurRadius){
+            createdSize = poissonBlurRadius;
+            // Debug.Log("Creating masks");
             // create blur masks
             float sigma = 2.5f;
-            unsignedBlurMask = new float[poissonBlurRadius * 2 + 1];
-            signedBlurMask = new float[poissonBlurRadius * 2 + 1];
+            unsignedBlurMask = new float[255];
+            signedBlurMask = new float[255];
             float weightSum = 0f;
             int n = Mathf.Max(poissonBlurRadius, 1);
             for(int i=1;i<=poissonBlurRadius;i++){
@@ -163,8 +176,9 @@ public class PoissonReconstruction : MonoBehaviour {
                 int k = poissonBlurRadius-i;
                 unsignedBlurMask[k] = +weight;
                 unsignedBlurMask[j] = +weight;
-                signedBlurMask[k] = -weight;
-                signedBlurMask[j] = +weight;
+                float weightX2 = weight * 2f;
+                signedBlurMask[k] = -weightX2;
+                signedBlurMask[j] = +weightX2;
             }
             signedBlurMask[poissonBlurRadius] = 0; // blur mask must be symmetric
             signedBlurMaterial.SetFloatArray("_Weights", signedBlurMask);
@@ -184,10 +198,24 @@ public class PoissonReconstruction : MonoBehaviour {
         }
 
         RenderTexture tmp = bdx;
-        blur(src, tmp, blurred);
-        blurXSigned(dx, bdx);
-        blurYSigned(dy, bdy);
-        add(blurred, bdx, bdy, res0);
+        RenderTexture res0 = this.res0;
+        RenderTexture blurred = this.blurred;
+        if(useFakeGradients){
+            kernel(src, dx, 1, 0, dxMaterial);
+            kernel(src, dy, 0, 1, dxMaterial);
+        }
+        if(initialBlur){
+            blur(src, tmp, blurred);
+        } else {
+            blurred = src;
+        }
+        if(prepare){
+            blurXSigned(dx, bdx);
+            blurYSigned(dy, bdy);
+            add(blurred, bdx, bdy, res0);
+        } else {
+            res0 = blurred;
+        }
         RenderTexture res1 = bdx;
         for(int i=0;i<numPoissonIterations;i++){
 

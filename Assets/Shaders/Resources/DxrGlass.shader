@@ -114,7 +114,7 @@
 				rayPayload.dir = newDir;
 
 				if(rayPayload.depth > 0) {
-					rayPayload.color *= _Color;
+					rayPayload.color *= _Color.rgb;
 				}
 
 				//------------------------//
@@ -123,7 +123,7 @@
 				//------------------------//
 
 				rayPayload.bsdf.eta = _IoR;
-				rayPayload.bsdf.color = _Color;
+				rayPayload.bsdf.color = _Color.rgb;
 				rayPayload.bsdf.roughness = _Roughness;
 				rayPayload.geoFrame = normalToFrame(geoWorldNormal);
 				rayPayload.shFrame =  tbnToFrame(worldTangent, worldBitangent, worldNormal);

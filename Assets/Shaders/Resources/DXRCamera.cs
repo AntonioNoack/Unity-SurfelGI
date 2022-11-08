@@ -14,25 +14,29 @@ public class DXRCamera : MonoBehaviour {
         public float3 max;
     };
 
-    public enum RenderMode {
-        SURFEL_WEIGHTS,
-        PT_PIXEL_GI,
-        PT_PIXEL_COLOR,
-        PT_SURFEL_GI,
-        PT_SURFEL_COLOR,
-        GPT_PIXEL_GI,
-        GPT_PIXEL_COLOR,
-        GPT_SURFEL_GI,
-        GPT_SURFEL_COLOR,
-        CUSTOM,
+    public enum Substrate {
+        PIXEL,
+        SURFEL,
     };
 
-    public RenderMode renderMode = RenderMode.SURFEL_WEIGHTS;
+    public enum Tracer {
+        PATH_TRACING,
+        MITSUBA_GDPT,
+    };
+
+    public enum Result {
+        SURFEL_WEIGHTS,
+        GLOBAL_ILLUMINATION,
+        COLOR,
+    };
+
+    public Substrate substrate = Substrate.PIXEL;
+    public Tracer tracer = Tracer.PATH_TRACING;
+    public Result result = Result.SURFEL_WEIGHTS;
+    public bool useDerivatives = false;
 
     public bool testSaving = false;
-
-    public bool enablePathTracing = false;
-    public bool enableLightSampling = false;
+    public int pixelGIBlur = 5;
 
     public float surfelDensity = 2f;
 
@@ -42,9 +46,6 @@ public class DXRCamera : MonoBehaviour {
     [LogarithmicRangeAttribute(0.001, 1000.0)]
     public float exposure = 2f;
 
-    public bool showIllumination = false;
-    public bool visualizeSurfels = false;
-
     public bool hasPlacedSurfels = false;
 
     // use fibonacci sphere as initial distribution; false = use hilbert mapping
@@ -53,7 +54,8 @@ public class DXRCamera : MonoBehaviour {
 
     // respawns surfels roughly where they were originally; probably causes temporal instability issues, if too many surfels are required locally
     // advantage: should increase cache locality
-    public bool respawnSurfelsAtOrigin = false; 
+    public bool respawnSurfelsAtOrigin = false;
+    public bool visualizeSurfelIds = false;
 
     public ComputeShader surfelDistShader;
     private ComputeBuffer surfels;
@@ -112,8 +114,6 @@ public class DXRCamera : MonoBehaviour {
 
     public Mesh cubeMesh;
     public Material surfelMaterial, surfelProcMaterial, surfel2ProcMaterial;
-    public bool perPixelRT = false;
-    public bool perPixelGPT = false;
 
     private CommandBuffer cmdBuffer;
 
@@ -155,6 +155,7 @@ public class DXRCamera : MonoBehaviour {
 
             if(surfels != null) surfels.Release();
             surfels = new ComputeBuffer(maxNumSurfels, 6 * 4 * 4 + 16);// 6 * 4 floats is the min size
+            surfels.name = "Surfels";
             hasPlacedSurfels = false;
             
             if(surfelBounds != null) surfelBounds.Release();
@@ -407,6 +408,7 @@ public class DXRCamera : MonoBehaviour {
             cmdBuffer = new CommandBuffer();
             cmdBuffer.name = "Surfel Emission";
             cubeMeshVertices = new ComputeBuffer(3 * 2 * 6, sizeof(float) * 3);
+            cubeMeshVertices.name = "Cube Mesh Vertices";
             float3[] vertices = new float3[36];
             Vector3[] srcPositions = cubeMesh.vertices;
             int[] srcTriangles = cubeMesh.triangles;
@@ -422,8 +424,9 @@ public class DXRCamera : MonoBehaviour {
         // shader.SetMatrix("_InvProjectionMatrix", _camera.projectionMatrix.inverse);
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
         shader.SetVector("_FieldOfViewFactor", new Vector2(fy*giTarget.width/giTarget.height, fy));
-        shader.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+        shader.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
         shader.SetFloat("_IdCutoff", 2f / surfelDensity);
+        shader.SetFloat("_VisualizeSurfelIds", visualizeSurfelIds && result == Result.SURFEL_WEIGHTS ? 1f : 0f);
 
         // if(!firstFrame) return; // command buffer doesn't change, only a few shader variables
 
@@ -528,10 +531,7 @@ public class DXRCamera : MonoBehaviour {
         return new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor);
     }
 
-    public bool useDerivatives = false;
     public int surfelPlacementIterations = 1;
-
-    public bool useOfficalGPT = false;
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
@@ -540,122 +540,15 @@ public class DXRCamera : MonoBehaviour {
             Thread.Sleep((int) (sleep * 1000));
         }
 
-        // todo modes with derivatives
-        switch(renderMode){
-            case RenderMode.SURFEL_WEIGHTS:
-                perPixelRT = false;
-                perPixelGPT = false;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = true;
-                // showIllumination; doesn't matter
-                break;
-            case RenderMode.PT_PIXEL_GI:
-                perPixelRT = true;
-                perPixelGPT = false;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = true;
-                break;
-            case RenderMode.PT_PIXEL_COLOR:
-                perPixelRT = true;
-                perPixelGPT = false;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = false;
-                break;
-            case RenderMode.PT_SURFEL_GI:
-                perPixelRT = false;
-                perPixelGPT = false;
-                enablePathTracing = true;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = true;
-                break;
-            case RenderMode.PT_SURFEL_COLOR:
-                perPixelRT = false;
-                perPixelGPT = false;
-                enablePathTracing = true;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = false;
-                break;
-            case RenderMode.GPT_PIXEL_GI:
-                perPixelRT = false;
-                perPixelGPT = true;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = true;
-                break;
-            case RenderMode.GPT_PIXEL_COLOR:
-                perPixelRT = false;
-                perPixelGPT = true;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = false;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = false;
-                break;
-            case RenderMode.GPT_SURFEL_GI:
-                perPixelRT = false;
-                perPixelGPT = false;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = true;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = true;
-                break;
-            case RenderMode.GPT_SURFEL_COLOR:
-                perPixelRT = false;
-                perPixelGPT = false;
-                enablePathTracing = false;
-                enableLightSampling = false;
-                useOfficalGPT = true;
-                useDerivatives = false;
-                enableLightSampling = false;
-                visualizeSurfels = false;
-                showIllumination = false;
-                break;
-        }
-
         if(sceneRTAS == null)
             InitRaytracingAccelerationStructure();
 
-        var transform = _camera.transform;
-
         Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
 
-        var perPixelRT1 = GetComponent<PerPixelRT>();
+        var usePixelPT1 = GetComponent<PerPixelRT>();
+        // if(usePixelGPT) useSurfelGPT = false;
         
-
-        if(perPixelGPT) useOfficalGPT = false;
-        
-        if(!perPixelGPT && !perPixelRT){
+        if(result == Result.SURFEL_WEIGHTS || substrate == Substrate.SURFEL){
             EnsureSurfels();
             if(updateSurfels) {
                 // for faster surfel-coverage, we can use multiple iterations
@@ -671,8 +564,9 @@ public class DXRCamera : MonoBehaviour {
                 AccumulateSurfelEmissions();
             }
 
-            if(updateSurfels && surfelTracingShader != null) {
-                if(enablePathTracing) SurfelPathTracing();
+            if(updateSurfels && surfelTracingShader != null && 
+                tracer == Tracer.PATH_TRACING && substrate == Substrate.SURFEL) {
+                SurfelPathTracing();
             }
         }
 
@@ -685,16 +579,17 @@ public class DXRCamera : MonoBehaviour {
         lightSampling.lightSampleStrength = lightSampleStrength / (surfels?.count ?? 1);
         lightSampling.skyBox = skyBox;
 
-        if(enableLightSampling && !perPixelGPT && !perPixelRT) {
-            lightSampling.RenderImage(_camera);
-        }
+        // caused too many issues, and never truely worked as well as expected :/ ; idk why
+        // if(useSurfelLS && !usePixelGPT && !usePixelPT) {
+        //     lightSampling.RenderImage(_camera);
+        // }
 
-        if(perPixelRT){
-            perPixelRT1.UpdatePixelGI(this);
-            perPixelRT1.AccumulatePixelGI(this);
-         } else if(useOfficalGPT || perPixelGPT){
+        var transform = _camera.transform;
+        if(substrate == Substrate.PIXEL && result != Result.SURFEL_WEIGHTS && tracer == Tracer.PATH_TRACING){
+            usePixelPT1.UpdatePixelGI(this);
+         } else if(result != Result.SURFEL_WEIGHTS && tracer == Tracer.MITSUBA_GDPT){
             var shader = gptRTShader;
-                   
+            
             // light sampling is being used via sampleEmitterDirectVisible()
             lightSampling.enableSky = false;// handled separately in GPT
             if(lightSampling.emissiveTriangles == null || resetEmissiveTriangles) {
@@ -718,12 +613,11 @@ public class DXRCamera : MonoBehaviour {
             shader.SetInt("_RPS", raysPerSample);
             shader.SetTexture("_SkyBox", skyBox);
             shader.SetVector("_SunDir", sun != null ? -sun.transform.forward : new Vector3(0,0,0));
-            if(useOfficalGPT){
+            if(substrate == Substrate.SURFEL){
                 shader.SetBuffer("_Surfels", surfels);
                 shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);
                 AccumulateSurfelEmissions(); // because we updated the surfels
-            }
-            if(perPixelGPT){// per Pixel GPT
+            } else if(substrate == Substrate.PIXEL){
                 shader.SetTexture("_ColorTarget", emissiveTarget);
                 shader.SetTexture("_ColorDxTarget", emissiveDxTarget);
                 shader.SetTexture("_ColorDyTarget", emissiveDyTarget);
@@ -732,26 +626,29 @@ public class DXRCamera : MonoBehaviour {
         }
 
         var accu = emissiveTarget;
-        if(perPixelRT || perPixelGPT){
-            accu = perPixelRT1.AccumulatePixelGI(this);
+        var accuDx = emissiveDxTarget;
+        var accuDy = emissiveDyTarget;
+        if(result != Result.SURFEL_WEIGHTS && substrate == Substrate.PIXEL){
+            (accu, accuDx, accuDy) = usePixelPT1.AccumulatePixelGI(this, accu, accuDx, accuDy);
         }
 
-        if(useDerivatives && poissonReconstr != null && poissonReconstr.enabled){
-            accu = poissonReconstr.poissonReconstruct(accu, emissiveDxTarget, emissiveDyTarget);
+        if(useDerivatives && poissonReconstr.enabled){
+            accu = poissonReconstr.poissonReconstruct(accu, accuDx, accuDy);
         }
 
         // display result on screen
         displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
         displayMaterial.SetFloat("_DivideByAlpha", 1f);
+        displayMaterial.SetInt("_PixelGIBlur", pixelGIBlur);
         displayMaterial.SetTexture("_SkyBox", skyBox);
         displayMaterial.SetFloat("_Exposure", exposure);
         displayMaterial.SetTexture("_Accumulation", accu);
-        displayMaterial.SetTexture("_AccuDx", emissiveDxTarget);
-        displayMaterial.SetTexture("_AccuDy", emissiveDyTarget);
+        displayMaterial.SetTexture("_AccuDx", accuDx);
+        displayMaterial.SetTexture("_AccuDy", accuDy);
         displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
         displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-        displayMaterial.SetFloat("_ShowIllumination", showIllumination ? 1f : 0f);
-        displayMaterial.SetFloat("_VisualizeSurfels", visualizeSurfels ? 1f : 0f);
+        displayMaterial.SetFloat("_ShowIllumination", result == Result.GLOBAL_ILLUMINATION ? 1f : 0f);
+        displayMaterial.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
         displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
         displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
         float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
@@ -779,9 +676,9 @@ public class DXRCamera : MonoBehaviour {
             }
         }
 
-        if(perPixelRT || perPixelGPT){
-            perPixelRT1.PreservePrevGBuffers();
-            perPixelRT1.SwapAccumulationTextures();
+        if(result != Result.SURFEL_WEIGHTS && substrate == Substrate.PIXEL){
+            usePixelPT1.PreservePrevGBuffers();
+            usePixelPT1.SwapAccumulationTextures();
         }
 
         PreservePrevTransform();

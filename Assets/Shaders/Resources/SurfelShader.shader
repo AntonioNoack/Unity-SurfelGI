@@ -43,6 +43,7 @@ Shader "Custom/SurfelShader" {
                 float3 surfelNormal: TEXCOORD6; // in world space
                 float3 localPos : TEXCOORD7;
                 float2 surfelData: TEXCOORD8;
+                int surfelId: TEXCOORD9;
                 // UNITY_VERTEX_OUTPUT_STEREO
             };
             
@@ -63,6 +64,7 @@ Shader "Custom/SurfelShader" {
 
             float _AllowSkySurfels;
             float _VisualizeSurfels;
+            float _VisualizeSurfelIds;
 
             v2f vert (appdata v) {
                 v2f o;
@@ -73,6 +75,7 @@ Shader "Custom/SurfelShader" {
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 #if defined(UNITY_INSTANCING_ENABLED) && defined(SHADER_API_D3D11)
                     int surfelId = unity_InstanceID + _InstanceIDOffset;
+                    o.surfelId = surfelId;
                     Surfel surfel = (Surfel) 0;
                     if(surfelId < _SurfelCount) {
                         surfel = _Surfels[surfelId]; // does work, but only for DrawMeshInstanced
@@ -88,6 +91,7 @@ Shader "Custom/SurfelShader" {
                 o.color = surfel.color;
                 o.invSize = 1.0 / surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
+                o.surfelData = surfel.data.yz;
                 #endif
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 o.localPos = localPos;

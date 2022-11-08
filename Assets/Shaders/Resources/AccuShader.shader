@@ -1,4 +1,4 @@
-﻿Shader "RayTracing/previousFrame" {
+﻿Shader "RayTracing/Accu" {
 	Properties {
 		[Toggle(USE_MOTION_VECTORS)]
         _UseMotionVectors ("Use Motion Vectors", Float) = 0.0
@@ -86,18 +86,21 @@
 						half spec0, spec1, depth0, depth1;
 						half3 col0, col1, emm0, emm1;
 						GetGBuffer0(uv,spec0,depth0,col0,emm0);
+						if(depth0 >= 1.0) return float4(0,0,0,1);
+						
 						
 						float4 previousFrame = tex2D(_Accumulation, uv2);
 						GetGBuffer1(uv2,spec1,depth1,col1,emm1);
 						// half3 colorDifference = col1 - col0;
 						half3 specDifference = emm1 - emm0;
+						float dd = abs(log2(depth0/depth1));
 						float prevWeight = saturate(1.0 - 10.0 * abs(spec0-spec1)) * 
 							// saturate(1.0 - 10.0 * dot(colorDifference, colorDifference)) *
 							// remove confidence in reflective surfaces, when the angle (~ camera position) changes
 							saturate(1.0 - 10.0 * max(spec0,spec1) * length(_DeltaCameraPosition)) * // to do depends on angle, not really on distance...
 							// saturate(1.0 - 10.0 * dot(specDifference, specDifference));// *
-							saturate(1.0 - 1.0 * abs(log2(depth0/depth1)));
-						
+							saturate(1.0 - dd);
+
 						// compute linear average of all rendered frames
 						return float4(currentFrame.rgb + previousFrame.rgb * prevWeight, currentFrame.a + prevWeight * previousFrame.a);
 					} else return currentFrame;

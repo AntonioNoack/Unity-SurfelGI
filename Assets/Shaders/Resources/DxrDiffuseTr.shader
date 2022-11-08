@@ -31,12 +31,14 @@
 		struct Input {
 			float2 uv_MainTex;
 			float2 uv_MetallicGlossMap;
+			float2 uv_BumpMap;
 		};
         	
 		float4 _Color;
 		float _Metallic, _Glossiness;
 		float _Metallic2, _Glossiness2;
 		sampler2D _MainTex, _MetallicGlossMap;
+		sampler2D _BumpMap;
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
@@ -44,6 +46,7 @@
 			o.Albedo = c.rgb;
 			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
 			o.Smoothness = 1.0;// needs to be high, so the surfels are regularly updated
+			o.Normal = UnpackNormal (tex2D (_BumpMap, IN.uv_BumpMap));
 			o.Alpha = c.a;
 		}
 		ENDCG

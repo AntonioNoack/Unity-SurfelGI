@@ -1,8 +1,8 @@
 
    
-	// ------------------------------------------------------------- //
-	// binary search for correct triangle by size and emissive power //
-	// ------------------------------------------------------------- //
+// ------------------------------------------------------------- //
+// binary search for correct triangle by size and emissive power //
+// ------------------------------------------------------------- //
 
 bool FindEmissiveTriangle(float relativeIndex, out float3 rayOrigin, out float3 rayDirection, out float3 color, inout uint randomSeed) {	
 

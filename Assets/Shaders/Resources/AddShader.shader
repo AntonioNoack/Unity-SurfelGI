@@ -1,4 +1,4 @@
-﻿Shader "RayTracing/AddShader" {
+﻿Shader "RayTracing/Add" {
 	Properties {
 		_MainTex ("MainTex", 2D) = "black" { }
 		_TexA ("TexA", 2D) = "black" { }

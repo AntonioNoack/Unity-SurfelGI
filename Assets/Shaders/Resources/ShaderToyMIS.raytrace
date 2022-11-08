@@ -1,0 +1,512 @@
+﻿#include "RTLib.cginc"
+#include "Surfel.cginc"
+
+float3 _CameraPosition;
+float4 _CameraRotation;
+float3 _CameraOffset;
+float2 _CameraUVSize;
+float _Near;
+float _Far;
+
+int _FrameIndex;
+int _SPP;
+int _RPS;
+
+#pragma max_recursion_depth 1
+TextureCube _SkyBox;
+SamplerState _LinearClamp;
+
+// todo implement https://www.shadertoy.com/view/4sSXWt
+// todo since this works, and we probably could construct derivatives with it as well ^^
+
+#define HALF_PI 			1.5707963
+#define TWO_PI 				6.2831852
+#define FOUR_PI 			12.566370
+#define INV_PI 				0.3183099
+#define INV_TWO_PI 			0.1591549
+#define INV_FOUR_PI 		0.0795775
+#define EPSILON 			0.0001
+#define IN_RANGE(x,a,b)		(((x) > (a)) && ((x) < (b)))
+#define EQUAL_FLT(a,b,eps)	(abs(a-(b))<eps)
+#define IS_ZERO(a) 			EQUAL_FLT(a,0.0,EPSILON)
+
+#define MIS_HEURISTIC_BALANCE
+// #define MIS_HEURISTIC_POWER
+float misWeightPower( in float a, in float b ) {
+    float a2 = a*a;
+    float b2 = b*b;
+    return a2 / (a2 + b2);
+}
+float misWeightBalance( in float a, in float b ) {
+    return a / (a+b);
+}
+float misWeight( in float pdfA, in float pdfB ) {
+#ifdef MIS_HEURISTIC_POWER
+    return misWeightPower(pdfA,pdfB);
+#else
+    return misWeightBalance(pdfA,pdfB);
+#endif
+}
+
+void basis(in float3 n, out float3 b1, out float3 b2) {
+    float sign_ = sign(n.z);
+	float a = -1.0 / (sign_ + n.z);
+	float b = n.x * n.y * a;
+	b1 = float3(1.0 + sign_ * n.x * n.x * a, sign_ * b, -sign_ * n.x);
+	b2 = float3(b, sign_ + n.y * n.y * a, -n.y);
+}
+
+float3 localToWorld( in float3 localDir, in float3 normal ) {
+    float3 a,b;
+    basis( normal, a, b );
+	return localDir.x*a + localDir.y*b + localDir.z*normal;
+}
+
+float3 sphericalToCartesian( in float rho, in float phi, in float theta ) {
+    float sinTheta = sin(theta);
+    return float3( sinTheta*cos(phi), sinTheta*sin(phi), cos(theta) )*rho;
+}
+
+float3 sampleHemisphereCosWeighted( in float3 n, in float Xi1, in float Xi2 ) {
+    float theta = acos(sqrt(1.0-Xi1));
+    float phi = TWO_PI * Xi2;
+    return localToWorld( sphericalToCartesian( 1.0, phi, theta ), n );
+}
+
+float3 randomDirection( in float Xi1, in float Xi2 ) {
+    float theta = acos(1.0 - 2.0*Xi1);
+    float phi = TWO_PI * Xi2;
+    return sphericalToCartesian( 1.0, phi, theta );
+}
+
+
+float evaluateBlinn( in  float3 N, in float3 E, in float3 L, in float roughness ) {
+    float3 H = normalize(E + L);
+    float cosTheta = dot(N,H);
+    return (roughness + 2.0) / (8.0 * PI) * pow(cosTheta, roughness);
+}
+
+float pdfBlinn(in float3 N, in float3 E, in float3 L, in float roughness ) {
+    float3 H = normalize(E + L);
+    float cosTheta = dot(N,H);
+	float normalizationFactor = (roughness + 1.0) / TWO_PI;
+    return pow( cosTheta, roughness ) * normalizationFactor / (4.0 * dot(E, H));
+}
+
+float3 sampleBlinn( in float3 N, in float3 E, in float roughness, in float r1, in float r2, out float pdf ) {
+    float cosTheta = pow( r1, 1.0/( roughness ) );
+    float phi = r2*TWO_PI;
+    float theta = acos( cosTheta );
+    float3 H = localToWorld( sphericalToCartesian( 1.0, phi, theta ), N );
+    float dotNH = dot(H,N);
+    float3 L = reflect( E*(-1.0), H );
+    pdf = pdfBlinn(N, E, L, roughness );
+    return L;
+}
+
+float evaluateLambertian( in float3 N, in float3 L ) {
+    return INV_PI;
+}
+
+float pdfLambertian( in float3 N, in float3 L ) {
+    return max(.0, dot( N, L )) * INV_PI;
+}
+
+float3 sampleLambertian( in float3 N, in float r1, in float r2, out float pdf ){
+    float3 L = sampleHemisphereCosWeighted( N, r1, r2 );
+    pdf = pdfLambertian(N, L);
+    return L;
+}
+
+// Converting PDF from Solid angle to Area
+float PdfWtoA( float aPdfW, float aDist2, float aCosThere ){
+    return aDist2 < EPSILON ? 0.0 : aPdfW * abs(aCosThere) / aDist2;
+}
+
+// Converting PDF between from Area to Solid angle
+float PdfAtoW( float aPdfA, float aDist2, float aCosThere ){
+    float absCosTheta = abs(aCosThere);
+    return absCosTheta < EPSILON ? 0.0 : aPdfA * aDist2 / absCosTheta;
+}
+
+float2 uniformPointWithinCircle( in float radius, in float Xi1, in float Xi2 ) {
+    float r = radius*sqrt(Xi1);
+    float theta = Xi2*TWO_PI;
+	return float2( r*cos(theta), r*sin(theta) );
+}
+
+float3 uniformDirectionWithinCone( in float3 d, in float phi, in float sina, in float cosa ) {    
+	float3 w = normalize(d);
+    float3 u = normalize(cross(w.yzx, w));
+    float3 v = cross(w, u);
+	return (u*cos(phi) + v*sin(phi)) * sina + w * cosa;
+}
+
+#define isMetallic(rayPayload) (rayPayload.bsdf.materialType == ROUGH_CONDUCTOR || rayPayload.bsdf.materialType == CONDUCTOR)
+
+float seed;	//seed initialized in main
+float rnd() { return fract(sin(seed++)*43758.5453123); }
+
+float3 sampleBSDF( in float3 x, in RayDesc rayDesc, in RayPayload rayPayload) {
+    float3 Lo = float3(0,0,0);
+	float3 hitE = -rayDesc.Direction;
+	float3 hitN = quatRot(float3(0,0,1), rayPayload.shFrame);
+    float3 n = (dot(hitE, hitN) < 0.0) ? -hitN : hitN;
+    
+        // Generate direction proportional to bsdf
+        float3 bsdfDir;
+        float bsdfPdfW;
+        float Xi1 = rnd();
+        float Xi2 = rnd();
+        float brdf;
+        
+        if(isMetallic(rayPayload)) {
+            bsdfDir = sampleBlinn( n, hitE, rayPayload.bsdf.roughness, Xi1, Xi2, bsdfPdfW );
+            brdf = evaluateBlinn( n, hitE, bsdfDir, rayPayload.bsdf.roughness);
+        } else {
+            bsdfDir = sampleLambertian( n, Xi1, Xi2, bsdfPdfW );
+            brdf = evaluateLambertian( n, bsdfDir );
+        }
+        
+        float dotNWi = dot( bsdfDir, n );
+
+        // Continue if sampled direction is under surface
+        if( (dotNWi > 0.0) && (bsdfPdfW > EPSILON) ){
+            // calculate light visibility
+            RaySurfaceHit newHit;
+            if( raySceneIntersection( Ray( x, bsdfDir ), EPSILON, newHit ) && (newHit.obj_id < LIGHT_COUNT) ) {
+                //Get hit light Info
+                float3 Li;
+                Sphere lightSphere;
+                getLightInfo( newHit.obj_id, lightSphere, Li );
+
+                // Read light info
+                float lightPdfW = sphericalLightSamplingPdf( x, bsdfDir, newHit.dist, newHit.N, lightSphere ) * lightChoosingPdf(x, newHit.obj_id);
+                float weight = misWeight( bsdfPdfW, lightPdfW );
+                
+                Lo += brdf*dotNWi*(Li/bsdfPdfW)*weight;
+            }
+    }
+
+    return Lo;
+}
+
+float3 sampleLight( in float3 x, in RaySurfaceHit hit) {
+    float3 Lo = float3(0,0,0); //outgoing radiance
+   
+        // select light uniformly
+        float Xi = rnd();
+        float lightPickPdf;
+        int lightId = chooseOneLight(x, Xi, lightPickPdf);
+
+        // Read light info
+        float3 Li;// incomming radiance
+        Sphere lightSphere;
+        getLightInfo( lightId, lightSphere, Li );
+        
+        float Xi1 = rnd();
+        float Xi2 = rnd();
+        LightSamplingRecord sampleRec;
+        sampleSphericalLight( x, lightSphere, Xi1, Xi2, sampleRec );
+        
+        float lightPdfW = lightPickPdf*sampleRec.pdf;
+        float3 Wi = sampleRec.w;
+        
+        float dotNWi = dot(Wi,hit.N);
+
+        if ( (dotNWi > 0.0) && (lightPdfW > EPSILON) ) {
+            RayDesc shadowRay;
+			shadowRay.Origin = x;
+			shadowRay.Direction = Wi;
+			shadowRay.TMin = EPSILON;
+			shadowRay.TMax = sampleRec.d * (1 + EPSILON);
+			RayPayload rayPayload = (RayPayload) 0;
+            RaySurfaceHit newHit;
+
+			TraceRay(_RaytracingAccelerationStructure,
+				RAY_FLAG_NONE, RAYTRACING_OPAQUE_FLAG, 0, 1, 0, shadowRay, rayPayload);
+
+            // bool visible = raySceneIntersection( shadowRay, EPSILON, newHit ) && EQUAL_FLT(newHit.dist,sampleRec.d,EPSILON);
+            if(EQUAL_FLT(rayPayload.distance,sampleRec.d,EPSILON)) {
+                float brdf;
+    			float brdfPdfW; // pdf of choosing Wi with 'bsdf sampling' technique
+                if(isMetallic(rayPayload)) {
+                    brdf = evaluateBlinn( hit.N, hit.E, Wi, rayPayload.bsdf.roughness);
+                    brdfPdfW = pdfBlinn(hit.N, hit.E, Wi, rayPayload.bsdf.roughness); // sampling Pdf matches brdf
+                } else {
+                    brdf = evaluateLambertian( hit.N, Wi );
+                    brdfPdfW = pdfLambertian( hit.N, Wi ); // sampling Pdf matches brdf
+                }
+                float weight = misWeight( lightPdfW, brdfPdfW );
+                Lo += ( Li * brdf * weight * dotNWi ) / lightPdfW;
+            }
+        }
+    
+    return Lo;
+}
+
+
+// "Radiance"
+float4 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, out float3 nextSurfacePos) {
+
+	bool foundLight = false;
+	bool foundSurface = true;
+
+	rayPayload.withinGlassDepth = 0;
+	rayPayload.color = float3(1,1,1);
+
+	for(int i=rayPayload.depth;i<maxRaysPerSample;i++) {
+
+		rayPayload.depth = i;
+
+		if(i > 0) {
+			rayDesc.TMin = 0.001; // margin for refractive objects; could be set to 0, when back faces are being culled
+			rayDesc.TMax = _Far;
+		}
+
+		rayPayload.distance = _Far;
+		rayPayload.gpt = true;
+		TraceRay(_RaytracingAccelerationStructure,
+			rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
+
+        if(rayPayload.distance < _Far){
+			float3 f, Le;
+			float3 n = rayPayload.dir;
+			if(dot2(n) == 0.0) {// light
+				Le = rayPayload.bsdf.color;
+				f = float3(1,1,1);
+			} else {
+				Le = float3(0,0,0);
+				f = rayPayload.bsdf.color;
+			}
+			
+			float3 hitPos = rayDesc.Origin + rayDesc.Direction*rayPayload.distance;
+			float3 directLight = sampleBSDF(hitPos, hit, rayPayload) + sampleLight(hitPos, hit, misWeightBalance);
+
+			// Le + f * directLight;
+		} else {
+			// _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+		}
+
+		if(i == 1) {
+			nextSurfacePos = rayPayload.pos;
+		}
+
+		// if we land outside the expected region, reject the sample
+		if(i == 0 && !(rayPayload.distance >= rayDesc.TMin && rayPayload.distance <= rayDesc.TMax)) {
+			return float4(0,0,0,0);
+		}
+
+		if(dot2(n) > 0.0){
+			// continue tracing
+			rayDesc.Origin = rayPayload.pos;
+			rayDesc.Direction = n;
+		} else {
+			// reached sky or emissive
+			foundLight = true;
+			break;
+		}
+			
+	}
+
+	if(!foundLight) return float4(0,0,0,1);
+	else return float4(rayPayload.color, 1.0);
+
+}
+
+// miss shader, used when we don't hit any geometry
+[shader("miss")]
+void SurfelPTMiss(inout RayPayload rayPayload : SV_RayPayload) {
+	// todo this looks like SDR... how do we get HDR colors?
+	if(rayPayload.depth > 0){
+		float3 color = _SkyBox.SampleLevel(_LinearClamp, WorldRayDirection(), 0).rgb;
+		rayPayload.color *= color;
+	}
+	rayPayload.distance = _Far;
+	rayPayload.dir = 0;
+}
+
+RWStructuredBuffer<Surfel> _Surfels;
+[shader("raygeneration")]
+void SurfelPathTracing() {
+
+	// start one ray per surfel
+
+	// current surfel
+	uint index = DispatchRaysIndex().x;
+	uint numSurfels, stride;
+	_Surfels.GetDimensions(numSurfels, stride);
+	if(index >= numSurfels) return;
+
+	// we know the surface, but we do not know the local BDRF ->
+	// we need to trace the first ray, even if we know where it ends
+
+	Surfel surfel = _Surfels[index];
+	float surfelSize = surfel.position.w;
+	if(surfelSize >= _Far * 0.5) return; // the sky has GI = 1, so no updates required
+
+	float3 surfelPos = surfel.position.xyz;
+	float4 surfelRotation = surfel.rotation;
+	float3 worldDir = normalize(surfelPos - _CameraPosition);
+	float3 worldNormal = quatRot(float3(0,1,0), surfel.rotation);
+	float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
+
+	// only update surfels, which are in front of the camera
+	float2 uvTolerance = 1.05; // close to edge should be traced as well
+	if(!(cameraDir.z > 0.0 && all(abs(cameraDir.xy) < _CameraUVSize * uvTolerance) && 
+		// test whether the surfel can be visible from the camera; the sky has no GBuffer information in Unity -> skip this test
+		dot(worldDir, worldNormal) < 0.0)) return;
+	
+	// init ray decriptor
+	RayDesc rayDesc;
+
+	int samplesPerSurfel = _SPP;
+	int maxRaysPerSample = _RPS;
+
+	// Create and init the ray payload
+	RayPayload rayPayload = (RayPayload) 0;
+	rayPayload.surfelRotation = surfel.rotation;
+	rayPayload.surfelSize = surfelSize;
+
+	// init random seed from current pixel location and frame index
+	uint srcSeed = initRand(index, _FrameIndex);
+
+	float cosa, sina, distance;
+	float3 ray1Pos, ray2Pos;
+	GenerateGradientRays(
+		surfelPos, surfelRotation, surfelSize, rayPayload.randomSeed,
+		cosa, sina, distance, ray1Pos, ray2Pos
+	);
+
+	bool hasChanged = false;
+	bool supportTransparency = true;
+	for(int j=0;j<samplesPerSurfel;j++){
+
+		// go back a step
+		float startDist = 0.1 * surfelSize;
+		rayDesc.Origin = surfelPos - startDist * worldDir;
+		rayDesc.Direction = normalize(surfelPos - _CameraPosition);
+		rayDesc.TMin = startDist * 0.5;
+		rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
+
+		float3 nextSurfacePos, ignored;
+		rayPayload.randomSeed = srcSeed;
+		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
+		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		uint nextSeed = rayPayload.randomSeed;
+		
+		SetupGradientRayStart(rayDesc, ray1Pos, nextSurfacePos);
+		if(supportTransparency) rayDesc.TMax = _Far;
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
+		float3 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
+
+		SetupGradientRayStart(rayDesc, ray2Pos, nextSurfacePos);
+		if(supportTransparency) rayDesc.TMax = _Far;
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
+		float3 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
+
+		surfel.color += color;
+		hasChanged = true;
+			
+		float3 gradient1 = (colorD1 - color.xyz) / distance;
+		float3 gradient2 = (colorD2 - color.xyz) / distance;
+
+		// reverse rotation
+		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
+		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
+
+		surfel.colorDx += float4(gradientDX, 1.0);
+		surfel.colorDz += float4(gradientDZ, 1.0);
+		
+		srcSeed = nextSeed;// seed for next iteration
+
+	}
+	if(hasChanged) {
+		_Surfels[index] = surfel;
+	}
+}
+
+// texture to store raytracing result
+RWTexture2D<float4> _ColorTarget;
+RWTexture2D<float4> _ColorDxTarget;
+RWTexture2D<float4> _ColorDyTarget;
+
+[shader("raygeneration")]
+void PixelPathTracing() {
+
+    // current pixel
+	uint2 dispatchIdx = DispatchRaysIndex().xy;
+	// target resolution
+	uint2 launchDim = DispatchRaysDimensions().xy;
+	
+	// get random uv inside current pixel
+	// this gives us anti-aliasing for free
+	// + float2(nextRand(seed), nextRand(seed))
+	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+
+    // current surfel
+    uint2 index = DispatchRaysIndex().xy;
+
+    // we know the surface, but we do not know the local BDRF .
+    // we need to trace the first ray, even if we know where it ends
+
+    float3 surfelPos = _CameraPosition;
+
+    RayPayload rayPayload = (RayPayload) 0;
+	RayDesc rayDesc = (RayDesc) 0;
+
+	// init random seed from current pixel location and frame index
+    uint srcSeed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
+
+	int samplesPerSurfel = _SPP;
+	int maxRaysPerSample = _RPS;
+
+    float4 finalColor = float4(0,0,0,0);
+    float4 finalColorDx = float4(0,0,0,0);
+    float4 finalColorDy = float4(0,0,0,0);
+
+    for (int j = 0; j < _SPP; j++) {
+
+		// go back a step
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = rayDir;
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		float3 ignored;
+		rayPayload.randomSeed = srcSeed;
+		float4 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+		if(color.w <= 0.0) break; // try again; but we have no randomness until this point -> cancel
+		uint nextSeed = rayPayload.randomSeed;
+		
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
+		float4 colorD1 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
+		float4 colorD2 = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+
+		finalColor += color;
+		if(colorD1.w > 0) finalColorDx += float4(colorD1.xyz - color.xyz, 1.0);
+		if(colorD2.w > 0) finalColorDy += float4(colorD2.xyz - color.xyz, 1.0);
+
+		srcSeed = nextSeed;// seed for next iteration
+
+    }
+
+	// store result
+	_ColorTarget[index] = finalColor;
+	_ColorDxTarget[index] = finalColorDx;
+	_ColorDyTarget[index] = finalColorDy;
+
+}

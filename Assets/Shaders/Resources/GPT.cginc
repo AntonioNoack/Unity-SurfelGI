@@ -46,7 +46,7 @@ float3 SampleSky(float3 dir) {
 #define m_maxDepth _RPS
 
 // If defined, uses only the central sample for the throughput estimate. Otherwise uses offset paths for estimating throughput too.
-// #define CENTRAL_RADIANCE
+#define CENTRAL_RADIANCE true
 
 // Specifies the roughness threshold for classifying materials as 'diffuse', in contrast to 'specular', 
 // for the purposes of constructing paths pairs for estimating pixel differences. This value should usually be somewhere between 0.0005 and 0.01. 
@@ -257,7 +257,7 @@ bool rayIntersect(Ray ray, inout Intersection its) {
     RayDesc rayDesc = (RayDesc) 0;
     rayDesc.Origin = ray.o;
     rayDesc.Direction = ray.d;
-    rayDesc.TMin = ray.mint;
+    rayDesc.TMin = max(ray.mint, min(ray.maxt, 0.01));
     rayDesc.TMax = ray.maxt;
 
     RayPayload rayPayload = (RayPayload) 0;
@@ -413,7 +413,7 @@ bool testVisibility(float3 a, float3 b, float time) {
 	float dist = min(_Far, length(dir));
 	rayDesc.Origin = a;
 	rayDesc.Direction = normalize(dir);
-	rayDesc.TMin = 0.01 * dist;
+	rayDesc.TMin = max(0.01 * dist, min(dist, 0.01));
 	rayDesc.TMax = 0.99 * dist;
 	RayPayload rayPayload = (RayPayload) 0;
     rayPayload.gpt = true;
@@ -744,7 +744,9 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	// Sample BSDF * cos(theta).
 	BSDFSampleResult result = (BSDFSampleResult) 0;
 	result.bRec.its = rayState.rRec.its;
+    // todo this formula is incorrect!!!, or shFrame is
     result.bRec.wi = toLocal(rayState.rRec.its.shFrame, -rayState.ray.d);
+    
     // extra sampler for some BSDFs; according to
     // https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/include/mitsuba/render/bsdf.h, line 126,
     // this can improve the quality; all this does is generating random numbers
@@ -758,7 +760,7 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	return result;
 }
 
-#define SURFELS_ONLY
+// #define SURFELS_ONLY
 
 /// Constructs a sequence of base paths and shifts them into offset paths, evaluating their throughputs and differences.
 /// This is the core of the rendering algorithm.
@@ -914,9 +916,9 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                 float mainWeightNumerator = main.pdf * dRec.pdf;
                 float mainWeightDenominator = (main.pdf * main.pdf) * ((dRec.pdf * dRec.pdf) + (mainBsdfPdf * mainBsdfPdf));
 
-#ifdef CENTRAL_RADIANCE
-                addRadiance(main, main.throughput * (mainBSDFValue * mainEmitterRadiance), mainWeightNumerator / (D_EPSILON + mainWeightDenominator));
-#endif
+                if(CENTRAL_RADIANCE){
+                    addRadiance(main, main.throughput * (mainBSDFValue * mainEmitterRadiance), mainWeightNumerator / (D_EPSILON + mainWeightDenominator));
+                }
 
                 // Strict normals check to produce the same results as bidirectional methods when normal mapping is used.
                 if (!m_strictNormals || dot(Frame_n(main.rRec.its.geoFrame), dRec.d) * Frame_cosTheta(mainBRec.wo) > 0) {
@@ -994,7 +996,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                                     
                                     // std::pair<Spectrum, bool> emitterTuple = 
                                     bool shiftedEmitterVisible;
-									float emitterRadiance;
+									float3 emitterRadiance;
 									sampleEmitterDirectVisible(shiftedDRec, lightSample, emitterRadiance, shiftedEmitterVisible);
 
                                     Spectrum shiftedEmitterRadiance = emitterRadiance * shiftedDRec.pdf;
@@ -1044,10 +1046,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
                         // Note: Using also the offset paths for the throughput estimate, like we do here, provides some advantage when a large reconstruction alpha is used,
                         // but using only throughputs of the base paths doesn't usually lose by much.
 
-#ifndef CENTRAL_RADIANCE
-                        addRadiance(main, mainContribution, weight);
-                        addRadiance(shiftedRays[i], shiftedContribution, weight);
-#endif
+                        if(!CENTRAL_RADIANCE){
+                            addRadiance(main, mainContribution, weight);
+                            addRadiance(shiftedRays[i], shiftedContribution, weight);
+                        }
                         addGradient(shiftedRays[i], shiftedContribution - mainContribution, weight);
                     } // for(int i = 0; i < secondaryCount; i++)
                 } // Strict normals
@@ -1145,14 +1147,12 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         float mainWeightNumerator = mainPreviousPdf * mainBsdfResult.pdf;
         float mainWeightDenominator = (mainPreviousPdf * mainPreviousPdf) * ((mainLumPdf * mainLumPdf) + (mainBsdfPdf * mainBsdfPdf));
 
-#ifdef CENTRAL_RADIANCE
-        if (main.rRec.depth + 1 >= m_minDepth) {
+        if (CENTRAL_RADIANCE && main.rRec.depth + 1 >= m_minDepth) {
             addRadiance(main, main.throughput * mainEmitterRadiance, mainWeightNumerator / (D_EPSILON + mainWeightDenominator));
         }
-#endif
 
         // Construct the offset paths and evaluate emitter hits.
-        for (int i = 0; i < secondaryCount; i++) {
+       for (int i = 0; i < secondaryCount; i++) {
 
             // Spectrum shiftedEmitterRadiance = 0.0;
             Spectrum mainContribution = 0.0;
@@ -1485,10 +1485,10 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
             // Note: Using also the offset paths for the throughput estimate, like we do here, provides some advantage when a large reconstruction alpha is used,
             // but using only throughputs of the base paths doesn't usually lose by much.
             if (main.rRec.depth + 1 >= m_minDepth) {
-#ifndef CENTRAL_RADIANCE
-                addRadiance(main, mainContribution, weight);
-                addRadiance(shiftedRays[i], shiftedContribution, weight);
-#endif
+                if(!CENTRAL_RADIANCE){
+                    addRadiance(main, mainContribution, weight);
+                    addRadiance(shiftedRays[i], shiftedContribution, weight);
+                }
                 addGradient(shiftedRays[i], shiftedContribution - mainContribution, weight);
             }
 
