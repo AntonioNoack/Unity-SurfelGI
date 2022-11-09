@@ -547,13 +547,20 @@ float3 evalEnvironment(Ray ray) {
 	return SampleSky(ray.d);
 }
 
+// https://sakibsaikia.github.io/graphics/2022/01/04/Nan-Checks-In-HLSL.html
+bool IsNumber(float x) {
+    return (asuint(x) & 0x7fffffff) <= 0x7f800000;
+}
+
 // where is the weight increased?
-void addRadiance(inout RayState r, float3 color, float weight){
-	r.radiance += color * weight;
+void addRadiance(inout RayState r, float3 color, float weight) {
+	if(IsNumber(color.x) && IsNumber(color.y) && IsNumber(color.z) && IsNumber(weight)) 
+        r.radiance += color * weight;
 }
 
 void addGradient(inout RayState r, float3 color, float weight){
-	r.gradient += color * weight;
+	if(IsNumber(color.x) && IsNumber(color.y) && IsNumber(color.z) && IsNumber(weight)) 
+        r.gradient += color * weight;
 }
 
 /// Calculates the outgoing direction of a shift by duplicating the local half-vector.
@@ -744,7 +751,6 @@ BSDFSampleResult sampleBSDF(inout RayState rayState) {
 	// Sample BSDF * cos(theta).
 	BSDFSampleResult result = (BSDFSampleResult) 0;
 	result.bRec.its = rayState.rRec.its;
-    // todo this formula is incorrect!!!, or shFrame is
     result.bRec.wi = toLocal(rayState.rRec.its.shFrame, -rayState.ray.d);
     
     // extra sampler for some BSDFs; according to
@@ -876,7 +882,7 @@ bool evaluate(inout RayState main, inout RayState shiftedRays[4], int secondaryC
         // Sample incoming radiance from lights (next event estimation).
         {
             BSDF mainBSDF = getBSDF(main.rRec.its, main.ray);
-            if (main.rRec.type & EDirectSurfaceRadiance && mainBSDF.type & ESmooth && main.rRec.depth + 1 >= m_minDepth) {
+            if ((main.rRec.type & EDirectSurfaceRadiance) != 0 && (mainBSDF.type & ESmooth) != 0 && (main.rRec.depth + 1 >= m_minDepth)) {
                 // Sample an emitter and evaluate f = f/p * p for it. */
                 DirectSamplingRecord dRec = createDirectSamplingRecord(main.rRec.its);
 

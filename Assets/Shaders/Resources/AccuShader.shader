@@ -86,8 +86,7 @@
 						half spec0, spec1, depth0, depth1;
 						half3 col0, col1, emm0, emm1;
 						GetGBuffer0(uv,spec0,depth0,col0,emm0);
-						if(depth0 >= 1.0) return float4(0,0,0,1);
-						
+						if(depth0 >= 1.0) return float4(0,0,0,1); // sky
 						
 						float4 previousFrame = tex2D(_Accumulation, uv2);
 						GetGBuffer1(uv2,spec1,depth1,col1,emm1);

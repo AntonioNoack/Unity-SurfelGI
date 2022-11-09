@@ -126,7 +126,7 @@ public class PoissonReconstruction : MonoBehaviour {
 
     private int createdSize = 0;
 
-    public RenderTexture poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
+    public (RenderTexture,RenderTexture,RenderTexture) poissonReconstruct(RenderTexture src, RenderTexture dx, RenderTexture dy) {
 
         if(bdx == null || bdx.width != src.width || bdx.height != src.height){
             Debug.Log("Recreating buffers");
@@ -134,6 +134,7 @@ public class PoissonReconstruction : MonoBehaviour {
             Create(src.width, src.height);
         }
 
+        // normalize = divide by weight
         if(normalize){
             Graphics.Blit(src, src1, normMaterial);
             if(!useFakeGradients){
@@ -145,10 +146,20 @@ public class PoissonReconstruction : MonoBehaviour {
             dy = dy1;
         }
 
+        // used gradients
+        RenderTexture dx0 = dx, dy0 = dy;
+
+        if(useFakeGradients) {
+            kernel(src, dx, 1, 0, dxMaterial);
+            kernel(src, dy, 0, 1, dxMaterial);
+            dx0 = dx;
+            dy0 = dy;
+        }
+
         if(signedBlurMaterial == null || unsignedBlurMaterial == null){
             if(blurShader == null){
                 Debug.Log("Blur Shader is missing!");
-                return src;
+                return (src,dx0,dy0);
             }
             Debug.Log("Creating blur materials");
             signedBlurMaterial = new Material(blurShader);
@@ -191,19 +202,15 @@ public class PoissonReconstruction : MonoBehaviour {
 
         if(addMaterial == null){
             Debug.Log("AddMaterial is missing!");
-            return src;
+            return (src,dx0,dy0);
         } else if(poissonMaterial == null){
             Debug.Log("PoissonMaterial is missing!");
-            return src;
+            return (src,dx0,dy0);
         }
 
         RenderTexture tmp = bdx;
         RenderTexture res0 = this.res0;
         RenderTexture blurred = this.blurred;
-        if(useFakeGradients){
-            kernel(src, dx, 1, 0, dxMaterial);
-            kernel(src, dy, 0, 1, dxMaterial);
-        }
         if(initialBlur){
             blur(src, tmp, blurred);
         } else {
@@ -225,6 +232,6 @@ public class PoissonReconstruction : MonoBehaviour {
             res0 = res1;
             res1 = tmp;
         }
-        return res0;
+        return (res0,dx0,dy0);
     }
 }

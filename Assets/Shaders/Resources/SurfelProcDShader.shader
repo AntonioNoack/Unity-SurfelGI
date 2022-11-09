@@ -68,6 +68,7 @@ Shader "Custom/Surfel2ProcShader" {
 
             // set this to [~1-2]/surfelDensity
             float _IdCutoff;
+            float2 _Duv;
 
             // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/
             v2f vert (uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) {
@@ -111,12 +112,10 @@ Shader "Custom/Surfel2ProcShader" {
                 // int id : SV_TARGET3; // breaks rendering without warnings 😵
             };
 
-            f2t frag (v2f i) {
-
-                float2 uv = i.screenPos.xy / i.screenPos.w;
+            float4 sample(v2f i, float2 uv, float2 duv) {
 
                 float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
-                if(rawDepth == 0.0) discard;// sky surfels are ignored
+                if(rawDepth == 0.0) return float4(1,1,1,1);// sky surfels are ignored and have GI = 1.0
 
                 half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
                 half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
@@ -139,21 +138,34 @@ Shader "Custom/Surfel2ProcShader" {
 
                 // calculate surface world position from depth x direction
                 float3 lookDir0 = float3((uv*2.0-1.0)*_FieldOfViewFactor, 1.0);
-                float3 lookDir = normalize(i.worldPos - _WorldSpaceCameraPos) * length(lookDir0);
+                float3 worldPos0 = i.worldPos + ddx(i.worldPos) * duv.x + ddy(i.worldPos) * duv.y;
+                float3 lookDir = normalize(worldPos0 - _WorldSpaceCameraPos) * length(lookDir0);
                 float3 worldPos = _WorldSpaceCameraPos + depth * lookDir;
                 float3 localPosition = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
 
                 #include "SurfelWeight.cginc"
                 
                 // estimated color for easy gradient calculation
-                float3 estColor = weight * (i.color.xyz + localPosition.x * i.colorDx.xyz + localPosition.z * i.colorDz.xyz);
-                float3 colorDx = ddx(estColor);
-                float3 colorDy = ddy(estColor);
+                float3 estColor = i.color.xyz + (localPosition.x * i.colorDx.xyz + localPosition.z * i.colorDz.xyz);
+                return float4(estColor, weight);
+            }
 
-                result.v  = float4(estColor, weight);
-                result.dx = float4(colorDx.xyz, weight);
-                result.dy = float4(colorDy.xyz, weight);
-               
+            f2t frag (v2f i) {
+
+                // ddx, ddy are not good enough; we need to have exactly our definition of a (-1,0,+1) kernel for gradient calculation
+                float2 uv = i.screenPos.xy / i.screenPos.w;
+
+                float4 c0 = sample(i,uv,float2(0,0));
+                float4 px = sample(i,uv+float2(+_Duv.x,0),float2(+1,0));
+                float4 mx = sample(i,uv+float2(-_Duv.x,0),float2(-1,0));
+                float4 py = sample(i,uv+float2(0,+_Duv.y),float2(0,+1));
+                float4 my = sample(i,uv+float2(0,-_Duv.y),float2(0,-1));
+
+                f2t result;
+                result.v = float4(c0.xyz * c0.w, c0.w);
+                result.dx = float4((px-mx).rgb * c0.w * 0.5, c0.w);// * 0.5, because we have finite differences over 2 pixels
+                result.dy = float4((py-my).rgb * c0.w * 0.5, c0.w);
+
                 return result;
 
             }

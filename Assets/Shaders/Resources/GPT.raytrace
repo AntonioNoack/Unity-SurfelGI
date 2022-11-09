@@ -109,7 +109,10 @@ void SurfelGPT() {
 
         float3 veryDirect = float3(0,0,0);
         bool ok = evaluate(mainRay, shiftedRays, 4, veryDirect);
-        if(!ok) continue;
+        if(!ok) {
+            surfel.color.w += 1.0;
+            continue;
+        }
 
         // update surfel by main and shiftedRays
         // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
@@ -142,27 +145,140 @@ float3 _CameraOffset;
 
 float _Near;
 
-[shader("raygeneration")]
-void PixelGPT() {
+bool IsOk(float c){
+    return c > -1000.0 && c < +1000.0;
+}
 
-    // current pixel
-	uint2 dispatchIdx = DispatchRaysIndex().xy;
+bool IsOK(float4 c){
+    return IsOK(c.x) && IsOK(c.y) && IsOK(c.z) && IsOK(c.w) && c.w > 0.0;
+}
+
+float4 bruteForcePixel(uint2 uv, uint seed){
+
 	// target resolution
 	uint2 launchDim = DispatchRaysDimensions().xy;
 	
-	// init random seed from current pixel location and frame index
-	uint seed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
-
 	// get random uv inside current pixel
 	// this gives us anti-aliasing for free
 	// + float2(nextRand(seed), nextRand(seed))
-	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+	float3 rayDir = normalize(quatRot(float3((float2)uv - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 
     // _CameraPosition
     // rayDir
 
     // current surfel
-    uint2 index = DispatchRaysIndex().xy;
+    uint2 index = uv;
+
+    // we know the surface, but we do not know the local BDRF .
+    // we need to trace the first ray, even if we know where it ends
+
+    float3 surfelPos = _CameraPosition;
+
+    RadianceQueryRecord rRec = (RadianceQueryRecord) 0;
+    rRec.its.randomSeed = seed;
+
+    float4 finalColor = float4(0,0,0,0);
+    for (int j = 0; j < _SPP; j++) {
+
+        rRec.type = ERadiance;
+
+        RayState mainRay = (RayState) 0;
+        // define first ray
+        mainRay.ray.o = _CameraPosition;
+        mainRay.ray.d = rayDir;
+        // mint and maxt can be pretty exact, because we set the surfel exactly on the surface
+        mainRay.ray.mint = _Near;
+        mainRay.ray.maxt = _Far;
+        mainRay.throughput = float3(1,1,1);
+        mainRay.pdf = 1.0;
+		mainRay.rRec = rRec;
+		mainRay.rRec.its = rRec.its;
+
+        RayState shiftedRays[4];
+
+        shiftedRays[0].ray.d.xy = float2(+1.0,  0.0);
+        shiftedRays[1].ray.d.xy = float2( 0.0, +1.0);
+        shiftedRays[2].ray.d.xy = float2(-1.0,  0.0);
+        shiftedRays[3].ray.d.xy = float2( 0.0, -1.0);
+        
+        for(int i = 0; i < 4; i++) {
+            // define first ray for gradients
+            shiftedRays[i].ray.o = _CameraPosition;
+	        float3 rayDir1 = normalize(quatRot(float3(
+                (float2)uv + shiftedRays[i].ray.d.xy - _CameraOffset.xy,
+                _CameraOffset.z
+            ), _CameraRotation));
+            shiftedRays[i].ray.d = rayDir1;
+            shiftedRays[i].ray.mint = _Near;
+            shiftedRays[i].ray.maxt = _Far;
+			shiftedRays[i].throughput = float3(1,1,1);
+			shiftedRays[i].rRec = rRec;
+		}
+
+        float3 veryDirect = 0;
+        bool ok = evaluate(mainRay, shiftedRays, 4, veryDirect);
+        if(!ok) {
+            finalColor.w += 1.0;
+            continue;
+        }
+
+        // update surfel by main and shiftedRays
+        // to do divide by color of first hit...
+        // what is the weight? where is it coming from? looks like it's always just 1 (normalized)
+        // why was the pdf for nearly all rays 0.0? because we needed to set mainRay.pdf beforehand
+        float weight = mainRay.pdf;
+        float3 color = mainRay.radiance + veryDirect;
+        finalColor += float4(color, weight); // is it correct to add veryDirect here?
+
+    }
+
+    return finalColor;
+	
+}
+
+
+[shader("raygeneration")]
+void PixelGPT1() {// bruteforce, works
+	uint2 uv = DispatchRaysIndex().xy;
+	uint2 launchDim = DispatchRaysDimensions().xy;
+    if(uv.x >= launchDim.x || uv.y >= launchDim.y) return;
+	uint seed = initRand(uv.x + uv.y * launchDim.x, _FrameIndex);
+    float4 c = bruteForcePixel(uv,seed);
+    _ColorTarget[uv] = c;
+    float4 px = bruteForcePixel(uv + int2(+1,0),seed);
+    float4 mx = bruteForcePixel(uv + int2(-1,0),seed);
+    float4 py = bruteForcePixel(uv + int2(0,+1),seed);
+    float4 my = bruteForcePixel(uv + int2(0,-1),seed);
+    if(px.w > 0) px.rgb /= px.w;
+    if(mx.w > 0) mx.rgb /= mx.w;
+    if(py.w > 0) py.rgb /= py.w;
+    if(my.w > 0) my.rgb /= my.w;
+	_ColorDxTarget[uv] = float4((px-mx).rgb*c.w*0.5,c.w);
+	_ColorDyTarget[uv] = float4((py-my).rgb*c.w*0.5,c.w);
+}
+
+[shader("raygeneration")]
+void PixelGPT() {// adjusted from their Mitsuba implementation, but probably wrong, because it does not work :/
+
+    // current pixel
+	uint2 uv = DispatchRaysIndex().xy;
+	// target resolution
+	uint2 launchDim = DispatchRaysDimensions().xy;
+    if(uv.x >= launchDim.x || uv.y >= launchDim.y) return;
+	
+	// init random seed from current pixel location and frame index
+	uint seed = initRand(uv.x + uv.y * launchDim.x, _FrameIndex);
+
+	// get random uv inside current pixel
+	// this gives us anti-aliasing for free
+	// + float2(nextRand(seed), nextRand(seed))
+	float3 rayDir = normalize(quatRot(float3((float2)uv - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+
+    // _CameraPosition
+    // rayDir
+
+    // current surfel
+    uint2 index = uv;
 
     // we know the surface, but we do not know the local BDRF .
     // we need to trace the first ray, even if we know where it ends
@@ -202,7 +318,7 @@ void PixelGPT() {
             // define first ray for gradients
             shiftedRays[i].ray.o = _CameraPosition;
 	        float3 rayDir1 = normalize(quatRot(float3(
-                (float2)dispatchIdx + shiftedRays[i].ray.d.xy - _CameraOffset.xy,
+                (float2)uv + shiftedRays[i].ray.d.xy - _CameraOffset.xy,
                 _CameraOffset.z
             ), _CameraRotation));
             shiftedRays[i].ray.d = rayDir1;
@@ -214,7 +330,10 @@ void PixelGPT() {
 
         float3 veryDirect = 0;
         bool ok = evaluate(mainRay, shiftedRays, 4, veryDirect);
-        if(!ok) continue;
+        if(!ok) {
+            finalColor.w += 1.0;
+            continue;
+        }
 
         // update surfel by main and shiftedRays
         // to do divide by color of first hit...
@@ -223,15 +342,17 @@ void PixelGPT() {
         float weight = mainRay.pdf;
         float3 color = mainRay.radiance + veryDirect;
         finalColor += float4(color, weight); // is it correct to add veryDirect here?
-        float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);// / distance;
-        float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);// / distance;
+        // float3 gradient1 = 0.5 * (shiftedRays[0].gradient - shiftedRays[2].gradient);// / distance;
+        // float3 gradient2 = 0.5 * (shiftedRays[1].gradient - shiftedRays[3].gradient);// / distance;
+        float3 gradient1 = 0.5 * (shiftedRays[0].radiance - shiftedRays[2].radiance);// / distance;
+        float3 gradient2 = 0.5 * (shiftedRays[1].radiance - shiftedRays[3].radiance);// / distance;
         finalColorDx += float4(gradient1, weight);
         finalColorDy += float4(gradient2, weight);
     }
 
 	// store result
 	_ColorTarget[index] = finalColor;
-	_ColorDxTarget[index] = finalColorDx;
-	_ColorDyTarget[index] = finalColorDy;
+	_ColorDxTarget[index] = IsOK(finalColorDx) ? finalColorDx : float4(1,0,0,1) * 0.01;
+	_ColorDyTarget[index] = IsOK(finalColorDy) ? finalColorDy : float4(0,0,1,1) * 0.01;
 
 }

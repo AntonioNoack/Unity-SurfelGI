@@ -38,6 +38,8 @@ public class DXRCamera : MonoBehaviour {
     public bool testSaving = false;
     public int pixelGIBlur = 5;
 
+    private int doNothingCtr = 0;
+
     public float surfelDensity = 2f;
 
     [Range(0.0f, 0.2f)]
@@ -125,6 +127,8 @@ public class DXRCamera : MonoBehaviour {
     private float lightSampleStrength = 1f, lightAccuArea = 1f;
 
     private void Start() {
+
+        doNothingCtr = 0;
 
         OnDestroy();
 
@@ -336,6 +340,7 @@ public class DXRCamera : MonoBehaviour {
     private void Update() {
         if(_camera.pixelWidth != giTarget.width || _camera.pixelHeight != giTarget.height) {
             Debug.Log("Resizing");
+            doNothingCtr = 5;
             DestroyTargets();
             CreateTargets();
             frameIndex = 0;
@@ -427,6 +432,7 @@ public class DXRCamera : MonoBehaviour {
         shader.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
         shader.SetFloat("_IdCutoff", 2f / surfelDensity);
         shader.SetFloat("_VisualizeSurfelIds", visualizeSurfelIds && result == Result.SURFEL_WEIGHTS ? 1f : 0f);
+        shader.SetVector("_Duv", new Vector2(1f/giTarget.width, 1f/giTarget.height));
 
         // if(!firstFrame) return; // command buffer doesn't change, only a few shader variables
 
@@ -536,6 +542,11 @@ public class DXRCamera : MonoBehaviour {
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
 
+        if(doNothingCtr > 0){
+            doNothingCtr--;
+            return;// safety first (a try to prevent crashes)
+        }
+
         if(sleep > 0f){
             Thread.Sleep((int) (sleep * 1000));
         }
@@ -543,7 +554,9 @@ public class DXRCamera : MonoBehaviour {
         if(sceneRTAS == null)
             InitRaytracingAccelerationStructure();
 
-        Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
+
+        // todo re-enable
+        // Shader.SetGlobalFloat("_EnableRayDifferentials", useDerivatives ? 1f : 0f);
 
         var usePixelPT1 = GetComponent<PerPixelRT>();
         // if(usePixelGPT) useSurfelGPT = false;
@@ -633,7 +646,7 @@ public class DXRCamera : MonoBehaviour {
         }
 
         if(useDerivatives && poissonReconstr.enabled){
-            accu = poissonReconstr.poissonReconstruct(accu, accuDx, accuDy);
+            (accu, accuDx, accuDy) = poissonReconstr.poissonReconstruct(accu, accuDx, accuDy);
         }
 
         // display result on screen

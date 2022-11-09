@@ -22,6 +22,14 @@
 			SamplerState sampler_BumpMap;
 			float _DetailNormalMapScale;
 
+			bool IsOk(float c){
+				return c > -1.1 && c < +1.1;
+			}
+
+			bool IsOK(float3 c){
+				return IsOK(c.x) && IsOK(c.y) && IsOK(c.z);
+			}
+
 			[shader("closesthit")]
 			void DxrDiffuseClosest(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
 				
@@ -38,13 +46,14 @@
 				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
 				float3 objectNormal = normalize(vertex.normalOS);
 				float3 objectTangent = normalize(vertex.tangentOS);
-				float3 objectBitangent = normalize(cross(objectNormal, objectTangent));
+				float3 objectBitangent = normalize(cross(objectTangent, objectNormal));
 				float3 objectNormal1 = UnpackNormal(_BumpMap.SampleLevel(sampler_BumpMap, TRANSFORM_TEX(vertex.texCoord0, _BumpMap), lod));
 				float2 objectNormal2 = objectNormal1.xy * _DetailNormalMapScale;
 				// done check that the order & signs are correct: looks correct :3
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
 				float3 surfaceWorldNormal = normalize(mul(objectToWorld, vertex.geoNormalOS));
+				worldNormal = IsOK(worldNormal) ? worldNormal : surfaceWorldNormal;
 				// worldNormal = surfaceWorldNormal; // set this to make every mesh look flat-shaded
 				
 				float3 rayOrigin = WorldRayOrigin();
@@ -86,9 +95,7 @@
 				}
 
 				rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
-				// can break...
-				// rayPayload.shFrame = normalToFrame(worldNormal);
-				rayPayload.shFrame = rayPayload.geoFrame;
+				rayPayload.shFrame = normalToFrame(worldNormal);
 
 				if(rayPayload.gpt){
 					// define GPT material parameters

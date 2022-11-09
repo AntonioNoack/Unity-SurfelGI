@@ -44,7 +44,7 @@
 			o.Albedo = (tex2D(_MainTex, IN.uv_MainTex) * _Color).xyz;
 			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
 			o.Smoothness = lerp(_Glossiness2, _Glossiness, tex2D(_SpecGlossMap, IN.uv_SpecGlossMap).x);
-			o.Normal = UnpackNormal (tex2D (_BumpMap, IN.uv_BumpMap));
+			o.Normal = UnpackNormal(tex2D(_BumpMap, IN.uv_BumpMap));
 			o.Alpha = 1.0;
 		}
 		ENDCG
@@ -136,6 +136,7 @@
 				float3 objectNormal1 = UnpackNormal(_BumpMap.SampleLevel(sampler_BumpMap, vertex.texCoord0, lod));
 				float2 objectNormal2 = objectNormal1.xy * _DetailNormalMapScale;
 				// done check that the order & signs are correct: looks correct :3
+				// float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
 				float3 surfaceWorldNormal = normalize(mul(objectToWorld, objectNormal));
