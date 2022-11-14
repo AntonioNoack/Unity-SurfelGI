@@ -35,7 +35,9 @@ public class DXRCamera : MonoBehaviour {
     public Result result = Result.SURFEL_WEIGHTS;
     public bool useDerivatives = false;
 
-    public bool testSaving = false;
+    public bool storeBaseline = false;
+    public bool benchmark = false;
+
     public int pixelGIBlur = 5;
 
     private int doNothingCtr = 0;
@@ -128,6 +130,9 @@ public class DXRCamera : MonoBehaviour {
 
     private void Start() {
 
+        // we are limited to 120 fps, even if nothing is running, and VSync is disabled... why?
+        // UnityEngine.Application.targetFramerate = 5000;
+
         doNothingCtr = 0;
 
         OnDestroy();
@@ -158,7 +163,7 @@ public class DXRCamera : MonoBehaviour {
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
 
             if(surfels != null) surfels.Release();
-            surfels = new ComputeBuffer(maxNumSurfels, 6 * 4 * 4 + 16);// 6 * 4 floats is the min size
+            surfels = new ComputeBuffer(maxNumSurfels, 6 * 4 * 4);// 6 * 4 floats is the min size
             surfels.name = "Surfels";
             hasPlacedSurfels = false;
             
@@ -241,6 +246,7 @@ public class DXRCamera : MonoBehaviour {
 
         }
 
+        if(!hasPlacedSurfels) frameIndex = 0;
         hasPlacedSurfels = true;
 
     }
@@ -613,7 +619,6 @@ public class DXRCamera : MonoBehaviour {
             shader.SetAccelerationStructure("_RaytracingAccelerationStructure", sceneRTAS);
             shader.SetFloat("_LightAccuArea", lightSampling.lightAccuArea);
             shader.SetBuffer("g_Triangles", lightSampling.emissiveTriangles);
-
             shader.SetVector("_CameraPosition", transform.position);
             shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
             shader.SetVector("_CameraOffset", CalcCameraOffset());
@@ -626,14 +631,18 @@ public class DXRCamera : MonoBehaviour {
             shader.SetInt("_RPS", raysPerSample);
             shader.SetTexture("_SkyBox", skyBox);
             shader.SetVector("_SunDir", sun != null ? -sun.transform.forward : new Vector3(0,0,0));
+            // all resources need to be bound (why ever)
+            // all resources must be non-zero (why ever)
+            // compute buffers must not be empty (why ever)
+            if(surfels == null) surfels = new ComputeBuffer(1, 6 * 4 * 4);
+            shader.SetBuffer("_Surfels", surfels);
+            shader.SetTexture("_ColorTarget", emissiveTarget);
+            shader.SetTexture("_ColorDxTarget", emissiveDxTarget);
+            shader.SetTexture("_ColorDyTarget", emissiveDyTarget);
             if(substrate == Substrate.SURFEL){
-                shader.SetBuffer("_Surfels", surfels);
                 shader.Dispatch("SurfelGPT", surfels.count, 1, 1, _camera);
                 AccumulateSurfelEmissions(); // because we updated the surfels
             } else if(substrate == Substrate.PIXEL){
-                shader.SetTexture("_ColorTarget", emissiveTarget);
-                shader.SetTexture("_ColorDxTarget", emissiveDxTarget);
-                shader.SetTexture("_ColorDyTarget", emissiveDyTarget);
                 shader.Dispatch("PixelGPT", emissiveTarget.width, emissiveTarget.height, 1, _camera);
             }
         }
@@ -658,7 +667,10 @@ public class DXRCamera : MonoBehaviour {
         displayMaterial.SetTexture("_Accumulation", accu);
         displayMaterial.SetTexture("_AccuDx", accuDx);
         displayMaterial.SetTexture("_AccuDy", accuDy);
-        displayMaterial.SetFloat("_Derivatives", useDerivatives ? 1f : 0f);
+        displayMaterial.SetFloat(
+            "_Derivatives", // derivatives shouldn't be a part of benchmarks
+            (useDerivatives && !storeBaseline && !benchmark) ? 1f : 0f
+        );
         displayMaterial.SetFloat("_Far", _camera.farClipPlane);
         displayMaterial.SetFloat("_ShowIllumination", result == Result.GLOBAL_ILLUMINATION ? 1f : 0f);
         displayMaterial.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
@@ -668,25 +680,17 @@ public class DXRCamera : MonoBehaviour {
         displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
         Graphics.Blit(null, destination, displayMaterial);
 
-        if(testSaving){
-            testSaving = false;
-            // test loading and saving images
-            var baselinePath = "baseline-bath.png";
-            var img = RMSE.LoadImage(baselinePath);
-            if(img == null) {
-                // todo calculate baseline
-                RMSE.SaveImage(baselinePath, RMSE.ToTexture2D(destination));
-            } else {
-                var r = GetComponent<RMSE>();
-                var b = RMSE.ToRenderTexture(img);
-                float e = r.Compute(destination, b);
-                r.Destroy();
-                if(b == RenderTexture.active) {
-                    RenderTexture.active = destination;
-                }
-                b.Release();
-                Debug.Log("Difference: "+e);
-            }
+        if(storeBaseline) {
+            storeBaseline = false;
+            var r = GetComponent<RMSE>();
+            r.tex = new RenderTexture(destination);
+            Graphics.CopyTexture(destination, r.tex);
+        }
+
+        if(benchmark) {
+            var r = GetComponent<RMSE>();
+            float error = r.Compute(r.tex, destination);
+            Debug.Log(frameIndex+","+error);
         }
 
         if(result != Result.SURFEL_WEIGHTS && substrate == Substrate.PIXEL){

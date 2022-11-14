@@ -562,15 +562,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -25.37
+      value: -27.218801
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 6.8
+      value: 6.6400003
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 23.98
+      value: 15.83181
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
       propertyPath: m_LocalRotation.w
@@ -607,6 +607,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
       propertyPath: m_Name
       value: FsuLogo
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: cd220efee3cdbe54ea7daa99a0b3a9fe, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -2371,13 +2375,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  substrate: 0
+  substrate: 1
   tracer: 0
-  result: 0
-  useDerivatives: 0
-  testSaving: 0
-  pixelGIBlur: 5
-  surfelDensity: 3
+  result: 1
+  useDerivatives: 1
+  storeBaseline: 0
+  benchmark: 0
+  pixelGIBlur: 0
+  surfelDensity: 6
   sleep: 0
   exposure: 1
   hasPlacedSurfels: 0
@@ -2454,12 +2459,12 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b5b8d3c603a5a6c4eaa7d8a3ed703ead, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  poissonBlurRadius: 25
+  poissonBlurRadius: 10
   numPoissonIterations: 10
   blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
   poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
@@ -2469,7 +2474,7 @@ MonoBehaviour:
   normalize: 1
   prepare: 1
   initialBlur: 0
-  useFakeGradients: 1
+  useFakeGradients: 0
 --- !u!114 &963194234
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2500,6 +2505,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   shader: {fileID: 7200000, guid: c4f48ab326ea2de4c82034b2052d2acd, type: 3}
+  tex: {fileID: 0}
+  path: bath.png
 --- !u!1001 &1027004923
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2514,15 +2521,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -27.5012
+      value: -29.35
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: -0.16
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 36.05819
+      value: 27.91
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
       propertyPath: m_LocalRotation.w
@@ -2555,6 +2562,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: ac6716197244e4041b68525f1d27b514, type: 3}
       propertyPath: m_Name
       value: sponza
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

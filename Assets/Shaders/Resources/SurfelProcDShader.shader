@@ -1,8 +1,5 @@
 Shader "Custom/Surfel2ProcShader" {
-    Properties {
-        _AllowSkySurfels("Allow Sky Surfels", Float) = 0.0
-        _VisualizeSurfels("Visualize Surfels", Float) = 0.0
-    }
+    Properties { }
     SubShader {
         Tags { "RenderType" = "Opaque" }
         LOD 100
@@ -37,9 +34,9 @@ Shader "Custom/Surfel2ProcShader" {
                 float invSize: TEXCOORD4;
                 float3 surfelNormal: TEXCOORD5; // in world space
                 float3 localPos : TEXCOORD6;
-                float4 color: TEXCOORD7;
-                float4 colorDx: TEXCOORD8;
-                float4 colorDz: TEXCOORD9;
+                float3 color: TEXCOORD7;
+                float3 colorDx: TEXCOORD8;
+                float3 colorDz: TEXCOORD9;
                 int surfelId: TEXCOORD10;
                 float4 surfelRot: TEXCOORD11;
                 float2 surfelData: TEXCOORD12;
@@ -72,7 +69,6 @@ Shader "Custom/Surfel2ProcShader" {
 
             // procedural rendering like https://www.ronja-tutorials.com/post/051-draw-procedural/
             v2f vert (uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) {
-                
                 v2f o;
                 float3 localPos = _Vertices[vertexId];
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
@@ -90,9 +86,9 @@ Shader "Custom/Surfel2ProcShader" {
                 o.surfelWorldPos = float3(unity_ObjectToWorld[0][3],unity_ObjectToWorld[1][3],unity_ObjectToWorld[2][3]);
                 #if defined(SHADER_API_D3D11)
                 o.surfelWorldPos += surfel.position.xyz;
-                o.color   = float4(surfel.color.rgb   / max(surfel.color.w,   1e-10), 1.0);
-                o.colorDx = float4(surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10), 1.0);
-                o.colorDz = float4(surfel.colorDz.rgb / max(surfel.colorDz.w, 1e-10), 1.0);
+                o.color   = surfel.color.rgb   / max(surfel.color.w,   1e-10);
+                o.colorDx = surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10);
+                o.colorDz = surfel.colorDz.rgb / max(surfel.colorDz.w, 1e-10);
                 o.invSize = 1.0 / max(surfel.position.w, 1e-15);
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 o.surfelRot = surfel.rotation;
@@ -146,7 +142,7 @@ Shader "Custom/Surfel2ProcShader" {
                 #include "SurfelWeight.cginc"
                 
                 // estimated color for easy gradient calculation
-                float3 estColor = i.color.xyz + (localPosition.x * i.colorDx.xyz + localPosition.z * i.colorDz.xyz);
+                float3 estColor = i.color + (localPosition.x * i.colorDx + localPosition.z * i.colorDz);
                 return float4(estColor, weight);
             }
 
@@ -162,9 +158,32 @@ Shader "Custom/Surfel2ProcShader" {
                 float4 my = sample(i,uv+float2(0,-_Duv.y),float2(0,-1));
 
                 f2t result;
-                result.v = float4(c0.xyz * c0.w, c0.w);
-                result.dx = float4((px-mx).rgb * c0.w * 0.5, c0.w);// * 0.5, because we have finite differences over 2 pixels
+                // result.v = float4(c0.xyz * c0.w, c0.w);
+                result.v = float4(i.color * c0.w, c0.w);
+                // * 0.5, because we have finite differences over 2 pixels
+                // result.dx = float4(((px-mx).rgb * c0.w + (px.w-mx.w)*c0.xyz) * 0.5, c0.w);
+                // result.dy = float4(((py-my).rgb * c0.w + (py.w-my.w)*c0.xyz) * 0.5, c0.w);
+                // it looks like the gradient misses a factor relative to the surfel size... why?
+                // result.dx = float4((px-mx).rgb * c0.w * 0.5 / -i.invSize, c0.w);
+                // result.dy = float4((py-my).rgb * c0.w * 0.5 / -i.invSize, c0.w);
+
+                // the best result:
+                result.dx = float4((px-mx).rgb * c0.w * 0.5, c0.w);
                 result.dy = float4((py-my).rgb * c0.w * 0.5, c0.w);
+
+                
+                // result.dx = float4(((px-mx).rgb * c0.w + (px.w-mx.w) * c0.rgb) * 0.5, c0.w);
+                // result.dy = float4(((py-my).rgb * c0.w + (py.w-my.w) * c0.rgb) * 0.5, c0.w);
+
+
+                // float wx = max(px.w,mx.w);
+                // float wy = max(py.w,my.w);
+                // result.dx = float4((px-mx).rgb * 0.5, 1.0);
+                // result.dy = float4((py-my).rgb * 0.5, 1.0);
+                // result.dx = float4((px.rgb*px.w-mx.rgb*mx.w)*0.5, 0.0);
+                // result.dy = float4((py.rgb*py.w-my.rgb*my.w)*0.5, 0.0);
+                // result.dx = float4(ddx(c0.rgb) * c0.w, c0.w);
+                // result.dy = float4(ddy(c0.rgb) * c0.w, c0.w);
 
                 return result;
 

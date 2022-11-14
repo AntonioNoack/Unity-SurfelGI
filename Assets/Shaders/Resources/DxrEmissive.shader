@@ -78,24 +78,5 @@
 
 			ENDHLSL
 		}
-
-		// light -> surfel pass; emissive, so the start a.k.a. cannot be used as reflective surface
-		Pass {
-			Name "DxrPass2"
-			Tags { "LightMode" = "DxrPass2" }
-
-			HLSLPROGRAM
-
-			#pragma raytracing test
-					   
-			#include "RTLib.cginc"
-
-			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	
-				rayPayload.color = 0;
-			}
-
-			ENDHLSL
-		}
 	}
 }

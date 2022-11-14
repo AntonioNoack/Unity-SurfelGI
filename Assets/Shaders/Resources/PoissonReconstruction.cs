@@ -135,19 +135,25 @@ public class PoissonReconstruction : MonoBehaviour {
         }
 
         // normalize = divide by weight
+        RenderTexture dx0 = dx, dy0 = dy;
         if(normalize){
+            normMaterial.SetFloat("_Default", 1f);
+            normMaterial.SetTexture("_RGBTex", src);
+            normMaterial.SetTexture("_WTex", src);
             Graphics.Blit(src, src1, normMaterial);
             if(!useFakeGradients){
+                normMaterial.SetFloat("_Default", 0f);
+                normMaterial.SetTexture("_RGBTex", dx);
+                normMaterial.SetTexture("_WTex", dx);
                 Graphics.Blit(dx, dx1, normMaterial);
+                normMaterial.SetTexture("_RGBTex", dy);
+                normMaterial.SetTexture("_WTex", dy);
                 Graphics.Blit(dy, dy1, normMaterial);
             }
             src = src1;
-            dx = dx1;
-            dy = dy1;
+            dx = dx0 = dx1;
+            dy = dy0 = dy1;
         }
-
-        // used gradients
-        RenderTexture dx0 = dx, dy0 = dy;
 
         if(useFakeGradients) {
             kernel(src, dx, 1, 0, dxMaterial);

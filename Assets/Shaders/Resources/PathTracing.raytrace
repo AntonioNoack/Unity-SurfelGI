@@ -33,18 +33,17 @@ float3 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 
 		rayPayload.depth = i;
 
-		rayPayload.distance = _Far;
 		TraceRay(_RaytracingAccelerationStructure,
 			rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
 
 		if(i == 1) {
-			nextSurfacePos = rayPayload.pos;
+			nextSurfacePos = rayDesc.Origin + rayPayload.distance * rayDesc.Direction;
 		}
 
 		if(dot2(rayPayload.dir) > 0.0){
 			// continue tracing
-			rayDesc.Origin = rayPayload.pos;
+			rayDesc.Origin = rayDesc.Origin + rayPayload.distance * rayDesc.Direction;
 			rayDesc.Direction = rayPayload.dir;
 		} else {
 			// reached sky or emissive
@@ -126,7 +125,6 @@ void SurfelPathTracing() {
 		cosa, sina, distance, ray1Pos, ray2Pos
 	);
 
-	bool hasChanged = false;
 	bool supportTransparency = true;
 	for(int j=0;j<samplesPerSurfel;j++){
 
@@ -155,8 +153,7 @@ void SurfelPathTracing() {
 		float3 colorPy = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
 
 		surfel.color += float4(color, 1.0);
-		hasChanged = true;
-			
+
 		float3 gradient1 = (colorPx - color) / distance;
 		float3 gradient2 = (colorPy - color) / distance;
 
@@ -170,9 +167,9 @@ void SurfelPathTracing() {
 		srcSeed = nextSeed;// seed for next iteration
 
 	}
-	if(hasChanged) {
-		_Surfels[index] = surfel;
-	}
+	
+	_Surfels[index] = surfel;
+	
 }
 
 // texture to store raytracing result

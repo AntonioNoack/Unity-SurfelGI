@@ -1,10 +1,5 @@
 ﻿Shader "RayTracing/Add" {
-	Properties {
-		_MainTex ("MainTex", 2D) = "black" { }
-		_TexA ("TexA", 2D) = "black" { }
-		_TexB ("TexB", 2D) = "black" { }
-		_TexC ("TexC", 2D) = "black" { }
-	}
+	Properties { }
 	SubShader {
 		// No culling or depth
 		Cull Off ZWrite Off ZTest Always
@@ -15,13 +10,15 @@
 			#include "UnityGBuffer.cginc"
 			#include "SimpleCopy.cginc"
 
-			sampler2D _MainTex;
-			sampler2D _TexA;
-			sampler2D _TexB;
-			sampler2D _TexC;
+			Texture2D _TexA;
+			Texture2D _TexB;
+			Texture2D _TexC;
+			SamplerState src_point_clamp_sampler;
 
 			float4 frag (v2f i) : SV_Target {
-				return tex2D(_TexA, i.uv) + tex2D(_TexB, i.uv) + tex2D(_TexC, i.uv);
+				return _TexA.Sample(src_point_clamp_sampler, i.uv) +
+					_TexB.Sample(src_point_clamp_sampler, i.uv) +
+					_TexC.Sample(src_point_clamp_sampler, i.uv);
 			}
 
 			ENDCG

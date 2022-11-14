@@ -90,6 +90,7 @@ public class PerPixelRT : MonoBehaviour {
             shader.SetTexture("_Accumulation", accu1Dy);
             Graphics.Blit(null, accu2Dy, shader);
         }
+        if(cam.resetPixelGI) cam.frameIndex = 0;
         cam.resetPixelGI = false;
         return (accu2, accu2Dx, accu2Dy);
     }

@@ -76,10 +76,7 @@
 				float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
 				if(dot(color,color) < 0.01 && depth >= _Far * 0.99){
 					color = texCUBE(_SkyBox, dir);
-					// color = normalize(dir)*.5+.5;
 				}
-				// float4 viewPos = float4(i.ray * depth, 1);
-				// float3 worldPos = mul(unity_CameraToWorld, viewPos).xyz;
 			}
 
 			float3 readSurfaceNormal(float2 uv){

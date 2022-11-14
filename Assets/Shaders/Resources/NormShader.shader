@@ -1,7 +1,5 @@
 ﻿Shader "RayTracing/NormShader" {
-	Properties {
-		_MainTex ("Albedo", 2D) = "white" { }
-	}
+	Properties { }
 	SubShader {
 		// No culling or depth
 		Cull Off ZWrite Off ZTest Always
@@ -12,12 +10,15 @@
 			#include "UnityGBuffer.cginc"
 			#include "SimpleCopy.cginc"
 
-			sampler2D _MainTex;
+			sampler2D _RGBTex;
+			sampler2D _WTex;
+			float _Default;
 
 			float4 frag (v2f i) : SV_Target {
-				float4 color = tex2D(_MainTex, i.uv);
+				float3 color = tex2D(_RGBTex, i.uv).rgb;
+				float weight = tex2D(_WTex, i.uv).w;
 				float minValue = 0.00001;
-				return float4((color.xyz+minValue)/(color.w+minValue), 1.0);
+				return float4((color.xyz+minValue*_Default)/(weight+minValue), 1.0);
 			}
 
 			ENDCG

@@ -275,6 +275,7 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             float angleChangeFactor = max(1.0 - 10.0 * angleChange * surfel.data.x, 0.0);
             float factor = sizeChangeFactor * angleChangeFactor;
             
+            // Surfel Migration
             if(_EnableSurfelMovement){
                 // for testing it: move surfel along gradient
                 float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
@@ -308,6 +309,7 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
                 }
             }
 
+            // scaling colors with their weights
             surfel.color *= factor;
             surfel.colorDx *= factor;
             surfel.colorDz *= factor;

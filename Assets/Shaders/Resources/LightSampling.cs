@@ -5,6 +5,9 @@ using Unity.Collections.LowLevel.Unsafe; // for sizeof(struct)
 using Unity.Mathematics; // float4x3, float3
 using System.Collections.Generic;
 
+// this has never properly worked :/,
+// and it only used in GDPT (which itself doesn't properly work)
+// it was meant to be used as Multiple Importance Sampling for the path tracer as well
 public class LightSampling : MonoBehaviour {
 
     public ComputeShader aabbShader;
@@ -70,7 +73,7 @@ public class LightSampling : MonoBehaviour {
     public ComputeBuffer emissiveTriangles;
 
     public Vector3 sunDir = new Vector3(0f, 1f, 0f);
-    public Vector2 skySunRatio = new Vector2(0.5f, 0.5f);// todo calculate or guess how emissive the sun is, and how emissive the sky is overall
+    public Vector2 skySunRatio = new Vector2(0.5f, 0.5f);// to do calculate or guess how emissive the sun is, and how emissive the sky is overall
     public float invSunSize = 20f;
 
     public bool enableSky = false;
@@ -315,7 +318,8 @@ public class LightSampling : MonoBehaviour {
         } else if (surfelRTAS == null || surfelToAABBShader == null || surfels == null)
             return;
 
-        // todo we also need to update them, if the sky density changes drastically, e.g. when the sun is moving
+        // to do we also need to update them, if the sky density changes drastically, e.g. when the sun is moving
+        // (we just analyse static scenes, so it's fine for now)
         if(emissiveTriangles == null || true) {
             CollectEmissiveTriangles(camera);
         }
@@ -383,48 +387,6 @@ public class LightSampling : MonoBehaviour {
             DXRCamera.Dispatch(shader, kernel, surfels.count, 1, 1);
         }
 
-    }
-
-    void OnDrawGizmosSelected() {
-        skySize = Mathf.Max(1e-7f, skySize);
-        if(enableSky){
-            DrawWireSphere(camPosition, skySize, new Color(0.8f, 0.87f, 1f, 1f), 0f);
-        }
-    }
-
-    // https://www.reddit.com/r/Unity3D/comments/mkxe7m/a_way_to_visualize_wire_spheres_in_debug/
-    public static void DrawWireSphere(Vector3 center, float radius, Color color, float duration, int quality = 3) {
-        quality = Mathf.Clamp(quality, 1, 10);
-
-        int segments = quality << 2;
-        int subdivisions = quality << 3;
-        int halfSegments = segments >> 1;
-        float strideAngle = 360F / subdivisions;
-        float segmentStride = 180F / segments;
-
-        Vector3 first;
-        Vector3 next;
-        for (int i = 0; i < segments; i++) {
-            first = (Vector3.forward * radius);
-            first = Quaternion.AngleAxis(segmentStride * (i - halfSegments), Vector3.right) * first;
-            for (int j = 0; j < subdivisions; j++) {
-                next = Quaternion.AngleAxis(strideAngle, Vector3.up) * first;
-                UnityEngine.Debug.DrawLine(first + center, next + center, color, duration);
-                first = next;
-            }
-        }
-
-        Vector3 axis;
-        for (int i = 0; i < segments; i++) {
-            first = (Vector3.forward * radius);
-            first = Quaternion.AngleAxis(segmentStride * (i - halfSegments), Vector3.up) * first;
-            axis = Quaternion.AngleAxis(90F, Vector3.up) * first;
-            for (int j = 0; j < subdivisions; j++) {
-                next = Quaternion.AngleAxis(strideAngle, axis) * first;
-                UnityEngine.Debug.DrawLine(first + center, next + center, color, duration);
-                first = next;
-            }
-        }
     }
 
 }

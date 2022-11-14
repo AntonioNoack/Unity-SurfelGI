@@ -11,6 +11,8 @@ public class RMSE : MonoBehaviour {
     private ComputeBuffer tmp;
     private float[] data;
 
+    public RenderTexture tex;
+    public string path = "bath.png";
 
     // todo also encode variance?
 
@@ -84,6 +86,8 @@ public class RMSE : MonoBehaviour {
     public void Destroy(){
         if(tmp != null) tmp.Release();
         tmp = null;
+        if(tex != null) tex.Release();
+        tex = null;
         data = null;
     }
 }
