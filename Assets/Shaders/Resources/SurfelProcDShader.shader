@@ -31,7 +31,7 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 worldPos : TEXCOORD1;
                 float4 screenPos : TEXCOORD2;
                 float3 surfelWorldPos : TEXCOORD3;
-                float invSize: TEXCOORD4;
+                float surfelSize: TEXCOORD4;
                 float3 surfelNormal: TEXCOORD5; // in world space
                 float3 localPos : TEXCOORD6;
                 float3 color: TEXCOORD7;
@@ -42,10 +42,11 @@ Shader "Custom/Surfel2ProcShader" {
                 float2 surfelData: TEXCOORD12;
             };
       
-            sampler2D _CameraGBufferTexture0;
-            sampler2D _CameraGBufferTexture1;
-            sampler2D _CameraGBufferTexture2;
-            sampler2D _CameraDepthTexture;
+            Texture2D _CameraGBufferTexture0;
+            Texture2D _CameraGBufferTexture1;
+            Texture2D _CameraGBufferTexture2;
+            Texture2D _CameraDepthTexture;
+			SamplerState src_point_clamp_sampler;
 
         #ifdef SHADER_API_D3D11
             StructuredBuffer<Surfel> _Surfels : register(t1);
@@ -89,7 +90,7 @@ Shader "Custom/Surfel2ProcShader" {
                 o.color   = surfel.color.rgb   / max(surfel.color.w,   1e-10);
                 o.colorDx = surfel.colorDx.rgb / max(surfel.colorDx.w, 1e-10);
                 o.colorDz = surfel.colorDz.rgb / max(surfel.colorDz.w, 1e-10);
-                o.invSize = 1.0 / max(surfel.position.w, 1e-15);
+                o.surfelSize = surfel.position.w;
                 o.surfelNormal = quatRot(float3(0,1,0), surfel.rotation);
                 o.surfelRot = surfel.rotation;
                 o.surfelId = surfelId;
@@ -110,12 +111,12 @@ Shader "Custom/Surfel2ProcShader" {
 
             float4 sample(v2f i, float2 uv, float2 duv) {
 
-                float rawDepth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
-                if(rawDepth == 0.0) return float4(1,1,1,1);// sky surfels are ignored and have GI = 1.0
+                float rawDepth = _CameraDepthTexture.Sample(src_point_clamp_sampler, uv).x;
+                if(rawDepth == 0.0) return float4(0,0,0,0);// sky surfels are ignored and have GI = 1.0; however, we need them as 0.0, as they must not be added twice
 
-                half4 gbuffer0 = tex2D(_CameraGBufferTexture0, uv);
-                half4 gbuffer1 = tex2D(_CameraGBufferTexture1, uv);
-                half4 gbuffer2 = tex2D(_CameraGBufferTexture2, uv);
+                half4 gbuffer0 = _CameraGBufferTexture0.Sample(src_point_clamp_sampler, uv);
+                half4 gbuffer1 = _CameraGBufferTexture1.Sample(src_point_clamp_sampler, uv);
+                half4 gbuffer2 = _CameraGBufferTexture2.Sample(src_point_clamp_sampler, uv);
                 UnityStandardData data = UnityStandardDataFromGbuffer(gbuffer0, gbuffer1, gbuffer2);
                 float specular = SpecularStrength(data.specularColor);
                 float smoothness = data.smoothness;
@@ -137,10 +138,10 @@ Shader "Custom/Surfel2ProcShader" {
                 float3 worldPos0 = i.worldPos + ddx(i.worldPos) * duv.x + ddy(i.worldPos) * duv.y;
                 float3 lookDir = normalize(worldPos0 - _WorldSpaceCameraPos) * length(lookDir0);
                 float3 worldPos = _WorldSpaceCameraPos + depth * lookDir;
-                float3 localPosition = quatRotInv((worldPos - i.surfelWorldPos) * i.invSize, i.surfelRot);
+                float3 localPosition = clamp(quatRotInv((worldPos - i.surfelWorldPos) / i.surfelSize, i.surfelRot), float3(-1,-1,-1), float3(+1,+1,+1));
 
                 #include "SurfelWeight.cginc"
-                
+
                 // estimated color for easy gradient calculation
                 float3 estColor = i.color + (localPosition.x * i.colorDx + localPosition.z * i.colorDz);
                 return float4(estColor, weight);
@@ -163,25 +164,28 @@ Shader "Custom/Surfel2ProcShader" {
                 // * 0.5, because we have finite differences over 2 pixels
                 // result.dx = float4(((px-mx).rgb * c0.w + (px.w-mx.w)*c0.xyz) * 0.5, c0.w);
                 // result.dy = float4(((py-my).rgb * c0.w + (py.w-my.w)*c0.xyz) * 0.5, c0.w);
-                // it looks like the gradient misses a factor relative to the surfel size... why?
-                // result.dx = float4((px-mx).rgb * c0.w * 0.5 / -i.invSize, c0.w);
-                // result.dy = float4((py-my).rgb * c0.w * 0.5 / -i.invSize, c0.w);
+                bool constWeight = true;
+                float wx = constWeight ? 1.0 : max(c0.w, max(px.w,mx.w));// c0.w
+                float wy = constWeight ? 1.0 : max(c0.w, max(py.w,my.w));// c0.w
+                // gradients seemed much too large at small distances, but are fine in the distance
+                // why could this be coming from? the 'size' corrects it
+                float size = min(i.surfelSize, 1.0);
+                result.dx = float4((px-mx).rgb * +wx * 0.5 * size, wx);
+                result.dy = float4((py-my).rgb * +wy * 0.5 * size, wy);// y is mirrored, why?
+                // result.dx = float4((px-mx).rgb * wx * 0.5 * i.surfelSize, wx);
+                // result.dy = float4((py-my).rgb * wy * 0.5 * i.surfelSize, wy);
 
                 // the best result:
-                result.dx = float4((px-mx).rgb * c0.w * 0.5, c0.w);
-                result.dy = float4((py-my).rgb * c0.w * 0.5, c0.w);
-
+                // result.dx = float4((px-mx).rgb * c0.w * 0.5, c0.w);
+                // result.dy = float4((py-my).rgb * c0.w * 0.5, c0.w);
                 
                 // result.dx = float4(((px-mx).rgb * c0.w + (px.w-mx.w) * c0.rgb) * 0.5, c0.w);
                 // result.dy = float4(((py-my).rgb * c0.w + (py.w-my.w) * c0.rgb) * 0.5, c0.w);
 
-
-                // float wx = max(px.w,mx.w);
-                // float wy = max(py.w,my.w);
                 // result.dx = float4((px-mx).rgb * 0.5, 1.0);
                 // result.dy = float4((py-my).rgb * 0.5, 1.0);
-                // result.dx = float4((px.rgb*px.w-mx.rgb*mx.w)*0.5, 0.0);
-                // result.dy = float4((py.rgb*py.w-my.rgb*my.w)*0.5, 0.0);
+                // result.dx = float4((px.rgb*px.w-mx.rgb*mx.w)*0.5, (px.w-mx.w)*0.5);
+                // result.dy = float4((py.rgb*py.w-my.rgb*my.w)*0.5, (py.w-my.w)*0.5);
                 // result.dx = float4(ddx(c0.rgb) * c0.w, c0.w);
                 // result.dy = float4(ddy(c0.rgb) * c0.w, c0.w);
 

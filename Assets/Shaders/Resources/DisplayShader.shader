@@ -129,7 +129,7 @@
 				// show derivatives for debugging
 				if(_Derivatives){
 					float b1 = lerp(0.5, 0.0, _SplitX);
-					float b2 = lerp(0.5, 1.0, _SplitX);
+					float b2 = lerp(0.5, 1.0, _SplitY);
 					if(uv.x < b1){
 						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
 						ill.xyz *= _Exposure;

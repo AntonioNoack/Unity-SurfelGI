@@ -86,7 +86,6 @@
 						half spec0, spec1, depth0, depth1;
 						half3 col0, col1, emm0, emm1;
 						GetGBuffer0(uv,spec0,depth0,col0,emm0);
-						if(depth0 >= 1.0) return float4(0,0,0,1); // sky
 						
 						float4 previousFrame = tex2D(_Accumulation, uv2);
 						GetGBuffer1(uv2,spec1,depth1,col1,emm1);
@@ -96,7 +95,7 @@
 						float prevWeight = saturate(1.0 - 10.0 * abs(spec0-spec1)) * 
 							// saturate(1.0 - 10.0 * dot(colorDifference, colorDifference)) *
 							// remove confidence in reflective surfaces, when the angle (~ camera position) changes
-							saturate(1.0 - 10.0 * max(spec0,spec1) * length(_DeltaCameraPosition)) * // to do depends on angle, not really on distance...
+							saturate(1.0 - 1.0 * max(spec0,spec1) * length(_DeltaCameraPosition)/max(depth0,depth1)) * // depends on angle, not really on distance...
 							// saturate(1.0 - 10.0 * dot(specDifference, specDifference));// *
 							saturate(1.0 - dd);
 

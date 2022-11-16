@@ -42,7 +42,7 @@
 
 		void surf(Input IN, inout SurfaceOutputStandard o) {
 			fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
-			if(c.a < 0.5) discard;
+			if(c.a < 0.005) discard;
 			o.Albedo = c.rgb;
 			o.Metallic = lerp(_Metallic2, _Metallic, tex2D(_MetallicGlossMap, IN.uv_MetallicGlossMap).x);
 			o.Smoothness = 1.0;// needs to be high, so the surfels are regularly updated

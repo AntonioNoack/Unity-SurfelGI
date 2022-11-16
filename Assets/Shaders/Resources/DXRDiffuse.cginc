@@ -53,7 +53,7 @@
 				float3 objectNormal3 = objectNormal * objectNormal1.z + objectTangent * objectNormal2.x + objectBitangent * objectNormal2.y;
 				float3 worldNormal = normalize(mul(objectToWorld, objectNormal3));
 				float3 surfaceWorldNormal = normalize(mul(objectToWorld, vertex.geoNormalOS));
-				worldNormal = IsOK(worldNormal) ? worldNormal : surfaceWorldNormal;
+				worldNormal = IsOK(worldNormal) ? worldNormal : normalize(mul(objectToWorld,  objectNormal));
 				// worldNormal = surfaceWorldNormal; // set this to make every mesh look flat-shaded
 				
 				float3 rayOrigin = WorldRayOrigin();

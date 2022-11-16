@@ -161,6 +161,8 @@ void SurfelPathTracing() {
 		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
 		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
 
+		// surfel.colorDx += float4(gradientDX * surfelSize, 1.0);
+		// surfel.colorDz += float4(gradientDZ * surfelSize, 1.0);
 		surfel.colorDx += float4(gradientDX, 1.0);
 		surfel.colorDz += float4(gradientDZ, 1.0);
 		
@@ -177,21 +179,62 @@ RWTexture2D<float4> _ColorTarget;
 RWTexture2D<float4> _ColorDxTarget;
 RWTexture2D<float4> _ColorDyTarget;
 
-[shader("raygeneration")]
-void PixelPathTracing() {
-
-    // current pixel
-	uint2 dispatchIdx = DispatchRaysIndex().xy;
+float4 TracePixel(int2 index, uint srcSeed){
+	
 	// target resolution
 	uint2 launchDim = DispatchRaysDimensions().xy;
 	
 	// get random uv inside current pixel
 	// this gives us anti-aliasing for free
 	// + float2(nextRand(seed), nextRand(seed))
-	float3 rayDir = normalize(quatRot(float3((float2)dispatchIdx - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+	float3 rayDir = normalize(quatRot(float3((float2)index - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 
-    // current surfel
-    uint2 index = DispatchRaysIndex().xy;
+    // we know the surface, but we do not know the local BDRF .
+    // we need to trace the first ray, even if we know where it ends
+
+    RayPayload rayPayload = (RayPayload) 0;
+	RayDesc rayDesc = (RayDesc) 0;
+
+    float4 finalColor = float4(0,0,0,0);
+    for (int j = 0; j < _SPP; j++) {
+
+		// start from the camera
+		rayDesc.Origin = _CameraPosition;
+		rayDesc.Direction = rayDir;
+		rayDesc.TMin = _Near;
+		rayDesc.TMax = _Far;
+
+		float3 ignored;
+		rayPayload.randomSeed = srcSeed;
+		float3 color = TraceRay(rayDesc, rayPayload, _RPS, ignored);
+		uint nextSeed = rayPayload.randomSeed;
+		nextRand(nextSeed); // just in case nothing was drawn
+		srcSeed = nextSeed;// seed for next iteration
+
+		finalColor += float4(color, 1.0);
+
+    }
+
+	// store result
+	return finalColor;
+
+}
+
+[shader("raygeneration")]
+void PixelPathTracing() {
+
+    // current pixel
+    int2 index = DispatchRaysIndex().xy;
+
+	// target resolution
+	uint2 launchDim = DispatchRaysDimensions().xy;
+
+	if(true){
+	
+	// get random uv inside current pixel
+	// this gives us anti-aliasing for free
+	// + float2(nextRand(seed), nextRand(seed))
+	float3 rayDir = normalize(quatRot(float3((float2)index - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 
     // we know the surface, but we do not know the local BDRF .
     // we need to trace the first ray, even if we know where it ends
@@ -202,7 +245,7 @@ void PixelPathTracing() {
 	RayDesc rayDesc = (RayDesc) 0;
 
 	// init random seed from current pixel location and frame index
-    uint srcSeed = initRand(dispatchIdx.x + dispatchIdx.y * launchDim.x, _FrameIndex);
+    uint srcSeed = initRand(index.x + index.y * launchDim.x, _FrameIndex);
 
 	int samplesPerSurfel = _SPP;
 	int maxRaysPerSample = _RPS;
@@ -213,7 +256,7 @@ void PixelPathTracing() {
 
     for (int j = 0; j < _SPP; j++) {
 
-		// go back a step
+		// start from the camera
 		rayDesc.Origin = _CameraPosition;
 		rayDesc.Direction = rayDir;
 		rayDesc.TMin = _Near;
@@ -227,7 +270,7 @@ void PixelPathTracing() {
 		
 		/* +x ------------------------------------------------------ */
 		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.Direction = normalize(quatRot(float3((float2)index + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
@@ -236,7 +279,7 @@ void PixelPathTracing() {
 
 		/* -x ------------------------------------------------------ */
 		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx - float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.Direction = normalize(quatRot(float3((float2)index - float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
@@ -245,7 +288,7 @@ void PixelPathTracing() {
 
 		/* +y ------------------------------------------------------ */
 		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx + float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.Direction = normalize(quatRot(float3((float2)index + float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
@@ -254,7 +297,7 @@ void PixelPathTracing() {
 
 		/* -y ------------------------------------------------------ */
 		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)dispatchIdx - float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
+		rayDesc.Direction = normalize(quatRot(float3((float2)index - float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
@@ -274,5 +317,25 @@ void PixelPathTracing() {
 	_ColorTarget[index] = finalColor;
 	_ColorDxTarget[index] = finalColorDx;
 	_ColorDyTarget[index] = finalColorDy;
+
+	} else {
+
+		// init random seed from current pixel location and frame index
+		uint srcSeed = initRand(index.x + index.y * launchDim.x, _FrameIndex);
+
+		// checking my sanity
+		
+		float4 finalColor = TracePixel(index,srcSeed);
+		float4 finalColorDx = (TracePixel(index+int2(1,0),srcSeed)-TracePixel(index-int2(1,0),srcSeed)) * 0.5;
+		float4 finalColorDy = (TracePixel(index+int2(0,1),srcSeed)-TracePixel(index-int2(0,1),srcSeed)) * 0.5;
+		finalColorDx.w = finalColor.w;
+		finalColorDy.w = finalColor.w;
+
+		// store result
+		_ColorTarget[index] = finalColor;
+		_ColorDxTarget[index] = finalColorDx;
+		_ColorDyTarget[index] = finalColorDy;
+
+	}
 
 }

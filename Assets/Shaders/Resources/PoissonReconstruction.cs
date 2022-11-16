@@ -123,6 +123,7 @@ public class PoissonReconstruction : MonoBehaviour {
     public bool prepare = true;
     public bool initialBlur = false;
     public bool useFakeGradients = true;
+    public bool tryComplex = false;
 
     private int createdSize = 0;
 
@@ -137,16 +138,18 @@ public class PoissonReconstruction : MonoBehaviour {
         // normalize = divide by weight
         RenderTexture dx0 = dx, dy0 = dy;
         if(normalize){
+            normMaterial.SetFloat("_Complex", 0f);
             normMaterial.SetFloat("_Default", 1f);
             normMaterial.SetTexture("_RGBTex", src);
             normMaterial.SetTexture("_WTex", src);
             Graphics.Blit(src, src1, normMaterial);
             if(!useFakeGradients){
+                normMaterial.SetFloat("_Complex", tryComplex ? 1f : 0f);
                 normMaterial.SetFloat("_Default", 0f);
-                normMaterial.SetTexture("_RGBTex", dx);
+                normMaterial.SetTexture("_RGBTex", tryComplex ? src : dx);
                 normMaterial.SetTexture("_WTex", dx);
                 Graphics.Blit(dx, dx1, normMaterial);
-                normMaterial.SetTexture("_RGBTex", dy);
+                normMaterial.SetTexture("_RGBTex", tryComplex ? src : dy);
                 normMaterial.SetTexture("_WTex", dy);
                 Graphics.Blit(dy, dy1, normMaterial);
             }
