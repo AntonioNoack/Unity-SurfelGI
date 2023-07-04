@@ -68,7 +68,7 @@ Material:
     - _DetailNormalMapScale: 1
     - _DivideByAlpha: 1
     - _DstBlend: 0
-    - _Exposure: 1
+    - _Exposure: 1.9952624
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
@@ -76,7 +76,7 @@ Material:
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
-    - _ShowIllumination: 1
+    - _ShowIllumination: 0
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SplitX: 0.29

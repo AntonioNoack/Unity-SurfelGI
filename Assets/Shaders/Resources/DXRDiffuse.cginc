@@ -64,88 +64,31 @@
 				float roughness = GetRoughness(); // 1.0 - _Glossiness
 				float metallic = GetMetallic(); // _Metallic
 
-				if(!rayPayload.gpt) {
+				// get random vector
+				float3 randomVector = nextRandS3(rayPayload.randomSeed);
 
-					// get random vector
-					float3 randomVector = nextRandS3(rayPayload.randomSeed);
-
-					// get random scattered ray dir along surface normal
-					float3 scatterRayDir = worldNormal + roughness * randomVector;
+				// get random scattered ray dir along surface normal
+				float3 scatterRayDir = worldNormal + roughness * randomVector;
 					
-					// perturb reflection direction to get rought metal effect
-					if(metallic > nextRand(rayPayload.randomSeed)) {
-						scatterRayDir = reflect(rayDir, worldNormal) + roughness * randomVector;
-					}
-					scatterRayDir = normalize(scatterRayDir);
-					rayPayload.dir = scatterRayDir;
-
-					// occlusion by surface
-					if(dot(scatterRayDir, surfaceWorldNormal) <= 0.0){
-						rayPayload.dir = 0;
-						rayPayload.color = 0;
-					}
+				// perturb reflection direction to get rought metal effect
+				if(metallic > nextRand(rayPayload.randomSeed)) {
+					scatterRayDir = reflect(rayDir, worldNormal) + roughness * randomVector;
 				}
+				scatterRayDir = normalize(scatterRayDir);
+				rayPayload.dir = scatterRayDir;
 
-				float4 color = GetColor();
-				// for debugging
-				// if(metallic < 0.5) color.rgb = worldNormal * .5+.5;
-				if(!rayPayload.gpt && rayPayload.depth > 0){
-					rayPayload.color *= color.rgb;
-					// rayPayload.color *= float3(frac(TRANSFORM_TEX(vertex.texCoord0, _MetallicGlossMap)*5.0), 1.0);
+				// occlusion by surface
+				if(dot(scatterRayDir, surfaceWorldNormal) <= 0.0){
+					rayPayload.dir = 0;
+					rayPayload.color = 0;
 				}
-
-				rayPayload.geoFrame = normalToFrame(surfaceWorldNormal);
-				rayPayload.shFrame = normalToFrame(worldNormal);
-
-				if(rayPayload.gpt){
-					// define GPT material parameters
-
-					// microfacet distribution; visible = true (distr of visible normals)
-					// there are multiple types... which one do we choose? Beckmann, GGX, Phong
-					// alphaU, alphaV = roughnesses in tangent and bitangent direction
-					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
-
-					// define geoFrame and shFrame;
-					// the function is defined to make y = up, but for Mitsuba, we need z = up, so we swizzle it
 				
 
-					rayPayload.bsdf.roughness = roughness;
-					rayPayload.bsdf.color = color.rgb;
-
-					if(metallic > nextRand(rayPayload.randomSeed)){
-						// metallic, conductor material
-						if(roughness > 0.001) {
-							// rough conductor
-							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughconductor.cpp
-							rayPayload.bsdf.components[0].type = EGlossyReflection;
-							rayPayload.bsdf.components[0].roughness = 0.0;
-							rayPayload.bsdf.numComponents = 1;
-							rayPayload.bsdf.materialType = ROUGH_CONDUCTOR;
-						} else {
-							// perfectly smooth conductor
-							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/conductor.cpp
-							rayPayload.bsdf.components[0].type = EDeltaReflection;
-							rayPayload.bsdf.components[0].roughness = 0.0;
-							rayPayload.bsdf.numComponents = 1;
-							rayPayload.bsdf.materialType = CONDUCTOR;
-						}
-					} else {
-						// diffuse material
-						if(roughness > 0.001) {
-							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdiffuse.cpp
-							rayPayload.bsdf.components[0].type = EGlossyReflection;
-							rayPayload.bsdf.components[0].roughness = Infinity;// why?
-							rayPayload.bsdf.numComponents = 1;
-							rayPayload.bsdf.materialType = ROUGH_DIFFUSE;
-						} else {
-							// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/diffuse.cpp
-							rayPayload.bsdf.components[0].type = EDiffuseReflection;
-							rayPayload.bsdf.components[0].roughness = Infinity;
-							rayPayload.bsdf.numComponents = 1;
-							rayPayload.bsdf.materialType = DIFFUSE;
-						}
-					}
+				if(rayPayload.depth > 0) {
+					float4 color = GetColor();
+					rayPayload.color *= color.rgb;
 				}
+
 			}
 
 #endif // DXRDIFFUSE_CGING

@@ -61,7 +61,6 @@
 			#pragma raytracing test
 			
 			#include "RTLib.cginc"
-			#include "Distribution.cginc"
 
 			float4 _Color;
 			Texture2D _MainTex;

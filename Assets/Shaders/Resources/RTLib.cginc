@@ -20,119 +20,10 @@ RaytracingAccelerationStructure _RaytracingAccelerationStructure;
 // max recursion depth
 static const uint gMaxDepth = 8;
 
-#define maxNumComponents 2
-
-#define Frame float4 // quaternion or matrix? mmh...
-
-// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/microfacet.h
-enum MicrofacetType: int {
-	Beckmann = 0, // Beckmann distribution derived from Gaussian random surfaces
-	GGX = 1, // GGX: Long-tailed distribution for very rough surfaces (aka. Trowbridge-Reitz distr.)
-	Phong = 2, // Phong distribution (with the anisotropic extension by Ashikhmin and Shirley)
-};
-
-enum MaterialType: int {
-	// metalls
-	CONDUCTOR = 0,
-	// rough metalls, e.g. brushed
-	ROUGH_CONDUCTOR = 1,
-	// diffuse materials like wood
-	DIFFUSE = 2,
-	ROUGH_DIFFUSE = 3,
-	// transparent materials like glass
-	DIELECTRIC = 4,
-	ROUGH_DIELECTRIC = 5,
-	PLASTIC = 6,
-	// emissive:
-	AREA_LIGHT = 7,
-};
-
-enum BSDFType: int {
-
-	// =============================================================
-	//                      BSDF lobe types
-	// =============================================================
-	/// 'null' scattering event, i.e. particles do not undergo deflection
-	ENull                 = 0x00001,
-	/// Ideally diffuse reflection
-	EDiffuseReflection    = 0x00002,
-	/// Ideally diffuse transmission
-	EDiffuseTransmission  = 0x00004,
-	/// Glossy reflection
-	EGlossyReflection     = 0x00008,
-	/// Glossy transmission
-	EGlossyTransmission   = 0x00010,
-	/// Reflection into a discrete set of directions
-	EDeltaReflection      = 0x00020,
-	/// Transmission into a discrete set of directions
-	EDeltaTransmission    = 0x00040,
-	/// Reflection into a 1D space of directions
-	EDelta1DReflection    = 0x00080,
-	/// Transmission into a 1D space of directions
-	EDelta1DTransmission  = 0x00100,
-
-	// =============================================================
-	//!                   Other lobe attributes
-	// =============================================================
-	/// The lobe is not invariant to rotation around the normal
-	EAnisotropic          = 0x01000,
-	/// The BSDF depends on the UV coordinates
-	ESpatiallyVarying     = 0x02000,
-	/// Flags non-symmetry (e.g. transmission in dielectric materials)
-	ENonSymmetric         = 0x04000,
-	/// Supports interactions on the front-facing side
-	EFrontSide            = 0x08000,
-	/// Supports interactions on the back-facing side
-	EBackSide             = 0x10000,
-	/// Uses extra random numbers from the supplied sampler instance
-	EUsesSampler          = 0x20000,
-
-	/// Any reflection component (scattering into discrete, 1D, or 2D set of directions)
-	EReflection   = EDiffuseReflection | EDeltaReflection | EDelta1DReflection | EGlossyReflection,
-	/// Any transmission component (scattering into discrete, 1D, or 2D set of directions)
-	ETransmission = EDiffuseTransmission | EDeltaTransmission | EDelta1DTransmission | EGlossyTransmission | ENull,
-	/// Diffuse scattering into a 2D set of directions
-	EDiffuse      = EDiffuseReflection | EDiffuseTransmission,
-	/// Non-diffuse scattering into a 2D set of directions
-	EGlossy       = EGlossyReflection | EGlossyTransmission,
-	/// Scattering into a 2D set of directions
-	ESmooth       = EDiffuse | EGlossy,
-	/// Scattering into a discrete set of directions
-	EDelta        = ENull | EDeltaReflection | EDeltaTransmission,
-	/// Scattering into a 1D space of directions
-	EDelta1D      = EDelta1DReflection | EDelta1DTransmission,
-	/// Any kind of scattering
-	EAll          = EDiffuse | EGlossy | EDelta | EDelta1D,
-
-};
-
-struct BSDFComponent {
-	// requested type is always EAll, requested component is always -1 (all)
-    int type;
-    float roughness;
-};
-
-struct BSDF {
-
-    float eta; // relative index of refraction; 1.0 is default
-
-    BSDFComponent components[maxNumComponents];
-    int numComponents;
-
-	int type;
-	
-	float3 color;
-	float roughness;
-
-	int materialType;
-
-};
-
 struct RayPayload {
 
 	// Color of the ray
 	float3 color;
-	float4 colorDx, colorDz;
 
 	// Random Seed
 	uint randomSeed;
@@ -145,17 +36,6 @@ struct RayPayload {
 
 	int withinGlassDepth;
 	float3 pos, dir;
-	float weight;
-	float4 surfelRotation;
-	float surfelSize;
-	int surfelId; // -1 = nothing
-
-	bool gpt;
-
-	Frame geoFrame; // rotation of triangle surface without normal mapping
-	Frame shFrame; // rotation of triangle surface with normal mapping
-	
-	BSDF bsdf;
 
 };
 
@@ -193,17 +73,8 @@ struct IntersectionVertex {
 	float3 tangentOS;
 	// UV coordinates
 	float2 texCoord0;
-	// float2 texCoord1;
-	// float2 texCoord2;
-	// float2 texCoord3;
 	// Vertex color
 	float4 color;
-	// Value used for LOD sampling
-	float triangleArea;
-	float texCoord0Area;
-	// float texCoord1Area;
-	// float texCoord2Area;
-	// float texCoord3Area;
 };
 
 // Fetch the intersetion vertex data for the target vertex
@@ -212,9 +83,6 @@ void FetchIntersectionVertex(uint vertexIndex, out IntersectionVertex outVertex)
 	outVertex.normalOS   = UnityRayTracingFetchVertexAttribute3(vertexIndex, kVertexAttributeNormal);
 	outVertex.tangentOS  = UnityRayTracingFetchVertexAttribute3(vertexIndex, kVertexAttributeTangent);
 	outVertex.texCoord0  = UnityRayTracingFetchVertexAttribute2(vertexIndex, kVertexAttributeTexCoord0);
-	// outVertex.texCoord1  = UnityRayTracingFetchVertexAttribute2(vertexIndex, kVertexAttributeTexCoord1);
-	// outVertex.texCoord2  = UnityRayTracingFetchVertexAttribute2(vertexIndex, kVertexAttributeTexCoord2);
-	// outVertex.texCoord3  = UnityRayTracingFetchVertexAttribute2(vertexIndex, kVertexAttributeTexCoord3);
 	outVertex.color      = UnityRayTracingFetchVertexAttribute4(vertexIndex, kVertexAttributeColor);
 }
 
@@ -237,49 +105,8 @@ void GetCurrentIntersectionVertex(AttributeData attributeData, out IntersectionV
 	outVertex.geoNormalOS = normalize(cross(v1.positionOS-v0.positionOS, v2.positionOS-v0.positionOS));
 	outVertex.tangentOS  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.tangentOS, v1.tangentOS, v2.tangentOS, barycentricCoordinates);
 	outVertex.texCoord0  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord0, v1.texCoord0, v2.texCoord0, barycentricCoordinates);
-	// outVertex.texCoord1  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord1, v1.texCoord1, v2.texCoord1, barycentricCoordinates);
-	// outVertex.texCoord2  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord2, v1.texCoord2, v2.texCoord2, barycentricCoordinates);
-	// outVertex.texCoord3  = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.texCoord3, v1.texCoord3, v2.texCoord3, barycentricCoordinates);
 	outVertex.color      = INTERPOLATE_RAYTRACING_ATTRIBUTE(v0.color, v1.color, v2.color, barycentricCoordinates);
 
-	// Compute the lambda value (area computed in object space)
-	outVertex.triangleArea  = length(cross(v1.positionOS - v0.positionOS, v2.positionOS - v0.positionOS));
-	outVertex.texCoord0Area = abs((v1.texCoord0.x - v0.texCoord0.x) * (v2.texCoord0.y - v0.texCoord0.y) - (v2.texCoord0.x - v0.texCoord0.x) * (v1.texCoord0.y - v0.texCoord0.y));
-	// outVertex.texCoord1Area = abs((v1.texCoord1.x - v0.texCoord1.x) * (v2.texCoord1.y - v0.texCoord1.y) - (v2.texCoord1.x - v0.texCoord1.x) * (v1.texCoord1.y - v0.texCoord1.y));
-	// outVertex.texCoord2Area = abs((v1.texCoord2.x - v0.texCoord2.x) * (v2.texCoord2.y - v0.texCoord2.y) - (v2.texCoord2.x - v0.texCoord2.x) * (v1.texCoord2.y - v0.texCoord2.y));
-	// outVertex.texCoord3Area = abs((v1.texCoord3.x - v0.texCoord3.x) * (v2.texCoord3.y - v0.texCoord3.y) - (v2.texCoord3.x - v0.texCoord3.x) * (v1.texCoord3.y - v0.texCoord3.y));
-}
-
-void GenerateGradientRays(
-	float3 surfelPos, float4 surfelRotation, float surfelSize, inout uint randomSeed,
-	out float cosa, out float sina, out float distance, out float3 ray1Pos, out float3 ray2Pos
-) {
-
-	float baseAngle = TAU * nextRand(randomSeed);
-
-	cosa = cos(baseAngle);
-	sina = sin(baseAngle);
-
-	// not too close, but also within surfel limits;
-	// 0.1 is arbitrary
-	// using a constant size would potentially introduce aliasing in symmetry-rich scenes
-	distance = lerp(0.1, 1.0, nextRand(randomSeed));
-
-	float wb = distance * surfelSize;
-	float3 baseX = wb * quatRot(float3(1,0,0), surfelRotation);
-	float3 baseZ = wb * quatRot(float3(0,0,1), surfelRotation);
-	ray1Pos = surfelPos + baseX * cosa - baseZ * sina;
-	ray2Pos = surfelPos + baseX * sina + baseZ * cosa;
-
-}
-
-void SetupGradientRayStart(inout RayDesc rayDesc, float3 origin, float3 target){
-	rayDesc.Origin = origin;
-	float3 direction = target - origin;
-	float distance = length(direction);
-	rayDesc.Direction = direction / distance;
-	rayDesc.TMin = 0.001;
-	rayDesc.TMax = distance * 1.01; // this is the length, where we hit the other surface; we only can miss it, if we have numerical issues
 }
 
 #endif // RTLIB_CGINC

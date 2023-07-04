@@ -45,7 +45,8 @@
 			SamplerState sampler_MainTex;
 
 			[shader("closesthit")]
-			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {	
+			void ClosestHit(inout RayPayload rayPayload : SV_RayPayload, AttributeData attributeData : SV_IntersectionAttributes) {
+				
 				// emissive material, simply return emission color
 				rayPayload.distance = RayTCurrent();
 
@@ -53,26 +54,9 @@
 				GetCurrentIntersectionVertex(attributeData, vertex);
 
 				float lod = 0;
-				float3 color = (_MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color).xyz;
-				rayPayload.color *= color;
+				float4 color = _MainTex.SampleLevel(sampler_MainTex, vertex.texCoord0, lod) * _Color;
+				rayPayload.color *= color.xyz * color.w;
 				rayPayload.dir = float3(0,0,0);
-
-				// define emission for GPT
-				
-				float3x3 objectToWorld = (float3x3) ObjectToWorld3x4();
-				float3 objectNormal = normalize(vertex.normalOS);
-				float3 worldNormal = normalize(mul(objectToWorld, objectNormal));
-				rayPayload.geoFrame = normalToFrame(worldNormal);
-				rayPayload.shFrame = normalToFrame(normalize(mul(objectToWorld, vertex.geoNormalOS)));
-
-				rayPayload.bsdf.roughness = 1.0;
-				rayPayload.bsdf.color = color;
-
-				// components aren't really defined for emitters
-				rayPayload.bsdf.components[0].type = 0;
-				rayPayload.bsdf.components[0].roughness = 0.0;
-				rayPayload.bsdf.numComponents = 0;
-				rayPayload.bsdf.materialType = AREA_LIGHT;
 
 			}
 

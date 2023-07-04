@@ -46,7 +46,6 @@
 			#pragma raytracing test
 					   
 			#include "RTLib.cginc"
-			#include "Distribution.cginc"
 
 			#define GetColor() float4(worldNormal * 0.5 + 0.5, 1.0)
 			#include "DXRDiffuse.cginc"		

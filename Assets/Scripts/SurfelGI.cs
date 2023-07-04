@@ -280,6 +280,11 @@ public class SurfelGI : MonoBehaviour {
 
 	private void CreateTargets() {
 
+        if(_camera == null){
+            Debug.Log("Camera is missing");
+            return;
+        }
+
         int width = _camera.pixelWidth, height = _camera.pixelHeight;
 
 		giTarget = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
@@ -478,11 +483,6 @@ public class SurfelGI : MonoBehaviour {
 
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
-
-        if(doNothingCtr > 0){
-            doNothingCtr--;
-            return;// safety first (a try to prevent crashes)
-        }
 
         if(_camera == null){
             Debug.Log("Camera is null");

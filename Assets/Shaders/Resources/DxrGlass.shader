@@ -43,7 +43,6 @@
 			#pragma raytracing test
 					   
 			#include "RTLib.cginc"
-			#include "Distribution.cginc"
 
 			float4 _Color;
 			float _Roughness;
@@ -115,37 +114,6 @@
 
 				if(rayPayload.depth > 0) {
 					rayPayload.color *= _Color.rgb;
-				}
-
-				//------------------------//
-				// define GPT class BSDF  //
-				//      (dielectric)      //
-				//------------------------//
-
-				rayPayload.bsdf.eta = _IoR;
-				rayPayload.bsdf.color = _Color.rgb;
-				rayPayload.bsdf.roughness = _Roughness;
-				rayPayload.geoFrame = normalToFrame(geoWorldNormal);
-				rayPayload.shFrame =  tbnToFrame(worldTangent, worldBitangent, worldNormal);
-
-				if(_Roughness < 0.01){
-					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/dielectric.cpp
-					rayPayload.bsdf.components[0].type = EDeltaReflection;
-					rayPayload.bsdf.components[0].roughness = 0.0;
-					rayPayload.bsdf.components[1].type = EDeltaTransmission;
-					rayPayload.bsdf.components[1].roughness = 0.0;
-					rayPayload.bsdf.numComponents = 2;
-					rayPayload.bsdf.materialType = DIELECTRIC;
-				} else {
-					// https://github.com/mmanzi/gradientdomain-mitsuba/blob/c7c94e66e17bc41cca137717971164de06971bc7/src/bsdfs/roughdielectric.cpp
-					// alpha (Beckmann): root mean square slope of microfacets; default: 0.1
-					// setting this to _Roughness [0,1] limits the values to a mean (RMS) slope of 45°, but that's probably fine
-					rayPayload.bsdf.components[0].roughness = _Roughness; // (alphaU+alphaV)/2
-					rayPayload.bsdf.components[0].type = EGlossyReflection;
-					rayPayload.bsdf.components[1].roughness = _Roughness;
-					rayPayload.bsdf.components[1].type = EGlossyTransmission;
-					rayPayload.bsdf.numComponents = 2;
-					rayPayload.bsdf.materialType = ROUGH_DIELECTRIC;
 				}
 
 			}

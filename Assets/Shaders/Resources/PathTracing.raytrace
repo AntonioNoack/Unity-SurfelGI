@@ -18,7 +18,7 @@ int _RPS;
 
 RWStructuredBuffer<Surfel> _Surfels;
 
-float3 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, out float3 nextSurfacePos) {
+float3 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample) {
 
 	bool foundLight = false;
 	bool foundSurface = true;
@@ -36,10 +36,6 @@ float3 TraceRay(RayDesc rayDesc, RayPayload rayPayload, int maxRaysPerSample, ou
 		TraceRay(_RaytracingAccelerationStructure,
 			rayPayload.withinGlassDepth > 0 ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
 			RAYTRACING_OPAQUE_FLAG, 0, 1, 0, rayDesc, rayPayload);
-
-		if(i == 1) {
-			nextSurfacePos = rayDesc.Origin + rayPayload.distance * rayDesc.Direction;
-		}
 
 		if(dot2(rayPayload.dir) > 0.0){
 			// continue tracing
@@ -111,35 +107,23 @@ void SurfelPathTracing() {
 
 	// Create and init the ray payload
 	RayPayload rayPayload = (RayPayload) 0;
-	rayPayload.surfelRotation = surfel.rotation;
-	rayPayload.surfelSize = surfelSize;
-	rayPayload.gpt = false;
 
 	// init random seed from current pixel location and frame index
 	rayPayload.randomSeed = initRand(index ^ _FrameIndex, _FrameIndex);
 
-	float cosa, sina, distance;
-	float3 ray1Pos, ray2Pos;
-	GenerateGradientRays(
-		surfelPos, surfelRotation, surfelSize, rayPayload.randomSeed,
-		cosa, sina, distance, ray1Pos, ray2Pos
-	);
-
 	bool supportTransparency = true;
 	float3 color = float3(0,0,0);
+	float startDist = 0.1 * surfelSize;
+	rayDesc.TMin = supportTransparency ? _Near : startDist * 0.5;
+	rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
 	for(int j=0;j<samplesPerSurfel;j++){
 
 		// go back a step
-		float startDist = 0.1 * surfelSize;
 		rayDesc.Origin = surfelPos - startDist * worldDir;
 		rayDesc.Direction = normalize(surfelPos - _CameraPosition);
-		rayDesc.TMin = supportTransparency ? _Near : startDist * 0.5;
-		rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
 
-		float3 nextSurfacePos, ignored;
-		color =+ TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
+		color += TraceRay(rayDesc, rayPayload, maxRaysPerSample);
 		
-
 	}
 
 	surfel.color += float4(color, samplesPerSurfel);
@@ -166,28 +150,23 @@ float4 TracePixel(int2 index, uint srcSeed){
     RayPayload rayPayload = (RayPayload) 0;
 	RayDesc rayDesc = (RayDesc) 0;
 
-    float4 finalColor = float4(0,0,0,0);
+    float3 color = float3(0,0,0);
+	rayPayload.randomSeed = srcSeed;
+	rayDesc.TMin = _Near;
+	rayDesc.TMax = _Far;
     for (int j = 0; j < _SPP; j++) {
 
 		// start from the camera
 		rayDesc.Origin = _CameraPosition;
 		rayDesc.Direction = rayDir;
-		rayDesc.TMin = _Near;
-		rayDesc.TMax = _Far;
 
-		float3 ignored;
-		rayPayload.randomSeed = srcSeed;
-		float3 color = TraceRay(rayDesc, rayPayload, _RPS, ignored);
-		uint nextSeed = rayPayload.randomSeed;
-		nextRand(nextSeed); // just in case nothing was drawn
-		srcSeed = nextSeed;// seed for next iteration
-
-		finalColor += float4(color, 1.0);
+		color += TraceRay(rayDesc, rayPayload, _RPS);
+		nextRand(rayPayload.randomSeed); // just in case nothing was drawn
 
     }
 
 	// store result
-	return finalColor;
+	return float4(color, _SPP);
 
 }
 
@@ -218,7 +197,6 @@ void PixelPathTracing() {
 	int samplesPerSurfel = _SPP;
 	int maxRaysPerSample = _RPS;
 
-	float3 ignored;
     float3 finalColor = float3(0,0,0);
     for (int j = 0; j < samplesPerSurfel; j++) {
 
@@ -228,7 +206,7 @@ void PixelPathTracing() {
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
-		finalColor += TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+		finalColor += TraceRay(rayDesc, rayPayload, maxRaysPerSample);
 		nextRand(rayPayload.randomSeed); // just in case nothing was drawn
 		
     }
