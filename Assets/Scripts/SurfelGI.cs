@@ -11,11 +11,6 @@ using System.Collections.Generic; // list
  */
 public class SurfelGI : MonoBehaviour {
 
-    struct AABB {
-        public float3 min;
-        public float3 max;
-    };
-
     public enum Substrate {
         PIXEL,
         SURFEL,
@@ -50,10 +45,10 @@ public class SurfelGI : MonoBehaviour {
     public bool respawnSurfelsAtOrigin = false;
     public bool visualizeSurfelIds = false;
 
+    // distributes surfels
     public ComputeShader surfelDistShader;
-    private ComputeBuffer surfels;
-    private GraphicsBuffer surfelBounds;
-    public RayTracingShader surfelTracingShader;
+    private ComputeBuffer surfels; // storage for surfels
+    public RayTracingShader surfelTracingShader; // calculated path-tracing on surfels
 
     public int maxNumSurfels = 64 * 1024;
     public float minSurfelWeight = 0.05f;
@@ -72,7 +67,7 @@ public class SurfelGI : MonoBehaviour {
     private Vector3 prevCameraOffset;
     private Vector4 prevCameraRotation;
 
-    // summed global illumination
+    // summed global illumination, used for surfel distribution
     [HideInInspector]
     public RenderTexture emissiveTarget;
 
@@ -135,22 +130,10 @@ public class SurfelGI : MonoBehaviour {
 
     private void EnsureSurfels(){
         if(surfels == null || (surfels.count != maxNumSurfels && maxNumSurfels >= 16)) {
-
             if(surfels != null) surfels.Release();
             surfels = new ComputeBuffer(maxNumSurfels, 6 * 4 * 4);// 6 * 4 floats is the min size
             surfels.name = "Surfels";
             hasPlacedSurfels = false;
-            
-            if(surfelBounds != null) surfelBounds.Release();
-            surfelBounds = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxNumSurfels, UnsafeUtility.SizeOf<AABB>());
-            RayTracingAccelerationStructure.RASSettings settings = new RayTracingAccelerationStructure.RASSettings();
-            // include all layers
-            settings.layerMask = 255;
-            // enable automatic updates
-            settings.managementMode = RayTracingAccelerationStructure.ManagementMode.Manual;
-            // include all renderer types
-            settings.rayTracingModeMask = RayTracingAccelerationStructure.RayTracingModeMask.Everything;
-            surfelRTAS = new RayTracingAccelerationStructure(settings);
         }
     }
 
@@ -568,10 +551,6 @@ public class SurfelGI : MonoBehaviour {
         if(surfels != null){ 
             surfels.Release();
             surfels = null;
-        }
-        if(surfelBounds != null){
-            surfelBounds.Release();
-            surfelBounds = null;
         }
     }
 
