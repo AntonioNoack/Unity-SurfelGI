@@ -5,7 +5,6 @@
 		_SplitY("SplitY", Range(0,1)) = 0.50
 		_ShowIllumination("Show GI", Float) = 0.0
 		_VisualizeSurfels("Visualize Surfels", Float) = 0.0
-		_Derivatives("Use Derivatives", Float) = 0.0
 	}
 	SubShader {
 		// No culling or depth
@@ -46,7 +45,6 @@
 			float4 _CameraRotation;
 			float _ShowIllumination;
 			float _VisualizeSurfels;
-			float _Derivatives;
 			int _PixelGIBlur;
 
 			float2 _Duv;
@@ -57,10 +55,8 @@
 			sampler2D _CameraGBufferTexture2;
 			sampler2D _CameraDepthTexture;
 			samplerCUBE _SkyBox;
-			// sampler2D_half _CameraMotionVectorsTexture;
 
 			sampler2D _Accumulation;
-			sampler2D _AccuDx, _AccuDy;
 
 			float3 quatRot(float3 v, float4 q){
 				return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -95,10 +91,6 @@
 				return float4(HDR_to_LDR(c.xyz), c.a);
 			}
 
-			float3 f3(float f){
-				return float3(f,f,f);
-			}
-
 			float4 frag (v2f i) : SV_Target {
 
 				float2 uv = i.uv;
@@ -123,30 +115,13 @@
 				}
 
 				if(rawDepth <= 0.001) {
-					ill = 1;
+					ill = float4(1,1,1,1);
 				}
 
-				// show derivatives for debugging
-				if(_Derivatives){
-					float b1 = lerp(0.5, 0.0, _SplitX);
-					float b2 = lerp(0.5, 1.0, _SplitY);
-					if(uv.x < b1){
-						ill = tex2Dlod(_AccuDx, float4(uv,0,0));
-						ill.xyz *= _Exposure;
-						ill.xyz += ill.w * 0.5;
-						ill /= ill.w;
-						return float4(HDR_to_LDR(ill.xyz), 1.0);
-					} else if(uv.x > b2){
-						ill = tex2Dlod(_AccuDy, float4(uv,0,0));
-						ill.xyz *= _Exposure;
-						ill.xyz += ill.w * 0.5;
-						ill /= ill.w;
-						return float4(HDR_to_LDR(ill.xyz), 1.0);
-					}
+				if(_VisualizeSurfels){
+					float light = ill.w/(1.0+ill.w);
+					return float4(light, light, light, 1.0);
 				}
-
-				if(_VisualizeSurfels)
-					return float4(f3(ill.w/(1.0+ill.w)), 1.0);
 
 				if(_ShowIllumination) {
 					ill /= ill.w;

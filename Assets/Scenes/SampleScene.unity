@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 705507994}
-  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
+  m_IndirectSpecularColor: {r: 0.18028378, g: 0.22571412, b: 0.30692285, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -618,7 +618,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
+  - {fileID: 2100000, guid: 4ed0c8ca7b03b9547a079f06d5d7aa53, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -661,7 +661,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 5
+  m_RootOrder: 6
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &701850449
 GameObject:
@@ -860,7 +860,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 1
+  m_RootOrder: 2
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
 --- !u!1 &780261638
 GameObject:
@@ -1078,7 +1078,6 @@ GameObject:
   - component: {fileID: 963194231}
   - component: {fileID: 963194230}
   - component: {fileID: 963194229}
-  - component: {fileID: 963194232}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1202,72 +1201,40 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16087859c56ec1e48a15128ba0896538, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enablePathTracing: 1
-  enableLightSampling: 0
-  debugSurfelAABBs: 0
-  surfelDensity: 3
-  sleep: 0.02
-  allowSkySurfels: 0
-  showIllumination: 0
-  allowStrayRays: 0
-  visualizeSurfels: 0
+  substrate: 1
+  result: 0
+  pixelGIBlur: 5
+  surfelDensity: 2
+  exposure: 2
   hasPlacedSurfels: 0
+  useFibSphere: 0
+  respawnSurfelsAtOrigin: 0
+  visualizeSurfelIds: 0
   surfelDistShader: {fileID: 7200000, guid: 44979956d029ca549892ad70284ed256, type: 3}
   surfelTracingShader: {fileID: 4807578003741378534, guid: 708cd480ba31b6c40a5d5d45fd8fad5b, type: 3}
-  surfelAABBDebugShader: {fileID: 4807578003741378534, guid: b42bded55fbd06b43b392bb23c960ad4, type: 3}
   maxNumSurfels: 65536
-  rayTracingShader: {fileID: 4807578003741378534, guid: 7930aec5ce6607e4a8433afcf688d828, type: 3}
-  accuMaterial: {fileID: 2100000, guid: e42fdb9b86b689443b897cfae2e17bff, type: 2}
+  minSurfelWeight: 0.05
+  enableSurfelMovement: 0
+  _camera: {fileID: 0}
+  giTarget: {fileID: 0}
+  prevCameraPosition: {x: 0, y: 0, z: 0}
+  emissiveTarget: {fileID: 0}
   displayMaterial: {fileID: 2100000, guid: ed36a76a405cc624c933a75679274b79, type: 2}
-  copyGBuffMat0: {fileID: 2100000, guid: e33da8cf719138142bcba9830cf03bb1, type: 2}
-  copyGBuffMat1: {fileID: 2100000, guid: ff7672f1e884a644485a1e70831cd675, type: 2}
-  copyGBuffMat2: {fileID: 2100000, guid: 6aa67cace0a317a4c866a10f65ebafdc, type: 2}
-  copyGBuffMatD: {fileID: 2100000, guid: 68c0e304975d3ee4ca5a9feb07ac550f, type: 2}
+  frameIndex: 0
   skyResolution: 512
+  skyBox: {fileID: 0}
   skyBoxCamera: {fileID: 1974688716}
   needsSkyBoxUpdate: 0
   resetSurfels: 0
+  resetPixelGI: 1
+  resetEmissiveTriangles: 1
   disableSurfaceUpdates: 0
-  surfelBoundsMaterial: {fileID: 2100000, guid: 3871aded97caef042867487db6f66b87, type: 2}
   cubeMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
-  surfelMaterial: {fileID: 2100000, guid: 831a6575fc018dc4d90096379790bda2, type: 2}
   surfelProcMaterial: {fileID: 2100000, guid: fac0ec78882c92c44819b0eec43fb38c, type: 2}
-  surfel2ProcMaterial: {fileID: 2100000, guid: 984b20df434bce948ba1c43659f283b2, type: 2}
-  doRT: 0
-  useProceduralSurfels: 1
   updateSurfels: 1
-  surfelToAABBListShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
-  lightSamplingShader: {fileID: 4807578003741378534, guid: ae5bbf1a3dfeeec49be72039e709fb68, type: 3}
-  lightSamplingRatio: 1
-  emissiveDXRShader: {fileID: 4800000, guid: 9351333cd660a494b93f77e999496617, type: 3}
-  useDerivatives: 0
+  samplesPerPixel: 1
+  raysPerSample: 3
   surfelPlacementIterations: 1
-  poissonBlurRadius: 25
-  blurShader: {fileID: 4800000, guid: db6e1775dc4f3d3449a3f774fbfc25a3, type: 3}
-  poissonMaterial: {fileID: 2100000, guid: 3e8936f3d5433f742a2c98dd784177ff, type: 2}
-  addMaterial: {fileID: 2100000, guid: a9a6100765d3890448c9a78895f615e5, type: 2}
---- !u!114 &963194232
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 963194225}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 259b01b5607f0984f890ad1993a0af0b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  rayTracingShader: {fileID: 4807578003741378534, guid: aad1f548de00f064ba82bf34da8da39e, type: 3}
-  proceduralMaterial: {fileID: 2100000, guid: dc1b324d68fa76c44b2e727618736eb2, type: 2}
-  aabbCount: 10
-  aabbShader: {fileID: 7200000, guid: ba46b27ecb85dfa45a9cf91d2d27df65, type: 3}
-  surfelToAABBShader: {fileID: 7200000, guid: fc0a7cc9c7e706f4390c087079ff8655, type: 3}
-  hasSurfels: 0
-  hasUpdate: 0
-  preferUpdate: 0
-  blit: 0
-  swap: 0
 --- !u!1001 &1031522958
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1665,7 +1632,7 @@ Transform:
   - {fileID: 1300932922}
   - {fileID: 2049600263}
   m_Father: {fileID: 0}
-  m_RootOrder: 3
+  m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1496167024
 GameObject:
@@ -2289,6 +2256,67 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: f898e69ada292b248831746073ffb410, type: 3}
   m_PrefabInstance: {fileID: 1761673346}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &1855122745
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_RootOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -13.786652
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 22.928814
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071067
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: ac6716197244e4041b68525f1d27b514, type: 3}
+      propertyPath: m_Name
+      value: sponza
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: ac6716197244e4041b68525f1d27b514, type: 3}
 --- !u!1 &1867478636
 GameObject:
   m_ObjectHideFlags: 0
@@ -2580,7 +2608,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 2
+  m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2049600262
 PrefabInstance:
@@ -2817,5 +2845,5 @@ Transform:
   - {fileID: 178265475}
   - {fileID: 1533174915}
   m_Father: {fileID: 0}
-  m_RootOrder: 4
+  m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

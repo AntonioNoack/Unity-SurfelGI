@@ -13,22 +13,12 @@
 
 RWStructuredBuffer<Surfel> Surfels;
 
-// todo theoretically, we need a matrix array, and a ptr to the matrix on every Surfel
-// RWStructuredBuffer<float4x4> Transforms;
-
 // GBuffer and depth at camera
 Texture2D<half4>  _CameraGBufferTexture0;
 Texture2D<half4>  _CameraGBufferTexture1;
 Texture2D<half4>  _CameraGBufferTexture2;
 Texture2D<float> _CameraDepthTexture;
 SamplerState _PointClampSampler;
-
-/*UnityStandardData data;
-data.diffuseColor   = inGBuffer0.rgb;
-data.occlusion      = inGBuffer0.a;
-data.specularColor  = inGBuffer1.rgb;
-data.smoothness     = inGBuffer1.a;
-data.normalWorld    = normalize((float3)inGBuffer2.rgb * 2 - 1);*/
 
 float _Time;
 float _Far;
@@ -202,9 +192,6 @@ Surfel InitSurfel2(float rawDepth, float3 worldDir, float cameraDirZ, float4 dat
     surfel.position.w = calculateSize(distance, dot(surfaceDir, worldDir));
     // surfel.color = float4(uv,frac(depth),1);
     surfel.color = float4(color * START_WEIGHT, START_WEIGHT);
-    surfel.colorDx = 0;
-    surfel.colorDz = 0;
-
     surfel.data = float4(
         CalcAngleDependence(specular1, smoothness),
         specular1, smoothness,
@@ -311,8 +298,6 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
 
             // scaling colors with their weights
             surfel.color *= factor;
-            surfel.colorDx *= factor;
-            surfel.colorDz *= factor;
 
             Surfels[index] = surfel;
         } else {

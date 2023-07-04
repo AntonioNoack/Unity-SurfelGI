@@ -116,7 +116,7 @@ void SurfelPathTracing() {
 	rayPayload.gpt = false;
 
 	// init random seed from current pixel location and frame index
-	uint srcSeed = initRand(index ^ _FrameIndex, _FrameIndex);
+	rayPayload.randomSeed = initRand(index ^ _FrameIndex, _FrameIndex);
 
 	float cosa, sina, distance;
 	float3 ray1Pos, ray2Pos;
@@ -126,6 +126,7 @@ void SurfelPathTracing() {
 	);
 
 	bool supportTransparency = true;
+	float3 color = float3(0,0,0);
 	for(int j=0;j<samplesPerSurfel;j++){
 
 		// go back a step
@@ -136,48 +137,18 @@ void SurfelPathTracing() {
 		rayDesc.TMax = supportTransparency ? _Far : startDist * 2.0;
 
 		float3 nextSurfacePos, ignored;
-		rayPayload.randomSeed = srcSeed;
-		float3 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
-		uint nextSeed = rayPayload.randomSeed;
+		color =+ TraceRay(rayDesc, rayPayload, maxRaysPerSample, nextSurfacePos);
 		
-		SetupGradientRayStart(rayDesc, ray1Pos, nextSurfacePos);
-		rayDesc.TMin = _Near;
-		if(supportTransparency) rayDesc.TMax = _Far;
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorPx = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
-
-		SetupGradientRayStart(rayDesc, ray2Pos, nextSurfacePos);
-		rayDesc.TMin = _Near;
-		if(supportTransparency) rayDesc.TMax = _Far;
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorPy = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored).rgb;
-
-		surfel.color += float4(color, 1.0);
-
-		float3 gradient1 = (colorPx - color) / distance;
-		float3 gradient2 = (colorPy - color) / distance;
-
-		// reverse rotation
-		float3 gradientDX = gradient1 * cosa + gradient2 * sina;
-		float3 gradientDZ =-gradient1 * sina + gradient2 * cosa;
-
-		// surfel.colorDx += float4(gradientDX * surfelSize, 1.0);
-		// surfel.colorDz += float4(gradientDZ * surfelSize, 1.0);
-		surfel.colorDx += float4(gradientDX, 1.0);
-		surfel.colorDz += float4(gradientDZ, 1.0);
-		
-		srcSeed = nextSeed;// seed for next iteration
 
 	}
-	
+
+	surfel.color += float4(color, samplesPerSurfel);
 	_Surfels[index] = surfel;
 	
 }
 
 // texture to store raytracing result
 RWTexture2D<float4> _ColorTarget;
-RWTexture2D<float4> _ColorDxTarget;
-RWTexture2D<float4> _ColorDyTarget;
 
 float4 TracePixel(int2 index, uint srcSeed){
 	
@@ -229,8 +200,6 @@ void PixelPathTracing() {
 	// target resolution
 	uint2 launchDim = DispatchRaysDimensions().xy;
 
-	if(true){
-	
 	// get random uv inside current pixel
 	// this gives us anti-aliasing for free
 	// + float2(nextRand(seed), nextRand(seed))
@@ -238,23 +207,20 @@ void PixelPathTracing() {
 
     // we know the surface, but we do not know the local BDRF .
     // we need to trace the first ray, even if we know where it ends
-
     float3 surfelPos = _CameraPosition;
 
     RayPayload rayPayload = (RayPayload) 0;
 	RayDesc rayDesc = (RayDesc) 0;
 
 	// init random seed from current pixel location and frame index
-    uint srcSeed = initRand(index.x + index.y * launchDim.x, _FrameIndex);
+    rayPayload.randomSeed = initRand(index.x + index.y * launchDim.x, _FrameIndex);
 
 	int samplesPerSurfel = _SPP;
 	int maxRaysPerSample = _RPS;
 
-    float4 finalColor = float4(0,0,0,0);
-    float4 finalColorDx = float4(0,0,0,0);
-    float4 finalColorDy = float4(0,0,0,0);
-
-    for (int j = 0; j < _SPP; j++) {
+	float3 ignored;
+    float3 finalColor = float3(0,0,0);
+    for (int j = 0; j < samplesPerSurfel; j++) {
 
 		// start from the camera
 		rayDesc.Origin = _CameraPosition;
@@ -262,80 +228,12 @@ void PixelPathTracing() {
 		rayDesc.TMin = _Near;
 		rayDesc.TMax = _Far;
 
-		float3 ignored;
-		rayPayload.randomSeed = srcSeed;
-		float3 color = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
-		uint nextSeed = rayPayload.randomSeed;
-		nextRand(nextSeed); // just in case nothing was drawn
+		finalColor += TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
+		nextRand(rayPayload.randomSeed); // just in case nothing was drawn
 		
-		/* +x ------------------------------------------------------ */
-		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)index + float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
-		rayDesc.TMin = _Near;
-		rayDesc.TMax = _Far;
-
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorPx = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
-
-		/* -x ------------------------------------------------------ */
-		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)index - float2(1.0,0.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
-		rayDesc.TMin = _Near;
-		rayDesc.TMax = _Far;
-
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorMx = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
-
-		/* +y ------------------------------------------------------ */
-		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)index + float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
-		rayDesc.TMin = _Near;
-		rayDesc.TMax = _Far;
-
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorPy = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
-
-		/* -y ------------------------------------------------------ */
-		rayDesc.Origin = _CameraPosition;
-		rayDesc.Direction = normalize(quatRot(float3((float2)index - float2(0.0,1.0) - _CameraOffset.xy, _CameraOffset.z), _CameraRotation));
-		rayDesc.TMin = _Near;
-		rayDesc.TMax = _Far;
-
-		rayPayload.randomSeed = srcSeed;// gradients shall use same seed for similar path (for less noise)
-		float3 colorMy = TraceRay(rayDesc, rayPayload, maxRaysPerSample, ignored);
-
-		/* write results ------------------------------------------- */
-		finalColor += float4(color, 1.0);
-		finalColorDx += float4((colorPx.xyz - colorMx.xyz) * 0.5, 1.0);
-		finalColorDy += float4((colorPy.xyz - colorMy.xyz) * 0.5, 1.0);
-
-		srcSeed = nextSeed;// seed for next iteration
-
     }
 
 	// store result
-	_ColorTarget[index] = finalColor;
-	_ColorDxTarget[index] = finalColorDx;
-	_ColorDyTarget[index] = finalColorDy;
-
-	} else {
-
-		// init random seed from current pixel location and frame index
-		uint srcSeed = initRand(index.x + index.y * launchDim.x, _FrameIndex);
-
-		// checking my sanity
-		
-		float4 finalColor = TracePixel(index,srcSeed);
-		float4 finalColorDx = (TracePixel(index+int2(1,0),srcSeed)-TracePixel(index-int2(1,0),srcSeed)) * 0.5;
-		float4 finalColorDy = (TracePixel(index+int2(0,1),srcSeed)-TracePixel(index-int2(0,1),srcSeed)) * 0.5;
-		finalColorDx.w = finalColor.w;
-		finalColorDy.w = finalColor.w;
-
-		// store result
-		_ColorTarget[index] = finalColor;
-		_ColorDxTarget[index] = finalColorDx;
-		_ColorDyTarget[index] = finalColorDy;
-
-	}
+	_ColorTarget[index] = float4(finalColor, samplesPerSurfel);
 
 }
