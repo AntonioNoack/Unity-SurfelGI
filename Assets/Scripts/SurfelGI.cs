@@ -118,10 +118,6 @@ public class SurfelGI : MonoBehaviour {
 
         hasPlacedSurfels = false;
 
-        for(int i=0;i<instData.Length;i++){
-            instData[i] = Matrix4x4.identity;
-        }
-
     }
 
     public static int CeilDiv(int a, int d){
@@ -418,9 +414,6 @@ public class SurfelGI : MonoBehaviour {
 
     public bool updateSurfels = false;
     
-    private static int instancesPerBatch = 511;// 1023 at max; limitation by Unity :/
-    private Matrix4x4[] instData = new Matrix4x4[instancesPerBatch];
-
     public static Vector4 QuatToVec(Quaternion q){
         return new Vector4(q.x, q.y, q.z, q.w);
     }
