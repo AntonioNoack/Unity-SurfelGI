@@ -83,7 +83,6 @@
 					rayPayload.color = 0;
 				}
 				
-
 				if(rayPayload.depth > 0) {
 					float4 color = GetColor();
 					rayPayload.color *= color.rgb;

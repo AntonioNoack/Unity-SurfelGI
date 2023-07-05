@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/**
+ * This script implements a simple camera controller, so the scene can be properly explored in Play mode.
+ */
 public class CameraController : MonoBehaviour {
 
     public Vector3 velocity;

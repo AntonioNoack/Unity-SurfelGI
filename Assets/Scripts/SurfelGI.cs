@@ -11,90 +11,61 @@ using System.Collections.Generic; // list
  */
 public class SurfelGI : MonoBehaviour {
 
-    public enum Substrate {
-        PIXEL,
-        SURFEL,
-    };
-
-    public enum Result {
-        SURFEL_WEIGHTS,
-        GLOBAL_ILLUMINATION,
-        COLOR,
-    };
-
-    public Substrate substrate = Substrate.PIXEL;
-    public Result result = Result.COLOR;
-
     /**
      * When using per-pixel path-tracing, the GI can be blurred with this radius to give less noisy results.
      */
-    public int pixelGIBlur = 5;
-    public float surfelDensity = 2f;
-
-    [LogarithmicRangeAttribute(0.001, 1000.0)]
+    [Header("Exposure for Tonemapping")]
     public float exposure = 2f;
 
-    public bool hasPlacedSurfels = false;
+    [Header("Quality/Performance Settings")]
+    public int maxNumSurfels = 64 * 1024;
 
-    // use fibonacci sphere as initial distribution; false = use hilbert mapping
-    // advantage: easy, disadvantage: horrible cache locality except at poles
-    public bool useFibSphere = false; 
+    public int samplesPerPixel = 1, raysPerSample = 10;
+    public int surfelPlacementIterations = 1;
 
-    // respawns surfels roughly where they were originally; probably causes temporal instability issues, if too many surfels are required locally
-    // advantage: should increase cache locality
-    public bool respawnSurfelsAtOrigin = false;
-    public bool visualizeSurfelIds = false;
+    [Header("Sky Settings")]
+    public int skyResolution = 512;
+    public bool needsSkyBoxUpdate = true;
+
+    [Header("Surfel Overlap/Tweaks")]
+    public float surfelDensity = 3f;
+    public float minSurfelWeight = 0.05f;
+
+    // helper material to accumulate raytracing results
+    [Header("Data for Setup")]
+    public Material displayMaterial;
+    public Camera skyBoxCamera;
+    public Mesh cubeMesh;
+    public Material surfelAccuMaterial;
 
     // distributes surfels
     public ComputeShader surfelDistShader;
-    private ComputeBuffer surfels; // storage for surfels
     public RayTracingShader surfelTracingShader; // calculated path-tracing on surfels
 
-    public int maxNumSurfels = 64 * 1024;
-    public float minSurfelWeight = 0.05f;
-    public bool enableSurfelMovement = false;
 
-    [HideInInspector]
-    public Camera _camera;
+
+    private bool hasPlacedSurfels = false;
+    private ComputeBuffer surfels; // storage for surfels
+
+    private Camera _camera;
 
     // target texture for raytracing
-    [HideInInspector]
-    public RenderTexture giTarget;
+    private RenderTexture giTarget;
 
     // previous GBuffers for motion-vector-improved sample accumulation
-    [HideInInspector]
-    public Vector3 prevCameraPosition;
+    private Vector3 prevCameraPosition;
     private Vector3 prevCameraOffset;
     private Vector4 prevCameraRotation;
 
     // summed global illumination, used for surfel distribution
-    [HideInInspector]
-    public RenderTexture emissiveTarget;
+    private RenderTexture emissiveTarget;
 
     // scene structure for raytracing
-    [HideInInspector]
-    public RayTracingAccelerationStructure sceneRTAS, surfelRTAS;
+    private RayTracingAccelerationStructure sceneRTAS;
 
-    // helper material to accumulate raytracing results
-    public Material displayMaterial;
+    private int frameIndex;
 
-    [HideInInspector]
-    public int frameIndex;
-
-    [HideInInspector]
-    public Cubemap skyBox;
-    public Camera skyBoxCamera;
-    public int skyResolution = 512;
-    public bool needsSkyBoxUpdate = false;
-    
-    public bool resetSurfels = true;
-    public bool resetPixelGI = true;
-    public bool resetEmissiveTriangles = true;
-
-    public bool disableSurfaceUpdates = false;
-
-    public Mesh cubeMesh;
-    public Material surfelProcMaterial;
+    private Cubemap skyBox;
 
     private CommandBuffer cmdBuffer;
     private ComputeBuffer countBuffer, cubeMeshVertices;
@@ -136,19 +107,16 @@ public class SurfelGI : MonoBehaviour {
     private void DistributeSurfels() {
 
         var shader = surfelDistShader;
-        if(shader == null) Debug.Log("Missing surfel shader!");
+        if(shader == null) {
+            Debug.Log("Missing surfel shader!");
+            return;
+        }
         EnsureSurfels();
 
         var depthTex = Shader.GetGlobalTexture("_CameraDepthTexture");
         if(depthTex == null){
             Debug.Log("Missing depth texture");
             return; // is null at the very start of the game
-        }
-
-        if(disableSurfaceUpdates && hasPlacedSurfels) return;
-        if(resetSurfels) {
-            hasPlacedSurfels = false;
-            // resetSurfels = false;
         }
 
         shader.SetFloat("_Time", Time.time);
@@ -169,10 +137,7 @@ public class SurfelGI : MonoBehaviour {
         shader.SetVector("_CameraOffset", new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor));
 
         shader.SetVector("_ZBufferParams", Shader.GetGlobalVector("_ZBufferParams"));
-        shader.SetFloat("_EnableSurfelMovement", enableSurfelMovement ? 1f : 0f);
         shader.SetFloat("_MinimumSurfelWeight", minSurfelWeight);
-        shader.SetFloat("_UseFibSphere", useFibSphere ? 1f : 0f);
-        shader.SetFloat("_RespawnAtOrigin", respawnSurfelsAtOrigin ? 1f : 0f);
 
         int kernel;
         if(hasPlacedSurfels) {// update surfels
@@ -232,9 +197,6 @@ public class SurfelGI : MonoBehaviour {
             return -1;
         }
 
-        if(t0.width != t1.width || t0.width != t2.width || t0.width != t3.width) error("Widths are inconsistent");
-        if(t0.height != t1.height || t0.height != t2.height || t0.height != t3.height) error("Heights are inconsistent");
-
         shader.SetTexture(kernel, "_CameraGBufferTexture0", t0);
         shader.SetTexture(kernel, "_CameraGBufferTexture1", t1);
         shader.SetTexture(kernel, "_CameraGBufferTexture2", t2);
@@ -280,18 +242,7 @@ public class SurfelGI : MonoBehaviour {
         skyBox = new Cubemap(skyResolution, TextureFormat.RGBAFloat, skyBoxMipmaps);
         needsSkyBoxUpdate = true;
 
-        GetComponent<PerPixelRT>().CreateTargets(giTarget);
-
 	}
-
-    private void DestroyTargets(){
-        if(giTarget != null) giTarget.Release();
-        if(emissiveTarget != null) emissiveTarget.Release();
-        giTarget = null;
-        emissiveTarget = null;
-        GetComponent<PerPixelRT>()?.Destroy();
-        // skyBox.Release(); // not supported??? 
-    }
 
     private void Update() {
         if(_camera == null){
@@ -346,7 +297,7 @@ public class SurfelGI : MonoBehaviour {
 
     void AccumulateSurfelEmissions() {
 
-        Material shader = surfelProcMaterial;
+        Material shader = surfelAccuMaterial;
 
         EnsureSurfels();
 
@@ -378,9 +329,6 @@ public class SurfelGI : MonoBehaviour {
 
         float fy = Mathf.Tan(_camera.fieldOfView*Mathf.Deg2Rad*0.5f);
         shader.SetVector("_FieldOfViewFactor", new Vector2(fy*giTarget.width/giTarget.height, fy));
-        shader.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
-        shader.SetFloat("_IdCutoff", 2f / surfelDensity);
-        shader.SetFloat("_VisualizeSurfelIds", visualizeSurfelIds && result == Result.SURFEL_WEIGHTS ? 1f : 0f);
         shader.SetVector("_Duv", new Vector2(1f/giTarget.width, 1f/giTarget.height));
 
         cmdBuffer.Clear(); // clear all commands
@@ -405,14 +353,11 @@ public class SurfelGI : MonoBehaviour {
         int numInstances = surfels.count;
         int pass = -1; // which shader pass, or -1 for all
         
-        cmdBuffer.SetGlobalFloat("_InstanceIDOffset", 0);
         cmdBuffer.DrawProcedural(Matrix4x4.identity, shader, pass, MeshTopology.Triangles, cubeMeshVertices.count, numInstances);
         
         Graphics.ExecuteCommandBuffer(cmdBuffer);
 
     }
-
-    public bool updateSurfels = false;
     
     public static Vector4 QuatToVec(Quaternion q){
         return new Vector4(q.x, q.y, q.z, q.w);
@@ -434,7 +379,6 @@ public class SurfelGI : MonoBehaviour {
         shader.SetInt("_FrameIndex", frameIndex);
         shader.SetVector("_CameraPosition", transform.position);
         shader.SetVector("_CameraRotation", QuatToVec(transform.rotation));
-        shader.SetVector("_CameraOffset", CalcCameraOffset());
         shader.SetTexture("_SkyBox", skyBox);
         if(needsSurfels) shader.SetBuffer("_Surfels", surfels);
         shader.SetInt("_SPP", samplesPerPixel);
@@ -447,16 +391,6 @@ public class SurfelGI : MonoBehaviour {
         return shader;
     }
 
-    public int samplesPerPixel = 1, raysPerSample = 10;
-
-    public Vector3 CalcCameraOffset(){
-        float tan = Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        float zFactor = giTarget.height / (2.0f * tan);
-        return new Vector3((giTarget.width-1) * 0.5f, (giTarget.height-1) * 0.5f, zFactor);
-    }
-
-    public int surfelPlacementIterations = 1;
-
     [ImageEffectOpaque]
     private void OnRenderImage(RenderTexture source, RenderTexture destination) {
 
@@ -467,58 +401,32 @@ public class SurfelGI : MonoBehaviour {
 
         if(sceneRTAS == null)
             InitRaytracingAccelerationStructure();
-
-        var usePixelPT1 = GetComponent<PerPixelRT>();
         
-        if(result == Result.SURFEL_WEIGHTS || substrate == Substrate.SURFEL){
-            EnsureSurfels();
-            if(updateSurfels) {
-                // for faster surfel-coverage, we can use multiple iterations
-                for(int i=0,l=surfelPlacementIterations;i<l;i++){
-                    AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
-                    DistributeSurfels();
-                }
-                AccumulateSurfelEmissions();
-            } else {
-                AccumulateSurfelEmissions();
-            }
+        EnsureSurfels();
+        
+        // for faster surfel-coverage, we can use multiple iterations
+        for(int i=0,l=surfelPlacementIterations;i<l;i++){
+            AccumulateSurfelEmissions();// could be skipped in the first iteration, if really necessary
+            DistributeSurfels();
+        }
+        AccumulateSurfelEmissions();
 
-            if(updateSurfels && surfelTracingShader != null && substrate == Substrate.SURFEL) {
-                SurfelPathTracing();
-            }
+        if(surfelTracingShader != null) {
+            SurfelPathTracing();
         }
 
         var transform = _camera.transform;
-        if(substrate == Substrate.PIXEL && result != Result.SURFEL_WEIGHTS){
-            usePixelPT1.UpdatePixelGI(this);
-        }
-
-        var accu = emissiveTarget;
-        if(result != Result.SURFEL_WEIGHTS && substrate == Substrate.PIXEL){
-            accu = usePixelPT1.AccumulatePixelGI(this, accu);
-        }
 
         // display result on screen
         displayMaterial.SetVector("_Duv", new Vector2(1f/(_camera.pixelWidth-1f), 1f/(_camera.pixelHeight-1f)));
-        displayMaterial.SetFloat("_DivideByAlpha", 1f);
-        displayMaterial.SetInt("_PixelGIBlur", pixelGIBlur);
         displayMaterial.SetTexture("_SkyBox", skyBox);
         displayMaterial.SetFloat("_Exposure", exposure);
-        displayMaterial.SetTexture("_Accumulation", accu);
-        displayMaterial.SetFloat("_Derivatives", 0f);
+        displayMaterial.SetTexture("_Accumulation", emissiveTarget);
         displayMaterial.SetFloat("_Far", _camera.farClipPlane);
-        displayMaterial.SetFloat("_ShowIllumination", result == Result.GLOBAL_ILLUMINATION ? 1f : 0f);
-        displayMaterial.SetFloat("_VisualizeSurfels", result == Result.SURFEL_WEIGHTS ? 1f : 0f);
-        displayMaterial.SetVector("_CameraPosition", _camera.transform.position);
         displayMaterial.SetVector("_CameraRotation", QuatToVec(transform.rotation));
         float zFactor = 1.0f / Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
         displayMaterial.SetVector("_CameraScale", new Vector2((zFactor * _camera.pixelWidth) / _camera.pixelHeight, zFactor));
         Graphics.Blit(null, destination, displayMaterial);
-
-        if(result != Result.SURFEL_WEIGHTS && substrate == Substrate.PIXEL){
-            usePixelPT1.PreservePrevGBuffers();
-            usePixelPT1.SwapAccumulationTextures();
-        }
 
         PreservePrevTransform();
 
@@ -526,10 +434,17 @@ public class SurfelGI : MonoBehaviour {
 
     }
 
+    private void DestroyTargets(){
+        if(giTarget != null) giTarget.Release();
+        if(emissiveTarget != null) emissiveTarget.Release();
+        giTarget = null;
+        emissiveTarget = null;
+        // skyBox.Release(); // not supported??? 
+    }
+
     private void OnDestroy() {
         DestroyTargets();
         if(sceneRTAS != null) sceneRTAS.Release();
-        if(surfelRTAS != null) surfelRTAS.Release();
         if(countBuffer != null) countBuffer.Release();
         countBuffer = null;
         if(cubeMeshVertices != null) cubeMeshVertices.Release();

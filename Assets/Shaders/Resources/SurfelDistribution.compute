@@ -7,8 +7,6 @@
 #include "Surfel.cginc"
 #include "Common.cginc"
 
-#define PI 3.141592653589793
-
 #define START_WEIGHT 0.0
 
 RWStructuredBuffer<Surfel> Surfels;
@@ -117,23 +115,13 @@ int InvHilbert3(float3 dir, int n){
     return InvHilbert2(OctahedronNormalEncode(dir), n);
 }
 
-float _UseFibSphere;
 float _RespawnAtOrigin;
 
 // indexToNormal adopted from https://stackoverflow.com/a/26127012/4979303
 float3 indexToNormal(int i, int n) {
-    if(_UseFibSphere){
-        const float phi = PI * (3.0 - sqrt(5.0));
-        float i2 = float(i);
-        float y = 1.0 - 2.0 * i2 / float(n-1);
-        float theta = phi * i2;
-        float radius = sqrt(max(1.0 - y * y, 0.0));
-        return float3(cos(theta) * radius, y, sin(theta) * radius);
-    } else{
-        float f = (float(i) + 0.5)/float(n);
-        float2 f2 = Hilbert((int)(f*(1<<30)), 15);
-        return OctahedronNormalDecode(f2);
-    }
+    float f = (float(i) + 0.5)/float(n);
+    float2 f2 = Hilbert((int)(f*(1<<30)), 15);
+    return OctahedronNormalDecode(f2);
 }
 
 float linear01Depth(float z) {
@@ -262,40 +250,6 @@ void DiscardSmallAndLargeSurfels(uint3 dispatchIdx : SV_DispatchThreadID) {
             float angleChangeFactor = max(1.0 - 10.0 * angleChange * surfel.data.x, 0.0);
             float factor = sizeChangeFactor * angleChangeFactor;
             
-            // Surfel Migration
-            if(_EnableSurfelMovement){
-                // for testing it: move surfel along gradient
-                float3 cameraDir = quatRotInv(worldDir, _CameraRotation);
-                // else hidden & no update required
-                // if the direction is too step, the following algorithm doesn't work well
-                if(cameraDir.z > 0.0 /*&& dot(surfelDir, cameraDir) < -0.3*/){ 
-                    cameraDir.xy *= _CameraUVScale;
-                    uint width = 0, height = 0;
-                    _Weights.GetDimensions(width, height);
-                    float2 uv = (cameraDir.xy / cameraDir.z * 0.5 + 0.5) * float2(width-1, height-1);
-                    if(uv.x > 0 && uv.x < (int) width-1 && uv.y > 0 && uv.y < (int) height-1){
-                        
-                        float2 gradient = float2(// to do should use linear interpolation
-                            // _Weights.Load(int3(uv.x+1,uv.y,0)).w - _Weights.Load(int3(uv.x-1,uv.y,0)).w,
-                            // _Weights.Load(int3(uv.x,uv.y+1,0)).w - _Weights.Load(int3(uv.x,uv.y-1,0)).w
-                            _Weights.Load(int3(uv.x+1,uv.y,0)).w - _Weights.Load(int3(uv.x,uv.y,0)).w,
-                            _Weights.Load(int3(uv.x,uv.y+1,0)).w - _Weights.Load(int3(uv.x,uv.y,0)).w
-                        ) * 10.0;// this factor just sets the maximum speed gradient to 0.1
-                        
-                        float l2 = dot(gradient,gradient);
-                        if(l2 > 1.0) gradient /= sqrt(l2);
-
-                        // move based on distance (and fov maybe)
-                        gradient *= surfelSize * 0.02;
-                        float3 movement = gradient.x * quatRot(float3(-1,0,0), _CameraRotation) + gradient.y * quatRot(float3(0,-1,0), _CameraRotation);
-                        movement -= surfelDir * dot(movement, surfelDir);// prevent surfels from moving away from the surface (if it was a plane)
-                        surfel.position.xyz += movement;
-
-                        factor *= max(1.0 - 2.0 * length(movement) / surfelSize, 0.0);
-                    }
-                }
-            }
-
             // scaling colors with their weights
             surfel.color *= factor;
 
@@ -326,15 +280,7 @@ void SpawnSurfel(int2 uvi, inout uint seed){
     // find free surfel, best by looking through maybe 16 surfels and choosing the one of lowest value to us
 	
     // respawn at roughly this direction's original index if _RespawnAtOrigin
-    // not implemented for fib sphere
-    uint freeIndex;
-    if(_RespawnAtOrigin){
-        int index = InvHilbert3(worldDir, Surfels.Length);
-        freeIndex = (uint) clamp(index - 8, 0, Surfels.Length - 16);
-    } else {
-        freeIndex = abs(nextRandInt(seed) * 1505776939) % (Surfels.Length - 16);
-    }
-    
+    uint freeIndex = abs(nextRandInt(seed) * 1505776939) % (Surfels.Length - 16);
     if(freeIndex + 16 >= Surfels.Length || freeIndex < 0) return;
 
     uint bestFreeIndex = freeIndex;
